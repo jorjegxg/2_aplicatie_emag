@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Produse eMAG — Editor Excel</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --surface: #ffffff;
+      --ink: #1a1d23;
+      --muted: #5c6570;
+      --line: #d8dde3;
+      --accent: #0055a5;
+      --accent-hover: #003d7a;
+      --danger: #b42318;
+      --ok: #067647;
+      --focus: #2b6cb0;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+      --font: "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    header.app-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .brand span { color: var(--muted); font-weight: 500; font-size: .85rem; margin-left: 8px; }
+    .tabs { display: flex; gap: 4px; }
+    .tab {
+      border: 1px solid transparent;
+      background: transparent;
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font: inherit;
+      color: var(--muted);
+    }
+    .tab.active {
+      background: #e8f0fa;
+      color: var(--accent);
+      border-color: #c5d8ef;
+      font-weight: 600;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .btn {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font: inherit;
+      font-size: .9rem;
+    }
+    .btn:hover { background: #f7f8fa; }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-danger { color: var(--danger); border-color: #f0b4ae; }
+    .btn-danger:hover { background: #fef3f2; }
+    .btn-sm { padding: 4px 10px; font-size: .8rem; }
+    input[type="search"], input[type="text"], input[type="number"], textarea, select {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      width: 100%;
+      background: #fff;
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+    input[readonly] { background: #f4f6f8; color: var(--muted); }
+    .search { min-width: 200px; max-width: 280px; }
+    main { padding: 16px 20px 40px; max-width: 1600px; margin: 0 auto; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: auto;
+      max-height: calc(100vh - 180px);
+      box-shadow: var(--shadow);
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: .875rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    th {
+      background: #f7f8fa;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-weight: 600;
+      color: var(--muted);
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+    }
+    tr:hover td { background: #f9fafb; }
+    .col-name { max-width: 280px; white-space: normal; line-height: 1.3; }
+    .thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: #eee;
+      display: block;
+    }
+    .thumb-empty {
+      width: 40px;
+      height: 40px;
+      background: #eef0f3;
+      border-radius: 4px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: .7rem;
+    }
+    .settings-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 520px;
+      box-shadow: var(--shadow);
+    }
+    .settings-card h2 { margin: 0 0 8px; font-size: 1.2rem; }
+    .settings-card p.hint { margin: 0 0 20px; color: var(--muted); font-size: .9rem; }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 24, 30, .45);
+      z-index: 100;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px 12px;
+      overflow-y: auto;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: 12px;
+      width: min(920px, 100%);
+      box-shadow: 0 20px 50px rgba(0,0,0,.2);
+      margin-bottom: 40px;
+    }
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .modal-head h2 { margin: 0; font-size: 1.15rem; }
+    .modal-body { padding: 16px 20px 24px; }
+    .modal-foot {
+      padding: 12px 20px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      position: sticky;
+      bottom: 0;
+      background: var(--surface);
+      border-radius: 0 0 12px 12px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 700px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .search { max-width: none; width: 100%; }
+    }
+    .section-title {
+      grid-column: 1 / -1;
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--accent);
+      font-weight: 700;
+      margin: 12px 0 4px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    .section-title:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+    .full { grid-column: 1 / -1; }
+    textarea { min-height: 80px; resize: vertical; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--ink);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: .2s;
+      pointer-events: none;
+      font-size: .9rem;
+    }
+    .toast.show { opacity: 1; transform: none; }
+    .toast.ok { background: var(--ok); }
+    .toast.err { background: var(--danger); }
+    .empty { text-align: center; padding: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="app-bar">
+    <div class="brand">Produse eMAG <span id="countLabel"></span></div>
+    <nav class="tabs">
+      <button type="button" class="tab active" data-tab="produse">Produse</button>
+      <button type="button" class="tab" data-tab="setari">Setări</button>
+    </nav>
+    <div class="actions">
+      <input type="search" class="search" id="search" placeholder="Caută cod, nume, brand…" />
+      <button type="button" class="btn btn-primary" id="btnAdd">+ Adaugă</button>
+      <button type="button" class="btn" id="btnImport">Import Excel</button>
+      <input type="file" id="fileImport" accept=".xlsx,.xls" hidden />
+      <button type="button" class="btn btn-primary" id="btnExport">Export Excel</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="panel-produse" class="panel active">
+      <div class="meta-row">
+        <span id="filterInfo"></span>
+        <button type="button" class="btn btn-sm" id="btnResetData">Resetează la Excel original</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>COD</th>
+              <th>Nume produs</th>
+              <th>Categorie</th>
+              <th>Brand</th>
+              <th>USD</th>
+              <th>Vânzare RON</th>
+              <th>Stoc</th>
+              <th>Poza</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="emptyMsg" hidden>Niciun produs găsit.</div>
+      </div>
+    </section>
+
+    <section id="panel-setari" class="panel">
+      <div class="settings-card">
+        <h2>Setări prețuri</h2>
+        <p class="hint">Schimbă factorii, apoi aplică — recalculează toate produsele.</p>
+        <div class="field">
+          <label for="setUsd">Curs USD → RON</label>
+          <input type="number" id="setUsd" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="setMult">Multiplicator</label>
+          <input type="number" id="setMult" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="setPrp">Factor PRP (× Preț vânzare)</label>
+          <input type="number" id="setPrp" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="setPragMin">Factor Prag Minim (× Preț vânzare)</label>
+          <input type="number" id="setPragMin" step="0.01" min="0" />
+        </div>
+        <div class="field">
+          <label for="setPragMax">Factor Prag Maxim (× Preț vânzare)</label>
+          <input type="number" id="setPragMax" step="0.01" min="0" />
+        </div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary" id="btnApplySettings">Aplică / recalculează</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="modal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="modalTitle">Editează produs</h2>
+        <button type="button" class="btn btn-sm" id="btnCloseModal">Închide</button>
+      </div>
+      <div class="modal-body">
+        <form id="productForm" class="grid-2">
+          <div class="section-title">Identificare</div>
+          <div class="field"><label>No.</label><input name="no" type="text" /></div>
+          <div class="field"><label>Item No.</label><input name="itemNo" type="text" /></div>
+          <div class="field"><label>ID Produs</label><input name="idProdus" type="text" /></div>
+          <div class="field"><label>COD PRODUS</label><input name="codProdus" type="text" required /></div>
+          <div class="field"><label>EAN</label><input name="ean" type="text" /></div>
+          <div class="field"><label>Brand</label><input name="brand" type="text" /></div>
+          <div class="field"><label>Categorie</label><input name="categorie" type="text" /></div>
+          <div class="field"><label>Limba sursă</label><input name="limbaSursa" type="text" /></div>
+          <div class="field"><label>PNK</label><input name="pnk" type="text" /></div>
+
+          <div class="section-title">Texte</div>
+          <div class="field full"><label>Nume produs</label><input name="numeProdus" type="text" /></div>
+          <div class="field full"><label>Description</label><textarea name="description"></textarea></div>
+          <div class="field full"><label>Descriere RO</label><textarea name="descriereRo" rows="5"></textarea></div>
+          <div class="field full"><label>Locație poze</label><input name="locatiePoze" type="text" /></div>
+
+          <div class="section-title">Prețuri</div>
+          <div class="field"><label>Unit Price (USD)</label><input name="unitPriceUsd" type="number" step="0.01" min="0" /></div>
+          <div class="field"><label>Profit</label><input name="profit" type="text" /></div>
+          <div class="field"><label>Preț unitar (RON)</label><input name="pretUnitarRon" type="number" step="0.01" readonly /></div>
+          <div class="field"><label>Preț vânzare (RON)</label><input name="pretVanzareRon" type="number" step="0.01" readonly /></div>
+          <div class="field"><label>PRP</label><input name="prp" type="number" step="0.01" readonly /></div>
+          <div class="field"><label>TVA</label><input name="tva" type="text" value="21%" /></div>
+          <div class="field"><label>Prag Minim</label><input name="pragMinim" type="number" step="0.01" readonly /></div>
+          <div class="field"><label>Prag Maxim</label><input name="pragMaxim" type="number" step="0.01" readonly /></div>
+
+          <div class="section-title">Stoc & livrare</div>
+          <div class="field"><label>Stoc</label><input name="stoc" type="number" step="1" /></div>
+          <div class="field"><label>Zile predare curier</label><input name="zileCurier" type="number" step="1" /></div>
+          <div class="field"><label>Zile reaprovizionare</label><input name="zileReaprovizionare" type="number" step="1" /></div>
+
+          <div class="section-title">Familie</div>
+          <div class="field"><label>Nume familie</label><input name="numeFamilie" type="text" /></div>
+          <div class="field"><label>ID familie</label><input name="idFamilie" type="text" /></div>
+          <div class="field"><label>Tip familie</label><input name="tipFamilie" type="text" /></div>
+
+          <div class="section-title">Poze (URL)</div>
+          <div class="field"><label>Poza 1</label><input name="poza1" type="text" /></div>
+          <div class="field"><label>Poza 2</label><input name="poza2" type="text" /></div>
+          <div class="field"><label>Poza 3</label><input name="poza3" type="text" /></div>
+          <div class="field"><label>Poza 4</label><input name="poza4" type="text" /></div>
+          <div class="field"><label>Poza 5</label><input name="poza5" type="text" /></div>
+          <div class="field"><label>Poza 6</label><input name="poza6" type="text" /></div>
+          <div class="field"><label>Poza 7</label><input name="poza7" type="text" /></div>
+        </form>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="btnCancelModal">Anulează</button>
+        <button type="button" class="btn btn-primary" id="btnSaveProduct">Salvează</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const EMBEDDED = {"settings":{"usdRate":4.6,"multiplicator":3.0,"factorPrp":1.25,"factorPragMin":0.9,"factorPragMax":1.4},"products":[{"no":"1","itemNo":"PRO202310110001\n/","description":"Relax Neck Pillow Seat Back Comfortable Headrest Pillow Simulation Human Massage Travel Pillow Accessories Car Seat Cushion 香槟色45*40*30/BEIGE/RELAX NECK PILLOW-MEMORY FOAM记忆棉","numeProdus":"Perna lombara auto CD CS002-W, spuma memory foam, incalzire, masaj confort, detasabila lavabila, universala, forma oblong, tricotata, 40×20×25 cm","categorie":"Suporturi ortopedice si orteze","brand":"OEM","idProdus":1,"codProdus":"CD-CS002-W-BEJ","ean":8288617918563,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\Perne de masaj pentru gât și spate pentru mașină\\BulkResizePhotos.com (2)","descriereRo":"Introducem „Perna de Masaj pentru Spate Auto” — rasfatul de care ai nevoie la fiecare calatorie. Imagineaza-ti o senzatie placuta de relaxare in timp ce parcurgi drumurile, datorita suportului ergonomic lombar si confortului pe care aceasta perna il ofera zonei spatelui. Fabricata cu atentie din spuma memory foam premium, perna este proiectata sa se adapteze formei spatelui tau. Cu un design ergonomic, functii de masaj si incalzire, iti ofera momente de relaxare in calatoriile lungi sau scure. Spatele tau beneficiaza de sustinere confortabila, iar husa detasabila si lavabila mentine produsul curat si placut de folosit. Indiferent daca esti intr-o excursie de afaceri sau intr-o aventura relaxanta, perna de masaj pentru spate adauga un plus de confort si rafinament fiecarei experiente la volan. Alege confortul pentru calatoriile tale — alege „Perna de Masaj pentru Spate Auto”. Transforma fiecare drum intr-o oaza de relaxare.","unitPriceUsd":6.9,"pretUnitarRon":31.74,"pretVanzareRon":95.22,"profit":"＄34.50","prp":119.03,"tva":"21%","pragMinim":85.7,"pragMaxim":133.31,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Perna auto spate CD CS002-W","idFamilie":1,"tipFamilie":"Culoare (visible)","pnk":"D6DPJF2BM","poza1":"https://89-44-137-240.sslip.io/CD-CS002-W-BEJ/BJ2.jpg","poza2":"https://89-44-137-240.sslip.io/CD-CS002-W-BEJ/BJ1.jpg","poza3":"https://89-44-137-240.sslip.io/CD-CS002-W-BEJ/BJ.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"2","itemNo":"PRO202310110001\n/","description":"Relax Neck Pillow Seat Back Comfortable Headrest Pillow Simulation Human Massage Travel Pillow Accessories Car Seat Cushion 棕色45*40*30/BROWN/RELAX NECK PILLOW-MEMORY FOAM记忆棉","numeProdus":"Perna lombara auto CD CS002-W, spuma memory foam, incalzire, masaj confort, detasabila lavabila, universala, forma oblong, tricotata, 40×20×25 cm","categorie":"Suporturi ortopedice si orteze","brand":"OEM","idProdus":2,"codProdus":"CD-CS002-W-MARO","ean":5305480382505,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\Perne de masaj pentru gât și spate pentru mașină\\BulkResizePhotos.com (3)","descriereRo":"Introducem „Perna de Masaj pentru Spate Auto” — rasfatul de care ai nevoie la fiecare calatorie. Imagineaza-ti o senzatie placuta de relaxare in timp ce parcurgi drumurile, datorita suportului ergonomic lombar si confortului pe care aceasta perna il ofera zonei spatelui. Fabricata cu atentie din spuma memory foam premium, perna este proiectata sa se adapteze formei spatelui tau. Cu un design ergonomic, functii de masaj si incalzire, iti ofera momente de relaxare in calatoriile lungi sau scure. Spatele tau beneficiaza de sustinere confortabila, iar husa detasabila si lavabila mentine produsul curat si placut de folosit. Indiferent daca esti intr-o excursie de afaceri sau intr-o aventura relaxanta, perna de masaj pentru spate adauga un plus de confort si rafinament fiecarei experiente la volan. Alege confortul pentru calatoriile tale — alege „Perna de Masaj pentru Spate Auto”. Transforma fiecare drum intr-o oaza de relaxare.","unitPriceUsd":6.9,"pretUnitarRon":31.74,"pretVanzareRon":95.22,"profit":"＄34.50","prp":119.03,"tva":"21%","pragMinim":85.7,"pragMaxim":133.31,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Perna auto spate CD CS002-W","idFamilie":1,"tipFamilie":"Culoare (visible)","pnk":"D7PMWS2BM","poza1":"https://89-44-137-240.sslip.io/CD-CS002-W-MARO/MR2.jpg","poza2":"https://89-44-137-240.sslip.io/CD-CS002-W-MARO/MR1.jpg","poza3":"https://89-44-137-240.sslip.io/CD-CS002-W-MARO/MR.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"3","itemNo":"PRO202310110001\n/","description":"Relax Neck Pillow Seat Back Comfortable Headrest Pillow Simulation Human Massage Travel Pillow Accessories Car Seat Cushion 黑色45*40*30/BLACK/RELAX NECK PILLOW-MEMORY FOAM记忆棉","numeProdus":"Perna lombara auto CD CS002-W, spuma memory foam, incalzire, masaj confort, detasabila lavabila, universala, forma oblong, tricotata, 40×20×25 cm","categorie":"Suporturi ortopedice si orteze","brand":"OEM","idProdus":3,"codProdus":"CD-CS002-W-NEGRU","ean":4197855196913,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\Perne de masaj pentru gât și spate pentru mașină\\BulkResizePhotos.com (4)","descriereRo":"Introducem „Perna de Masaj pentru Spate Auto” — rasfatul de care ai nevoie la fiecare calatorie. Imagineaza-ti o senzatie placuta de relaxare in timp ce parcurgi drumurile, datorita suportului ergonomic lombar si confortului pe care aceasta perna il ofera zonei spatelui. Fabricata cu atentie din spuma memory foam premium, perna este proiectata sa se adapteze formei spatelui tau. Cu un design ergonomic, functii de masaj si incalzire, iti ofera momente de relaxare in calatoriile lungi sau scure. Spatele tau beneficiaza de sustinere confortabila, iar husa detasabila si lavabila mentine produsul curat si placut de folosit. Indiferent daca esti intr-o excursie de afaceri sau intr-o aventura relaxanta, perna de masaj pentru spate adauga un plus de confort si rafinament fiecarei experiente la volan. Alege confortul pentru calatoriile tale — alege „Perna de Masaj pentru Spate Auto”. Transforma fiecare drum intr-o oaza de relaxare.","unitPriceUsd":6.9,"pretUnitarRon":31.74,"pretVanzareRon":95.22,"profit":"＄34.50","prp":119.03,"tva":"21%","pragMinim":85.7,"pragMaxim":133.31,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Perna auto spate CD CS002-W","idFamilie":1,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/CD-CS002-W-NEGRU/NG2.jpg","poza2":"https://89-44-137-240.sslip.io/CD-CS002-W-NEGRU/NG1.jpg","poza3":"https://89-44-137-240.sslip.io/CD-CS002-W-NEGRU/NG.jpg","poza4":"https://89-44-137-240.sslip.io/CD-CS002-W-NEGRU/PMGS.jpg","poza5":"","poza6":"","poza7":""},{"no":"4","itemNo":"PRO202310110001\n/","description":"Relax Neck Pillow Seat Back Comfortable Headrest Pillow Simulation Human Massage Travel Pillow Accessories Car Seat Cushion 红色45*40*30/RED/RELAX NECK PILLOW-MEMORY FOAM记忆棉","numeProdus":"Perna lombara auto CD CS002-W, spuma memory foam, incalzire, masaj confort, detasabila lavabila, universala, forma oblong, tricotata, 40×20×25 cm","categorie":"Suporturi ortopedice si orteze","brand":"OEM","idProdus":4,"codProdus":"CD-CS002-W-ROSU","ean":7449027782972,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\Perne de masaj pentru gât și spate pentru mașină\\BulkResizePhotos.com (5)","descriereRo":"Introducem „Perna de Masaj pentru Spate Auto” — rasfatul de care ai nevoie la fiecare calatorie. Imagineaza-ti o senzatie placuta de relaxare in timp ce parcurgi drumurile, datorita suportului ergonomic lombar si confortului pe care aceasta perna il ofera zonei spatelui. Fabricata cu atentie din spuma memory foam premium, perna este proiectata sa se adapteze formei spatelui tau. Cu un design ergonomic, functii de masaj si incalzire, iti ofera momente de relaxare in calatoriile lungi sau scure. Spatele tau beneficiaza de sustinere confortabila, iar husa detasabila si lavabila mentine produsul curat si placut de folosit. Indiferent daca esti intr-o excursie de afaceri sau intr-o aventura relaxanta, perna de masaj pentru spate adauga un plus de confort si rafinament fiecarei experiente la volan. Alege confortul pentru calatoriile tale — alege „Perna de Masaj pentru Spate Auto”. Transforma fiecare drum intr-o oaza de relaxare.","unitPriceUsd":6.9,"pretUnitarRon":31.74,"pretVanzareRon":95.22,"profit":"＄34.50","prp":119.03,"tva":"21%","pragMinim":85.7,"pragMaxim":133.31,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Perna auto spate CD CS002-W","idFamilie":1,"tipFamilie":"Culoare (visible)","pnk":"D6X7WS2BM","poza1":"https://89-44-137-240.sslip.io/CD-CS002-W-ROSU/RS2.jpg","poza2":"https://89-44-137-240.sslip.io/CD-CS002-W-ROSU/RS1.jpg","poza3":"https://89-44-137-240.sslip.io/CD-CS002-W-ROSU/RS.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"5","itemNo":"PRO202310110002\n/","description":"1pc Car accessories Solar rotating car aromatherapy ornaments automotive interior decoration with solid aromatherapy pieces 银色 海洋味45*40*30/SILVER/Solar rotating car aromatherapy-ALLUMINIUM","numeProdus":"Odorizant auto aromaterapie ARO-SOL, rotatie solara, difuzor esential, montaj bord, universal, culoare argintiu","categorie":"Odorizante auto","brand":"OEM","idProdus":5,"codProdus":"ARO-SOL-ARGINTIU","ean":3133668731805,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (6)","descriereRo":"Introducem „Odorizant auto aromaterapie cu rotatie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Odorizantul auto cu rotatie solara functioneaza cu energie solara si difuzeaza aroma in habitaclu in timpul condusului. Designul compact se monteaza pe bord sau grila ventilatiei si ocupa spatiu redus. Corpul este realizat din materiale rezistente la caldura si la expunere la soare. Compatibil cu majoritatea autoturismelor si util pentru drumuri zilnice sau calatorii lungi.","unitPriceUsd":3.9,"pretUnitarRon":17.94,"pretVanzareRon":53.82,"profit":"＄19.50","prp":67.28,"tva":"21%","pragMinim":48.44,"pragMaxim":75.35,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Aromaterapie Auto cu Rotație Solară","idFamilie":2,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ARO-SOL-ARGINTIU/ARG1.jpg","poza2":"https://89-44-137-240.sslip.io/ARO-SOL-ARGINTIU/ARG.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"6","itemNo":"PRO202310110002\n/","description":"1pc Car accessories Solar rotating car aromatherapy ornaments automotive interior decoration with solid aromatherapy pieces 金色 海洋味45*40*30/GOLD/Solar rotating car aromatherapy-ALLUMINIUM","numeProdus":"Odorizant auto aromaterapie ARO-SOL, rotatie solara, difuzor esential, montaj bord, universal, culoare auriu","categorie":"Odorizante auto","brand":"OEM","idProdus":6,"codProdus":"ARO-SOL-AURIU","ean":3427548850688,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (7)","descriereRo":"Introducem „Odorizant auto aromaterapie cu rotatie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Odorizantul auto cu rotatie solara functioneaza cu energie solara si difuzeaza aroma in habitaclu in timpul condusului. Designul compact se monteaza pe bord sau grila ventilatiei si ocupa spatiu redus. Corpul este realizat din materiale rezistente la caldura si la expunere la soare. Compatibil cu majoritatea autoturismelor si util pentru drumuri zilnice sau calatorii lungi.","unitPriceUsd":3.9,"pretUnitarRon":17.94,"pretVanzareRon":53.82,"profit":"＄19.50","prp":67.28,"tva":"21%","pragMinim":48.44,"pragMaxim":75.35,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Aromaterapie Auto cu Rotație Solară","idFamilie":2,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ARO-SOL-AURIU/AR1.jpg","poza2":"https://89-44-137-240.sslip.io/ARO-SOL-AURIU/AR.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"7","itemNo":"PRO202310110002\n/","description":"1pc Car accessories Solar rotating car aromatherapy ornaments automotive interior decoration with solid aromatherapy pieces 黑色 海洋味45*40*30/BLACK/Solar rotating car aromatherapy-ALLUMINIUM","numeProdus":"Odorizant auto aromaterapie ARO-SOL, rotatie solara, difuzor esential, montaj bord, universal, culoare negru","categorie":"Odorizante auto","brand":"OEM","idProdus":7,"codProdus":"ARO-SOL-NEGRU","ean":8258271152108,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (8)","descriereRo":"Introducem „Odorizant auto aromaterapie cu rotatie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Odorizantul auto cu rotatie solara functioneaza cu energie solara si difuzeaza aroma in habitaclu in timpul condusului. Designul compact se monteaza pe bord sau grila ventilatiei si ocupa spatiu redus. Corpul este realizat din materiale rezistente la caldura si la expunere la soare. Compatibil cu majoritatea autoturismelor si util pentru drumuri zilnice sau calatorii lungi.","unitPriceUsd":3.9,"pretUnitarRon":17.94,"pretVanzareRon":53.82,"profit":"＄19.50","prp":67.28,"tva":"21%","pragMinim":48.44,"pragMaxim":75.35,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Aromaterapie Auto cu Rotație Solară","idFamilie":2,"tipFamilie":"Culoare (visible)","pnk":"DVH0DS2BM","poza1":"https://89-44-137-240.sslip.io/ARO-SOL-NEGRU/APM.jpg","poza2":"https://89-44-137-240.sslip.io/ARO-SOL-NEGRU/NG.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"8","itemNo":"PRO202310110002\n/","description":"1pc Car accessories Solar rotating car aromatherapy ornaments automotive interior decoration with solid aromatherapy pieces 红色 海洋味45*40*30/RED/Solar rotating car aromatherapy-ALLUMINIUM","numeProdus":"Odorizant auto aromaterapie ARO-SOL, rotatie solara, difuzor esential, montaj bord, universal, culoare rosu","categorie":"Odorizante auto","brand":"OEM","idProdus":8,"codProdus":"ARO-SOL-ROSU","ean":3783536200607,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (9)","descriereRo":"Introducem „Odorizant auto aromaterapie cu rotatie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Odorizantul auto cu rotatie solara functioneaza cu energie solara si difuzeaza aroma in habitaclu in timpul condusului. Designul compact se monteaza pe bord sau grila ventilatiei si ocupa spatiu redus. Corpul este realizat din materiale rezistente la caldura si la expunere la soare. Compatibil cu majoritatea autoturismelor si util pentru drumuri zilnice sau calatorii lungi.","unitPriceUsd":3.9,"pretUnitarRon":17.94,"pretVanzareRon":53.82,"profit":"＄19.50","prp":67.28,"tva":"21%","pragMinim":48.44,"pragMaxim":75.35,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Aromaterapie Auto cu Rotație Solară","idFamilie":2,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ARO-SOL-ROSU/RS1.jpg","poza2":"https://89-44-137-240.sslip.io/ARO-SOL-ROSU/RS2.jpg","poza3":"https://89-44-137-240.sslip.io/ARO-SOL-ROSU/RS.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"9","itemNo":"PRO202310110003\n/","description":"car accessories interior decorate atmosphere light 12V RGB LED fiber optic car led strips app ambient light in car 多色 一拖五 带APP500cm//MULTICOLOR-LED AMBIENT LIGHT","numeProdus":"Kit lumina ambientala auto LED-AMB, RGB 12V, fibra optica, aplicatie telefon, 4 moduri, interior auto","categorie":"Accesorii electronice auto","brand":"OEM","idProdus":9,"codProdus":"LED-AMB","ean":6417446216539,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (10)","descriereRo":"Introducem „Kit lumina ambientala LED pentru interior auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Kitul de lumina ambientala LED include benzi din fibra optica si modul de control pentru personalizarea culorilor in interiorul masinii. Functioneaza la 12V, compatibil cu instalatia auto standard, si ofera moduri RGB reglabile. Controlul se poate face prin aplicatie de pe telefon, in functie de model. Instalarea se face pe zonele dorite ale habitaclului pentru o iluminare uniforma si discreta.","unitPriceUsd":5.3,"pretUnitarRon":24.38,"pretVanzareRon":73.14,"profit":"＄26.50","prp":91.43,"tva":"21%","pragMinim":65.83,"pragMaxim":102.4,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Lumină Ambientală LED pentru Interior Auto","idFamilie":3,"tipFamilie":"Culoare (visible)","pnk":"DG47H42BM","poza1":"https://89-44-137-240.sslip.io/LED-AMB/LAD7.jpg","poza2":"https://89-44-137-240.sslip.io/LED-AMB/LAD6.jpg","poza3":"https://89-44-137-240.sslip.io/LED-AMB/LAD8.jpg","poza4":"https://89-44-137-240.sslip.io/LED-AMB/LAD2.jpg","poza5":"https://89-44-137-240.sslip.io/LED-AMB/LAD3.jpg","poza6":"https://89-44-137-240.sslip.io/LED-AMB/LAD4.jpg","poza7":"https://89-44-137-240.sslip.io/LED-AMB/LAD1.jpg"},{"no":"10","itemNo":"PRO202310110004\n/","description":"Custom-Made Different Colors Universal Leather Car Steering Wheel Cover  36cm,40cm 香槟色 2个36cm, 3个40cm/BEIGE/Universal Leather Car Steering Wheel Cover-RUBBER,SILICONE","numeProdus":"Husa volan auto HUSA-VOL, piele ecologica, diametru 36 cm si 40 cm, cusatura contrast, universal, culoare bej","categorie":"Huse auto","brand":"OEM","idProdus":10,"codProdus":"HUSA-VOL-BEJ","ean":1096845255070,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (11)","descriereRo":"Introducem „Husa universala pentru volan auto din piele ecologica” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Husa pentru volan este confectionata din piele ecologica cu finisaj premium si cusatura decorativa. Protejeaza volanul original de uzura, alunecare si murdarie, oferind in acelasi timp o prindere mai buna. Disponibila pentru volane cu diametru de 36 cm sau 40 cm. Montajul este rapid, fara unelte, si se potriveste pe majoritatea autoturismelor.","unitPriceUsd":1.5,"pretUnitarRon":6.9,"pretVanzareRon":20.7,"profit":"＄7.50","prp":25.88,"tva":"21%","pragMinim":18.63,"pragMaxim":28.98,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Husă Universală pentru Volan Auto din Piele","idFamilie":4,"tipFamilie":"Culoare (visible)","pnk":"DX09842BM","poza1":"https://89-44-137-240.sslip.io/HUSA-VOL-BEJ/BJ1.jpg","poza2":"https://89-44-137-240.sslip.io/HUSA-VOL-BEJ/BJ.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"11","itemNo":"PRO202310110004\n/","description":"Custom-Made Different Colors Universal Leather Car Steering Wheel Cover  36cm,40cm 黑色 2个36cm, 3个40cm/BLACK/Universal Leather Car Steering Wheel Cover-RUBBER,SILICONE","numeProdus":"Husa volan auto HUSA-VOL, piele ecologica, diametru 36 cm si 40 cm, cusatura contrast, universal, culoare negru","categorie":"Huse auto","brand":"OEM","idProdus":11,"codProdus":"HUSA-VOL-NEGRU","ean":8321732460750,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (12)","descriereRo":"Introducem „Husa universala pentru volan auto din piele ecologica” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Husa pentru volan este confectionata din piele ecologica cu finisaj premium si cusatura decorativa. Protejeaza volanul original de uzura, alunecare si murdarie, oferind in acelasi timp o prindere mai buna. Disponibila pentru volane cu diametru de 36 cm sau 40 cm. Montajul este rapid, fara unelte, si se potriveste pe majoritatea autoturismelor.","unitPriceUsd":1.5,"pretUnitarRon":6.9,"pretVanzareRon":20.7,"profit":"＄7.50","prp":25.88,"tva":"21%","pragMinim":18.63,"pragMaxim":28.98,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Husă Universală pentru Volan Auto din Piele","idFamilie":4,"tipFamilie":"Culoare (visible)","pnk":"DPC31L2BM","poza1":"https://89-44-137-240.sslip.io/HUSA-VOL-NEGRU/NG1.jpg","poza2":"https://89-44-137-240.sslip.io/HUSA-VOL-NEGRU/NG.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"12","itemNo":"PRO202310110005\n/","description":"Siri voice assist wireless handsfree kit dual usb QC 3.0 quick charge audio adapter BT 5.0 bluetooth fm transmitter for car 黑白色/BLACK And WHITE/Siri voice assist wireless handsfree kit dual usb","numeProdus":"Modulator FM auto MOD-SIRI, Bluetooth 5.0, asistenta vocala Siri, dual USB QC 3.0, handsfree","categorie":"Radio, CD, DVD player auto","brand":"OEM","idProdus":12,"codProdus":"MOD-SIRI","ean":8386454493301,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (13)","descriereRo":"Introducem „Modulator FM auto cu asistenta vocala Siri” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Modulatorul FM auto permite conectarea telefonului la sistemul audio al masinii prin Bluetooth 5.0. Ofera functie handsfree pentru apeluri, comenzi vocale Siri si incarcare rapida prin doua porturi USB QC 3.0. Se monteaza in priza bricheta si transmite semnalul audio prin frecventa FM. Compatibil cu smartphone-uri iOS si Android.","unitPriceUsd":3.3,"pretUnitarRon":15.18,"pretVanzareRon":45.54,"profit":"＄16.50","prp":56.93,"tva":"21%","pragMinim":40.99,"pragMaxim":63.76,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Modulator cu Asistență Siri","idFamilie":5,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/MOD-SIRI/MAS1.jpg","poza2":"https://89-44-137-240.sslip.io/MOD-SIRI/MAS4.jpg","poza3":"https://89-44-137-240.sslip.io/MOD-SIRI/MAS3.jpg","poza4":"https://89-44-137-240.sslip.io/MOD-SIRI/MAS5.jpg","poza5":"https://89-44-137-240.sslip.io/MOD-SIRI/MAS2.jpg","poza6":"","poza7":""},{"no":"13","itemNo":"PRO202310110006\n/","description":"3 in 1 Wireless Charger 15W Fast Multi-funtional Wireless Charging Dock 白色/WHITE/3 in 1 Wireless Charger","numeProdus":"Incarcator wireless auto INC-WL3, 3 in 1, 15W fast charge, telefon casti ceas, statie incarcare","categorie":"Baterii, acumulatori si incarcatoare","brand":"OEM","idProdus":13,"codProdus":"INC-WL3","ean":5661808157461,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (14)","descriereRo":"Introducem „Incarcator wireless 3 in 1” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Statia de incarcare wireless 3 in 1 permite incarcarea simultana a telefonului, castilor wireless si ceasului inteligent. Puterea maxima de 15W asigura incarcare rapida pentru dispozitive compatibile Qi. Designul compact se potriveste pe bord sau consola centrala. Compatibil cu majoritatea telefoanelor si accesoriilor wireless moderne.","unitPriceUsd":11.99,"pretUnitarRon":55.154,"pretVanzareRon":165.462,"profit":"＄59.95","prp":206.83,"tva":"21%","pragMinim":148.92,"pragMaxim":231.65,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Încărcător Wireless 3 in 1","idFamilie":6,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/INC-WL3/SIWMF1.jpg","poza2":"https://89-44-137-240.sslip.io/INC-WL3/SIWMF2.jpg","poza3":"https://89-44-137-240.sslip.io/INC-WL3/SIWMF3.jpg","poza4":"https://89-44-137-240.sslip.io/INC-WL3/SIWMF4.jpg","poza5":"https://89-44-137-240.sslip.io/INC-WL3/SIWMF6.jpg","poza6":"","poza7":""},{"no":"14","itemNo":"PRO202310110007\n/","description":"New Hot Sale Premium PU Leather Car Back Seat Organizer Car Backseat Storage Bag Pocket For Kids Car Interior Accessories 香槟色 55/40cm55/40cm/BEIGE/Back Seat Organizer-PU LEATHER 58 * 42 cm","numeProdus":"Organizator bancheta spate ORG-BANC, piele PU, buzunare multiple, depozitare accesorii, universal, culoare bej","categorie":"Produse cosmetica auto","brand":"OEM","idProdus":14,"codProdus":"ORG-BANC-BEJ","ean":9358284020865,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (15)","descriereRo":"Introducem „Organizator pentru bancheta din spate” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru bancheta din spate ofera compartimente multiple pentru depozitarea accesoriilor, revistelor, sticlelor si obiectelor mici. Materialul din piele PU este usor de curatat si rezistent la uzura zilnica. Se monteaza pe spatarul scaunelor din fata, cu buzunare accesibile pasagerilor din spate. Potrivit pentru familie, calatorii si utilizare zilnica.","unitPriceUsd":1.05,"pretUnitarRon":4.83,"pretVanzareRon":14.49,"profit":"＄5.25","prp":18.11,"tva":"21%","pragMinim":13.04,"pragMaxim":20.29,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator pentru Bancheta din Spate","idFamilie":7,"tipFamilie":"Culoare (visible)","pnk":"D3JR142BM","poza1":"https://89-44-137-240.sslip.io/ORG-BANC-BEJ/BJ.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-BANC-BEJ/BJ1.jpg","poza3":"https://89-44-137-240.sslip.io/ORG-BANC-BEJ/BJ2.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"15","itemNo":"PRO202310110007\n/","description":"New Hot Sale Premium PU Leather Car Back Seat Organizer Car Backseat Storage Bag Pocket For Kids Car Interior Accessories 黑色58 * 42 cm/BLACK/Back Seat Organizer-PU LEATHER 58 * 42 cm","numeProdus":"Organizator bancheta spate, piele PU, buzunare multiple, depozitare accesorii, universal, culoare negru","categorie":"Produse cosmetica auto","brand":"OEM","idProdus":15,"codProdus":"ORG-BANC-NEGRU","ean":8722012484433,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (16)","descriereRo":"Introducem „Organizator pentru bancheta din spate” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru bancheta din spate ofera compartimente multiple pentru depozitarea accesoriilor, revistelor, sticlelor si obiectelor mici. Materialul din piele PU este usor de curatat si rezistent la uzura zilnica. Se monteaza pe spatarul scaunelor din fata, cu buzunare accesibile pasagerilor din spate. Potrivit pentru familie, calatorii si utilizare zilnica.","unitPriceUsd":1.2,"pretUnitarRon":5.52,"pretVanzareRon":16.56,"profit":"＄6.00","prp":20.7,"tva":"21%","pragMinim":14.9,"pragMaxim":23.18,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator pentru Bancheta din Spate","idFamilie":7,"tipFamilie":"Culoare (visible)","pnk":"DPJR142BM","poza1":"https://89-44-137-240.sslip.io/ORG-BANC-NEGRU/OBSM1.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-BANC-NEGRU/NG.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"16","itemNo":"PRO202310110008\n/","description":"Xnyocn Tablet Car Holder Stand For iPad Air 1 2 Mini 2 3 4 Pro 9.7 10.5 Universal Windshield Mount For 7 to 11 Inch Samsung Tab 黑色/BLACK/TABLET CAR HOLDER-ABS + Silicone+ Metal","numeProdus":"Suport tableta auto SUP-TAB, montaj parbriz, reglabil, compatibil iPad Air Mini Pro 9.7 10.5 inch","categorie":"Suporturi auto","brand":"OEM","idProdus":16,"codProdus":"SUP-TAB","ean":3038909706898,"limbaSursa":"Romana","locatiePoze":"LIPSĂ - nu există poze pentru suport tabletă parbriz","descriereRo":"Introducem „Suport pentru tableta in masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul pentru tableta se monteaza pe parbriz cu ventuza rezistenta si permite ajustarea unghiului de vizualizare. Compatibil cu tablete si iPad Air, Mini, Pro in dimensiuni de 9.7 si 10.5 inch. Constructia stabila mentine dispozitivul fix in timpul condusului. Util pentru navigare, filme sau aplicatii pentru pasageri.","unitPriceUsd":2.55,"pretUnitarRon":11.73,"pretVanzareRon":35.19,"profit":"＄12.75","prp":43.99,"tva":"21%","pragMinim":31.67,"pragMaxim":49.27,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport pentru Tabletă în Mașină","idFamilie":8,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"","poza2":"","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"17","itemNo":"PRO202310110009\n/","description":"Best sell products new product 2021 car accessories interior decorative car accessories cup holder 黑色182 * 76*82mm/BLACK/CUP HOLDER-ABS + Stainless Steel Food Grade","numeProdus":"Suport pahar auto SUP-PAH, prindere grila ventilatie, plastic rezistent, 1 compartiment, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":17,"codProdus":"SUP-PAH","ean":3989435722497,"limbaSursa":"Romana","locatiePoze":"LIPSĂ - nu există poze pentru suport pahar","descriereRo":"Introducem „Suport pentru pahar auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul pentru pahar se monteaza pe grila de ventilatie si mentine bautura stabila in timpul condusului. Constructia din plastic rezistent suporta pahare si sticle de dimensiuni standard. Design compact, usor de instalat si de mutat intre scaune. Compatibil cu majoritatea autoturismelor.","unitPriceUsd":1.85,"pretUnitarRon":8.51,"pretVanzareRon":25.53,"profit":"＄9.25","prp":31.91,"tva":"21%","pragMinim":22.98,"pragMaxim":35.74,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport pentru Pahar Auto","idFamilie":9,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"","poza2":"","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"18","itemNo":"PRO202310110010\n/","description":"FLOVEME Universal Car Phone Holder Magnetic Air Vent Mount Stand 360 Rotation Mobile Phone Holder for iPhone 7 8 X Xs Max Xiaomi 黑色/BLACK/MAGNETIC PHONE HOLDER","numeProdus":"Suport telefon auto SUP-MAG, magnetic, montaj grila ventilatie, rotatie 360 grade, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":18,"codProdus":"SUP-MAG","ean":8850705436947,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (17)","descriereRo":"Introducem „Suport magnetic pentru telefon auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul magnetic pentru telefon se fixeaza pe grila de ventilatie si permite rotirea dispozitivului la 360 de grade. Magnetul puternic mentine telefonul stabil la suprafete denivelate. Compatibil cu majoritatea smartphone-urilor atunci cand este utilizat impreuna cu placuta metalica inclusa. Acces facil la ecran pentru navigare si apeluri.","unitPriceUsd":0.75,"pretUnitarRon":3.45,"pretVanzareRon":10.35,"profit":"＄3.75","prp":12.94,"tva":"21%","pragMinim":9.32,"pragMaxim":14.49,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport Magnetic pentru Telefon Auto","idFamilie":10,"tipFamilie":"Culoare (visible)","pnk":"DJ0VTL2BM","poza1":"https://89-44-137-240.sslip.io/SUP-MAG/SDTM3.jpg","poza2":"https://89-44-137-240.sslip.io/SUP-MAG/SDTM6.jpg","poza3":"https://89-44-137-240.sslip.io/SUP-MAG/SDTM2.jpg","poza4":"https://89-44-137-240.sslip.io/SUP-MAG/SDTM76.jpg","poza5":"https://89-44-137-240.sslip.io/SUP-MAG/SDTM7.jpg","poza6":"","poza7":""},{"no":"19","itemNo":"PRO202310110011\n/","description":"Bluetooth 5.0 FM Transmitter Handsfree Car Radio Modulator MP3 Player With 22.5W USB Super Quick Charge Adapter for Car 黑色/BLACK/MODULATOR SUPER FAST CHARGE","numeProdus":"Modulator FM auto MOD-SFC, Bluetooth 5.0, USB 22.5W super fast charge, handsfree, player MP3","categorie":"Radio, CD, DVD player auto","brand":"OEM","idProdus":19,"codProdus":"MOD-SFC","ean":5948779064913,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (18)","descriereRo":"Introducem „Modulator FM Super Fast Charge” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Modulatorul FM auto cu Bluetooth 5.0 reda muzica de pe telefon prin sistemul audio al masinii si permite apeluri handsfree. Portul USB ofera incarcare rapida de pana la 22.5W pentru dispozitive compatibile. Suporta redare MP3 si functioneaza prin priza bricheta de 12V. Design compact, potrivit pentru utilizare zilnica.","unitPriceUsd":4.35,"pretUnitarRon":20.01,"pretVanzareRon":60.03,"profit":"＄21.75","prp":75.04,"tva":"21%","pragMinim":54.03,"pragMaxim":84.04,"stoc":5,"zileCurier":1,"zileReaprovizionare":14,"numeFamilie":"Modulator Super Fast Charge","idFamilie":11,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/MOD-SFC/MSFCL4.jpg","poza2":"https://89-44-137-240.sslip.io/MOD-SFC/MSFCL5.jpg","poza3":"https://89-44-137-240.sslip.io/MOD-SFC/MSFCL1.jpg","poza4":"https://89-44-137-240.sslip.io/MOD-SFC/MSFCL2.jpg","poza5":"https://89-44-137-240.sslip.io/MOD-SFC/MSFCL3.jpg","poza6":"","poza7":""},{"no":"20","itemNo":"PRO202310110023\n/","description":"Car Kit Modulator Bluetooth 5.0 FM Transmitter Hands Free Dual USB Charger Car MP3 Player for Car 黑色/BLACK/Modulator Bluetooth 5.0 FM","numeProdus":"Modulator FM auto MOD-BT50, Bluetooth 5.0, dual USB, incarcare telefon, handsfree, player MP3","categorie":"Radio, CD, DVD player auto","brand":"OEM","idProdus":20,"codProdus":"MOD-BT50","ean":9017097442676,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (19)","descriereRo":"Introducem „Modulator Bluetooth 5.0 FM” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Modulatorul Bluetooth 5.0 FM conecteaza telefonul la masina pentru redare audio si apeluri handsfree. Dispune de doua porturi USB pentru incarcare simultana a dispozitivelor. Transmisia FM asigura compatibilitate cu orice sistem audio auto. Montaj simplu in priza bricheta, fara instalare permanenta.","unitPriceUsd":5.8,"pretUnitarRon":26.68,"pretVanzareRon":80.04,"profit":"＄29.00","prp":100.05,"tva":"21%","pragMinim":72.04,"pragMaxim":112.06,"stoc":5,"zileCurier":1,"zileReaprovizionare":14,"numeFamilie":"Modulator Bluetooth 5.0 FM","idFamilie":12,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/MOD-BT50/MAMP1.jpg","poza2":"https://89-44-137-240.sslip.io/MOD-BT50/MAMP2.jpg","poza3":"https://89-44-137-240.sslip.io/MOD-BT50/MAMP4.jpg","poza4":"https://89-44-137-240.sslip.io/MOD-BT50/MAMP5.jpg","poza5":"https://89-44-137-240.sslip.io/MOD-BT50/MAMP3.jpg","poza6":"","poza7":""},{"no":"21","itemNo":"PRO202310110022\n/","description":"Universal Car Rearview Mirror Phone Holder 360 Degree Rotation Car Phone Holder Mount Stand For Dash Cam GPS Smartphone Bracket 黑色/BLACK/Car Rearview Mirror Phone Holder-ABS","numeProdus":"Suport telefon auto SUP-OGL, montaj oglinda retrovizoare, rotatie 360 grade, reglabil, universal","categorie":"Suporturi telefon auto","brand":"OEM","idProdus":21,"codProdus":"SUP-OGL","ean":4229445221658,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (20)","descriereRo":"Introducem „Suport pentru telefon pe oglinda retrovizoare” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul pentru telefon se monteaza pe oglinda retrovizoare si permite pozitionarea dispozitivului la nivelul ochilor. Rotatia la 360 de grade si prinderea reglabila asigura vizibilitate buna pentru navigare sau apeluri. Compatibil cu majoritatea smartphone-urilor. Nu blocheaza vizibilitatea prin oglinda atunci cand este montat corect.","unitPriceUsd":1.22,"pretUnitarRon":5.612,"pretVanzareRon":16.836,"profit":"＄6.10","prp":21.05,"tva":"21%","pragMinim":15.15,"pragMaxim":23.57,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport telefon oglindă retrovizoare","idFamilie":13,"tipFamilie":"Culoare (visible)","pnk":"DY3STL2BM","poza1":"https://89-44-137-240.sslip.io/SUP-OGL/STAO6.jpg","poza2":"https://89-44-137-240.sslip.io/SUP-OGL/STAO1.jpg","poza3":"https://89-44-137-240.sslip.io/SUP-OGL/STAO4.jpg","poza4":"https://89-44-137-240.sslip.io/SUP-OGL/STAO5.jpg","poza5":"https://89-44-137-240.sslip.io/SUP-OGL/STAO3.jpg","poza6":"https://89-44-137-240.sslip.io/SUP-OGL/STAO2.jpg","poza7":""},{"no":"22","itemNo":"PRO202310110021\n/","description":"Car Seat Organizer Crevice Storage Box Car Organizer Gap Slit Filler Holder For Wallet Phone Slit Pocket Auto Car Accessories 黑色 2个主驾驶，3个副驾驶/BLACK/Car Seat Organizer","numeProdus":"Organizator scaun auto ORG-SCA, filler fanta scaun, depozitare telefon portofel, piele PU, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":22,"codProdus":"ORG-SCA","ean":1023136443434,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (21)","descriereRo":"Introducem „Organizator pentru fanta scaun auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru fanta dintre scaun si consola centrala previne caderea obiectelor mici in spatiul ingust. Ofera compartimente pentru telefon, portofel, chei si accesorii. Materialul flexibil din piele PU se adapteaza la dimensiunea fantei. Montaj rapid, fara unelte, compatibil cu majoritatea autoturismelor.","unitPriceUsd":1.3,"pretUnitarRon":5.98,"pretVanzareRon":17.94,"profit":"＄6.50","prp":22.43,"tva":"21%","pragMinim":16.15,"pragMaxim":25.12,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator scaun auto","idFamilie":14,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ORG-SCA/SBAP5.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-SCA/SBAP4.jpg","poza3":"https://89-44-137-240.sslip.io/ORG-SCA/SBAP1.jpg","poza4":"https://89-44-137-240.sslip.io/ORG-SCA/SBAP2.jpg","poza5":"https://89-44-137-240.sslip.io/ORG-SCA/SBAP3.jpg","poza6":"","poza7":""},{"no":"23","itemNo":"PRO202310110020\n/","description":"Car Child Safety Shoulder Guard Seat Belt Adjustment Retainer Anti-Strangle Neck Seat Belt 粉色 28*12*728*12*7/PINK/Car Child Safety SHOULDER GUARD","numeProdus":"Protectie centura siguranta copii PROT-CENT, clip reglabil, anti-rosu gat, material moale, 28x12 cm","categorie":"Sisteme de siguranta copii","brand":"OEM","idProdus":23,"codProdus":"PROT-CENT","ean":2284657159504,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (22)","descriereRo":"Introducem „Protectie centura de siguranta pentru copii” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Protectia pentru centura de siguranta ajusteaza pozitia centurii pe umarul copilului si reduce presiunea pe zona gatului. Materialul moale si clipul reglabil ofera confort in calatorii lungi. Se monteaza rapid pe centura existenta, fara modificari ale scaunului. Dimensiuni aproximative 28x12 cm, potrivit pentru copii.","unitPriceUsd":0.9,"pretUnitarRon":4.14,"pretVanzareRon":12.42,"profit":"＄4.50","prp":15.53,"tva":"21%","pragMinim":11.18,"pragMaxim":17.39,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Protecție centură siguranță copii","idFamilie":15,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PROT-CENT/RZ1.jpg","poza2":"https://89-44-137-240.sslip.io/PROT-CENT/RZ2.jpg","poza3":"https://89-44-137-240.sslip.io/PROT-CENT/RZ3.jpg","poza4":"https://89-44-137-240.sslip.io/PROT-CENT/RZ.jpg","poza5":"","poza6":"","poza7":""},{"no":"24","itemNo":"PRO202310110019\n/","description":"2022 New Auto Glass UV Cure Light Car Window Resin Cured Ultraviolet UV Lamp Lighting Windshield Repair Tools Fast delivery 黑白色/BLACK AND WHITE/CAR GLASS UV CURE LIGHT","numeProdus":"Lampa UV reparatie parbriz UV-PARB, uscare rasina, reparatie fisuri geam auto, portabila, 12V","categorie":"Scule auto","brand":"OEM","idProdus":24,"codProdus":"UV-PARB","ean":4391777126755,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (23)","descriereRo":"Introducem „Lampa UV pentru repararea parbrizului auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Lampa UV este destinata intarzirii rapide a rasinii folosite la repararea fisurilor si ciobiturilor din parbriz. Emisia ultravioleta accelereaza procesul de intarire, reducand timpul de asteptare. Design portabil, usor de utilizat acasa sau in service. Compatibila cu kiturile standard de reparatie parbriz. Alimentare in functie de model.","unitPriceUsd":1.88,"pretUnitarRon":8.648,"pretVanzareRon":25.944,"profit":"＄9.40","prp":32.43,"tva":"21%","pragMinim":23.35,"pragMaxim":36.32,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Lampă UV reparare parbriz","idFamilie":16,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/UV-PARB/LUV3.jpg","poza2":"https://89-44-137-240.sslip.io/UV-PARB/LUV5.jpg","poza3":"https://89-44-137-240.sslip.io/UV-PARB/LUV1.jpg","poza4":"https://89-44-137-240.sslip.io/UV-PARB/LUV2.jpg","poza5":"https://89-44-137-240.sslip.io/UV-PARB/LUV4.jpg","poza6":"","poza7":""},{"no":"25","itemNo":"PRO202310110018\n/","description":"The new C15 Bluetooth 5.0 Fm Transmitter Car Kit MP3 Modulator Car Charger 5V 3.1A Double USB With Type-C port 黑色/BLACK/Bluetooth FM Transmitter","numeProdus":"Modulator FM auto MOD-BTFM C15, Bluetooth 5.0, dual USB 5V 3.1A, incarcare telefon, player MP3","categorie":"Radio, CD, DVD player auto","brand":"OEM","idProdus":25,"codProdus":"MOD-BTFM","ean":8732128867662,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (24)","descriereRo":"Introducem „Modulator Bluetooth FM C15” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Modulatorul FM C15 cu Bluetooth 5.0 reda audio de pe telefon prin sistemul masinii si ofera doua porturi USB pentru incarcare la 5V 3.1A. Functioneaza ca handsfree pentru apeluri si suporta redare MP3. Se instaleaza in priza bricheta. Solutie practica pentru masini fara conectivitate Bluetooth integrata.","unitPriceUsd":2.8,"pretUnitarRon":12.88,"pretVanzareRon":38.64,"profit":"＄14.00","prp":48.3,"tva":"21%","pragMinim":34.78,"pragMaxim":54.1,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Modulator Bluetooth FM","idFamilie":17,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/MOD-BTFM/MMF1.jpg","poza2":"https://89-44-137-240.sslip.io/MOD-BTFM/MMF3.jpg","poza3":"https://89-44-137-240.sslip.io/MOD-BTFM/MMF5.jpg","poza4":"https://89-44-137-240.sslip.io/MOD-BTFM/MMF4.jpg","poza5":"https://89-44-137-240.sslip.io/MOD-BTFM/MMF2.jpg","poza6":"","poza7":""},{"no":"26","itemNo":"PRO202310110017\n/","description":"Motorcycle Lights Drone Strobe Light USB LED Anti-Collision Bike Aircraft Night Flying Mini Flashing Warning Signal Light 多色/MULTICOLOR/UNIVERSAL WARNING LIGHTS","numeProdus":"Lumina avertizare universala LUM-WARN, LED stroboscopic, USB reincarcabil, bicicleta drona auto, mini","categorie":"Kit-uri siguranta auto","brand":"OEM","idProdus":26,"codProdus":"LUM-WARN","ean":2681529808094,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (25)","descriereRo":"Introducem „Lumina avertizare universala LED” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Lumina de avertizare LED cu mod stroboscopic este utila pentru situatii de urgenta, bicicleta, mers pe jos sau marcare vizibila. Se incarca prin USB si ofera autonomie pentru utilizare repetata. Design compact si usor de transportat. Poate fi fixata pe diverse suprafete in functie de accesoriile incluse.","unitPriceUsd":0.43,"pretUnitarRon":1.978,"pretVanzareRon":5.934,"profit":"＄2.15","prp":7.42,"tva":"21%","pragMinim":5.34,"pragMaxim":8.31,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Lumină avertizare universală","idFamilie":18,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/LUM-WARN/LSM5.jpg","poza2":"https://89-44-137-240.sslip.io/LUM-WARN/LSM3.jpg","poza3":"https://89-44-137-240.sslip.io/LUM-WARN/LSM4.jpg","poza4":"https://89-44-137-240.sslip.io/LUM-WARN/LSM1.jpg","poza5":"https://89-44-137-240.sslip.io/LUM-WARN/LSM2.jpg","poza6":"","poza7":""},{"no":"27","itemNo":"PRO202310110016\n/","description":"Car Washing Kit 23 Pcs Drill Soft Brushes Attachement Auto Detailing Brush For Carpet Mat Wheel Grille Cleaning 多色/MULTICOLOR/CAR WASHING KIT 23 PC","numeProdus":"Set spalare auto SPAL-23, 23 piese, perii bormasina, detailing interior exterior, covor jante grila","categorie":"Accesorii scule auto","brand":"OEM","idProdus":27,"codProdus":"SPAL-23","ean":8162443782119,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (26)","descriereRo":"Introducem „Set spalare auto 23 piese” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Setul de spalare auto contine 23 de piese, inclusiv perii atasabile la bormasina pentru curatarea covorului, saltelei, jantelor si grilei. Periile moi protejeaza suprafetele delicate, iar cele rigide indeparteaza murdaria persistenta. Compatibil cu majoritatea bormasinilor cu mandrina standard. Util pentru intretinerea periodica a masinii acasa.","unitPriceUsd":4.8,"pretUnitarRon":22.08,"pretVanzareRon":66.24,"profit":"＄24.00","prp":82.8,"tva":"21%","pragMinim":59.62,"pragMaxim":92.74,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Set spălare auto 23 piese","idFamilie":19,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/SPAL-23/KCC2.jpg","poza2":"https://89-44-137-240.sslip.io/SPAL-23/KCC1.jpg","poza3":"https://89-44-137-240.sslip.io/SPAL-23/KCC5.jpg","poza4":"https://89-44-137-240.sslip.io/SPAL-23/KCC3.jpg","poza5":"https://89-44-137-240.sslip.io/SPAL-23/KCC4.jpg","poza6":"","poza7":""},{"no":"28","itemNo":"PRO202310110015\n/","description":"Car Food Tray with Clamp Bracket Folding Dining Table Drink Holder Car Pallet Back Seat Water Car Cup Holder Car Swivel Tray 黑色/BLACK/Car Food Tray","numeProdus":"Tava masa auto TAV-MNC, pliabila, suport bautura, prindere scaun spate, masa servire calatorii","categorie":"Suporturi auto","brand":"OEM","idProdus":28,"codProdus":"TAV-MNC","ean":8041031073368,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (27)","descriereRo":"Introducem „Tava pliabila pentru masa in masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Tava pliabila pentru masa se monteaza pe spatarul scaunului din fata si ofera o suprafata plana pentru mancare sau bauturi in timpul calatoriilor. Include suport pentru pahar si se pliaza pentru depozitare. Structura stabila din material rezistent. Utila pentru calatorii cu copii sau pauze pe drum.","unitPriceUsd":3.09,"pretUnitarRon":14.214,"pretVanzareRon":42.642,"profit":"＄15.45","prp":53.3,"tva":"21%","pragMinim":38.38,"pragMaxim":59.7,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Tavă pliabilă mâncare auto","idFamilie":20,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/TAV-MNC/SMM6.jpg","poza2":"https://89-44-137-240.sslip.io/TAV-MNC/SMM7.jpg","poza3":"https://89-44-137-240.sslip.io/TAV-MNC/SMM4.jpg","poza4":"https://89-44-137-240.sslip.io/TAV-MNC/SMM1.jpg","poza5":"https://89-44-137-240.sslip.io/TAV-MNC/SMM5.jpg","poza6":"https://89-44-137-240.sslip.io/TAV-MNC/SMM2.jpg","poza7":"https://89-44-137-240.sslip.io/TAV-MNC/SMM3.jpg"},{"no":"29","itemNo":"PRO202310110014\n/","description":"Auto Anti-slip Pad Dashboard Storage Mat Mobile Phone GPS Stand Perfume Temporary Parking Sign Car Interior Accessories 黑色/BLACK/Auto Anti-slip Pad Dashboard","numeProdus":"Tava antiderapanta bord TAV-ANT, silicon, suport telefon GPS, depozitare accesorii, semn parcare","categorie":"Suporturi auto","brand":"OEM","idProdus":29,"codProdus":"TAV-ANT","ean":5840541641158,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (37)","descriereRo":"Introducem „Tava antiderapanta pentru bord auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Tava antiderapanta din silicon se aseaza pe bord si mentine telefonul, GPS-ul, cheile si accesoriile pe loc in timpul condusului. Suprafata din silicon previne alunecarea obiectelor la franare sau viraje. Include zone pentru depozitare si semn de parcare temporara, in functie de model. Usor de curatat si reutilizabil.","unitPriceUsd":1.9,"pretUnitarRon":8.74,"pretVanzareRon":26.22,"profit":"＄9.50","prp":32.78,"tva":"21%","pragMinim":23.6,"pragMaxim":36.71,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Tavă antiderapantă bord auto","idFamilie":21,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/TAV-ANT/SAAT4.jpg","poza2":"https://89-44-137-240.sslip.io/TAV-ANT/SAAT3.jpg","poza3":"https://89-44-137-240.sslip.io/TAV-ANT/SAAT2.jpg","poza4":"https://89-44-137-240.sslip.io/TAV-ANT/SAAT1.jpg","poza5":"","poza6":"","poza7":""},{"no":"30","itemNo":"PRO202310110013\n/","description":"New Car Taxi Headrest Backseat Retractable Cord 3 in 1 Power Charging Station Car Charger Type C Micro USB for phone tablet 黑色/BLACK/Retractable Cord 3 in 1","numeProdus":"Cablu incarcare retractabil CBL-RET, 3 in 1, statie tetiera, Lightning Type-C Micro USB, 1.2 m","categorie":"Accesorii electronice auto","brand":"OEM","idProdus":30,"codProdus":"CBL-RET","ean":9422376081048,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (38)","descriereRo":"Introducem „Cablu retractabil 3 in 1 pentru tetiera” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Cablu retractabil 3 in 1 se monteaza pe tetiera si ofera pasagerilor din spate acces la incarcare prin Lightning, Type-C si Micro USB. Lungimea retractabila de aproximativ 1.2 m reduce incarcatura cablurilor in habitaclu. Ideal pentru taxi, ridesharing sau calatorii de familie. Constructie compacta, cabluri ascunse in carcasa.","unitPriceUsd":11.4,"pretUnitarRon":52.44,"pretVanzareRon":157.32,"profit":"＄57.00","prp":196.65,"tva":"21%","pragMinim":141.59,"pragMaxim":220.25,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Cablu retractabil 3 in 1","idFamilie":22,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/CBL-RET/IUML4.jpg","poza2":"https://89-44-137-240.sslip.io/CBL-RET/IUML3.jpg","poza3":"https://89-44-137-240.sslip.io/CBL-RET/IUML2.jpg","poza4":"https://89-44-137-240.sslip.io/CBL-RET/IUML1.jpg","poza5":"","poza6":"","poza7":""},{"no":"31","itemNo":"PRO202310110012\n/","description":"Car Trash Bin Hanging Vehicle Garbage Dust Case Storage Box Plastic Pressing Square Trash Can Type Auto Car Interior Accessories 黑色/BLACK/Car Trash Bin","numeProdus":"Cos gunoi auto COS-GUN, suspendat, plastic rezistent, capac apasare, tip A, depozitare deseuri","categorie":"Suporturi auto","brand":"OEM","idProdus":31,"codProdus":"COS-GUN","ean":9786337161096,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (39)","descriereRo":"Introducem „Cos de gunoi pentru masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Cosul de gunoi auto se suspenda pe tetiera sau manerul usii si colecteaza deseurile mici din habitaclu. Capacul cu apasare permite inchiderea igienica, iar materialul plastic este usor de golit si curatat. Dimensiune compacta, nu ocupa spatiu pe podea. Potrivit pentru utilizare zilnica.","unitPriceUsd":0.68,"pretUnitarRon":3.128,"pretVanzareRon":9.384,"profit":"＄3.40","prp":11.73,"tva":"21%","pragMinim":8.45,"pragMaxim":13.14,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Coș de gunoi auto","idFamilie":23,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/COS-GUN/CM1.jpg","poza2":"https://89-44-137-240.sslip.io/COS-GUN/CM2.jpg","poza3":"https://89-44-137-240.sslip.io/COS-GUN/CM3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"32","itemNo":"PRO202310110206\n/","description":"24PCS Car Detailing Brush Set, Car Detailing kit,car cleaning gel 红色/MOSTLY RED/24PCS Car Detailing Brush Set","numeProdus":"Set pensule detailing auto SET-PENS, 24 piese, perii interior exterior, gel curatare inclus","categorie":"Accesorii scule auto","brand":"OEM","idProdus":32,"codProdus":"SET-PENS","ean":7996938521737,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (35)","descriereRo":"Introducem „Set 24 pensule pentru detailing auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Setul contine 24 de pensule pentru curatarea zonelor greu accesibile din interiorul si exteriorul masinii. Include perii pentru grila, jante, ventilatii, butoane si cusaturi. Pensulele din materiale moi previn zgarieturile pe suprafetele sensibile. Gelul de curatare inclus ajuta la indepartarea prafului si murdariei fine.","unitPriceUsd":6.35,"pretUnitarRon":29.21,"pretVanzareRon":87.63,"profit":"＄31.75","prp":109.54,"tva":"21%","pragMinim":78.87,"pragMaxim":122.68,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Set 24 pensule detaliere auto","idFamilie":24,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/SET-PENS/KCMI3.jpg","poza2":"https://89-44-137-240.sslip.io/SET-PENS/KCMI1.jpg","poza3":"https://89-44-137-240.sslip.io/SET-PENS/KCMI2.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"33","itemNo":"PRO202310110205\n/","description":"26PCS/Set Drill Clean Car Interior Cleaning Brush Car Wash Cleaning Kit Car Wash Tools Detailing Brushes Set -Drill not Included 蓝色/MOSTLY BLUE/Cleaning Kit Car Wash Tools","numeProdus":"Kit curatare auto KIT-CUR, 26 piese, perii bormasina, interior exterior, accesorii detailing","categorie":"Accesorii scule auto","brand":"OEM","idProdus":33,"codProdus":"KIT-CUR","ean":6114711861868,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (36)","descriereRo":"Introducem „Kit curatare auto cu gel” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Kitul de curatare auto include 26 de piese pentru spalarea si intretinerea interiorului si exteriorului. Periile sunt compatibile cu bormasina pentru curatarea eficienta a covoarelor, tapiteriei si zonelor inguste. Accesoriile acopera o gama larga de suprafete. Solutie completa pentru detailing acasa.","unitPriceUsd":6.6,"pretUnitarRon":30.36,"pretVanzareRon":91.08,"profit":"＄33.00","prp":113.85,"tva":"21%","pragMinim":81.97,"pragMaxim":127.51,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Kit curățare auto cu gel","idFamilie":25,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/KIT-CUR/KCMGC2.jpg","poza2":"https://89-44-137-240.sslip.io/KIT-CUR/KCMGC1.jpg","poza3":"https://89-44-137-240.sslip.io/KIT-CUR/KCMGC3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"34","itemNo":"PRO202310110204\n/","description":"Car Visor Organizer Car Visor Sunglasses Holder Visor Accessories for Trucks Interior Visor Organizer for Trucks Car Accessories 香槟色/BEIGE/Car Visor Organizer","numeProdus":"Organizator parasolar auto ORG-PARA, buzunare multiple, suport ochelari soare, carduri, universal, culoare bej","categorie":"Suporturi auto","brand":"OEM","idProdus":34,"codProdus":"ORG-PARA-BEJ","ean":6983766895391,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (28)","descriereRo":"Introducem „Organizator pentru parasolar auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru parasolar ofera buzunare pentru ochelari de soare, carduri, bilete si accesorii mici. Se monteaza pe parasolarul masinii, pastrand obiectele la indemana fara a aglomera bordul. Material rezistent la caldura si uzura zilnica. Compatibil cu majoritatea autoturismelor si camioanelor usoare.","unitPriceUsd":1.13,"pretUnitarRon":5.198,"pretVanzareRon":15.594,"profit":"＄5.65","prp":19.49,"tva":"21%","pragMinim":14.03,"pragMaxim":21.83,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator parasolar auto","idFamilie":26,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ORG-PARA-BEJ/OMV4.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-PARA-BEJ/OMV3.jpg","poza3":"https://89-44-137-240.sslip.io/ORG-PARA-BEJ/OMV.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"35","itemNo":"PRO202310110204\n/","description":"Car Visor Organizer Car Visor Sunglasses Holder Visor Accessories for Trucks Interior Visor Organizer for Trucks Car Accessories 灰色/GRAY/Car Visor Organizer","numeProdus":"Organizator parasolar auto ORG-PARA, buzunare multiple, suport ochelari soare, carduri, universal, culoare gri","categorie":"Suporturi auto","brand":"OEM","idProdus":35,"codProdus":"ORG-PARA-GRI","ean":"5944394038407","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (29)","descriereRo":"Introducem „Organizator pentru parasolar auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru parasolar ofera buzunare pentru ochelari de soare, carduri, bilete si accesorii mici. Se monteaza pe parasolarul masinii, pastrand obiectele la indemana fara a aglomera bordul. Material rezistent la caldura si uzura zilnica. Compatibil cu majoritatea autoturismelor si camioanelor usoare.","unitPriceUsd":1.13,"pretUnitarRon":5.198,"pretVanzareRon":15.594,"profit":"＄5.65","prp":19.49,"tva":"21%","pragMinim":14.03,"pragMaxim":21.83,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator parasolar auto","idFamilie":26,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ORG-PARA-GRI/OMV1.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-PARA-GRI/OMV5.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"36","itemNo":"PRO202310110204\n/","description":"Car Visor Organizer Car Visor Sunglasses Holder Visor Accessories for Trucks Interior Visor Organizer for Trucks Car Accessories 黑色/BLACK/Car Visor Organizer","numeProdus":"Organizator parasolar auto ORG-PARA, buzunare multiple, suport ochelari soare, carduri, universal, culoare negru","categorie":"Suporturi auto","brand":"OEM","idProdus":36,"codProdus":"ORG-PARA-NEGRU","ean":"5940480808985","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (30)","descriereRo":"Introducem „Organizator pentru parasolar auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru parasolar ofera buzunare pentru ochelari de soare, carduri, bilete si accesorii mici. Se monteaza pe parasolarul masinii, pastrand obiectele la indemana fara a aglomera bordul. Material rezistent la caldura si uzura zilnica. Compatibil cu majoritatea autoturismelor si camioanelor usoare.","unitPriceUsd":1.13,"pretUnitarRon":5.198,"pretVanzareRon":15.594,"profit":"＄5.65","prp":19.49,"tva":"21%","pragMinim":14.03,"pragMaxim":21.83,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator parasolar auto","idFamilie":26,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ORG-PARA-NEGRU/OMV6.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-PARA-NEGRU/OMV2.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"37","itemNo":"PRO202310110203\n/","description":"Car Trunk Storage Box Extra Large Collapsible Organizer With 3 Compartments Home Car Seat Organizer Car Accessories Interior 黑色/BLACK/Car Trunk Storage Box","numeProdus":"Organizator portbagaj ORG-PORT, pliabil, 3 compartimente, capacitate mare, material rezistent","categorie":"Cutii portbagaj","brand":"OEM","idProdus":37,"codProdus":"ORG-PORT","ean":"5943167252613","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (31)","descriereRo":"Introducem „Organizator pliabil pentru portbagaj” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Organizatorul pentru portbagaj este pliabil si are trei compartimente pentru unelte, echipamente sau cumparaturi. Structura rigida mentine forma chiar si cand este plin. Se pliaza pentru depozitare cand nu este folosit. Material rezistent la murdarie si umezeala, usor de curatat.","unitPriceUsd":1.1,"pretUnitarRon":5.06,"pretVanzareRon":15.18,"profit":"＄5.50","prp":18.98,"tva":"21%","pragMinim":13.66,"pragMaxim":21.25,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Organizator portbagaj auto","idFamilie":27,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ORG-PORT/OP1.jpg","poza2":"https://89-44-137-240.sslip.io/ORG-PORT/OP2.jpg","poza3":"https://89-44-137-240.sslip.io/ORG-PORT/OP3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"38","itemNo":"PRO202310110202\n/","description":"factory custom Mink plush winter furry car steering wheel cover hand made 红色 2个36cm, 3个38cm/RED/car steering wheel cover-LEATHER","numeProdus":"Husa volan auto HUS-VOL2, blana sintetica, iarna, diametru 36 cm si 38 cm, calduroasa, handmade","categorie":"Huse auto","brand":"OEM","idProdus":38,"codProdus":"HUS-VOL2","ean":"5945833080117","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (34)","descriereRo":"Introducem „Husa pentru volan auto din blana sintetica” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Husa pentru volan din blana sintetica ofera confort termic in sezonul rece si o prindere mai buna pe volan. Disponibila pentru diametre de 36 cm si 38 cm. Materialul moale protejeaza volanul original si se monteaza rapid. Finisaj artizanal, potrivit pentru masini fara incalzire volan.","unitPriceUsd":3.3,"pretUnitarRon":15.18,"pretVanzareRon":45.54,"profit":"＄16.50","prp":56.93,"tva":"21%","pragMinim":40.99,"pragMaxim":63.76,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Husă volan auto","idFamilie":28,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/HUS-VOL2/RS1.jpg","poza2":"https://89-44-137-240.sslip.io/HUS-VOL2/RS.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"39","itemNo":"PRO202310110201\n/","description":"Car Sunglasses Holder Sun Visor Sunglasses Clip Cowhide Glasses Case Mount Ticket Card Clip Car Interior Accessories 黑色/BLACK/Car Sunglasses Holder","numeProdus":"Suport ochelari soare SUP-OCL, clip parasolar, piele ecologica, suport carduri, montaj rapid","categorie":"Suporturi auto","brand":"OEM","idProdus":39,"codProdus":"SUP-OCL","ean":"5947551722232","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (32)","descriereRo":"Introducem „Suport pentru ochelari de soare pe parasolar” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul pentru ochelari de soare se prinde de parasolar cu clip metalic si protejeaza lentilele prin depozitare sigura. Include spatii pentru carduri si bilete. Finisaj din piele ecologica, aspect discret. Acces rapid la ochelari in timpul condusului pe soare.","unitPriceUsd":1.84,"pretUnitarRon":8.464,"pretVanzareRon":25.392,"profit":"＄9.20","prp":31.74,"tva":"21%","pragMinim":22.85,"pragMaxim":35.55,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport ochelari soare auto","idFamilie":29,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/SUP-OCL/SOS1.jpg","poza2":"https://89-44-137-240.sslip.io/SUP-OCL/SOS2.jpg","poza3":"https://89-44-137-240.sslip.io/SUP-OCL/SOS3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"40","itemNo":"PRO202310110199\n/","description":"Baby Car Mirror Cartoon Car Back Seat Rear View Facing Headrest Mount Child Kids Infant Baby Safety Monitor Accessories 黑色/BLACK/Baby Car Mirror","numeProdus":"Oglinda bebelusi auto OGL-BEB, montaj tetiera, vizualizare spate, unghi reglabil, siguranta copii","categorie":"Oglinzi auto","brand":"OEM","idProdus":40,"codProdus":"OGL-BEB","ean":"5947145924868","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (42)","descriereRo":"Introducem „Oglinda pentru bebelusi in masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Oglinda pentru bebelusi permite soferului sa vizualizeze copilul in scaunul din spate prin oglinda retrovizoare. Se monteaza pe tetiera scaunului copilului, cu unghi reglabil. Constructie din material rezistent la impact. Ajuta la supravegherea copilului fara intoarcerea capului de la drum.","unitPriceUsd":1.5,"pretUnitarRon":6.9,"pretVanzareRon":20.7,"profit":"＄7.50","prp":25.88,"tva":"21%","pragMinim":18.63,"pragMaxim":28.98,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Oglindă bebeluși auto","idFamilie":30,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/OGL-BEB/OC4.jpg","poza2":"https://89-44-137-240.sslip.io/OGL-BEB/OC2.jpg","poza3":"https://89-44-137-240.sslip.io/OGL-BEB/OC1.jpg","poza4":"https://89-44-137-240.sslip.io/OGL-BEB/OC3.jpg","poza5":"","poza6":"","poza7":""},{"no":"41","itemNo":"PRO202310110198\n/","description":"1Pcs Car Seat Belt Clip Extension Plug Alloy Car Safety Seat Socket Lock Buckle Seatbelt Clip Extender Converter Auto Accessorie 黑白色 不带logo/BLACK AND WHITE/Seat Belt Clip Extension-METAL","numeProdus":"Prolungator centura siguranta PROL-CENT, clip aliaj, extensie 5 cm, compatibil universal, 1 bucata","categorie":"Kit-uri siguranta auto","brand":"OEM","idProdus":41,"codProdus":"PROL-CENT","ean":"5941038881856","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (47)","descriereRo":"Introducem „Prolungator pentru centura de siguranță” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Prolungatorul pentru centura de siguranță adauga aproximativ 5 cm la lungimea centurii pentru un confort mai bun. Clipul din aliaj se fixeaza usor pe centura existenta. Util pentru persoane inalte sau pentru ajustarea pozitiei centurii pe umar. Compatibil cu majoritatea centurilor auto standard.","unitPriceUsd":1.15,"pretUnitarRon":5.29,"pretVanzareRon":15.87,"profit":"＄5.75","prp":19.84,"tva":"21%","pragMinim":14.28,"pragMaxim":22.22,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Prolungator centură siguranță","idFamilie":31,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PROL-CENT/AUPCS11.jpg","poza2":"https://89-44-137-240.sslip.io/PROL-CENT/AUPCS1.jpg","poza3":"https://89-44-137-240.sslip.io/PROL-CENT/AUPCS3.jpg","poza4":"https://89-44-137-240.sslip.io/PROL-CENT/AUPCS2.jpg","poza5":"","poza6":"","poza7":""},{"no":"42","itemNo":"PRO202310110197\n/","description":"Car Air Freshener Perfume Turntable Car Perfume Clip Vinyl Spin Phonograph Air Vent Outlet Aromatherapy Clip Smell Diffuser 黑色/BLACK/Car Air Freshener Perfume","numeProdus":"Parfum auto PARF-AUTO, difuzor grila ventilatie, design vinil, clip prindere, aroma persistenta","categorie":"Odorizante auto","brand":"OEM","idProdus":42,"codProdus":"PARF-AUTO","ean":"5949451644973","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (46)","descriereRo":"Introducem „Parfum auto pentru grila de ventilatie” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Parfumul auto cu design vinil se monteaza pe grila de ventilatie si difuzeaza aroma in habitaclu atunci cand aerul conditionat sau incalzirea sunt pornite. Clipul de prindere asigura montaj stabil. Rezerva de aroma ofera persistenta indelungata. Nu necesita baterii sau alimentare electrica.","unitPriceUsd":1.5,"pretUnitarRon":6.9,"pretVanzareRon":20.7,"profit":"＄7.50","prp":25.88,"tva":"21%","pragMinim":18.63,"pragMaxim":28.98,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Parfum auto","idFamilie":32,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PARF-AUTO/DAP11.jpg","poza2":"https://89-44-137-240.sslip.io/PARF-AUTO/DAP1.jpg","poza3":"https://89-44-137-240.sslip.io/PARF-AUTO/DAP3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"43","itemNo":"PRO202310110196\n/","description":"Universal soporte para celular 360 Degrees Rotate Adjustment Car Tablet Holder Car Headrest Tablet Holder Phone Mount for iPad 黑白色/WHITE AND BLACK/Car Headrest Tablet Holder Phone Mount for iPad","numeProdus":"Suport tableta tetiera SUP-TET, rotatie 360 grade, reglabil, compatibil telefon si tableta, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":43,"codProdus":"SUP-TET","ean":3564395597387,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (45)","descriereRo":"Introducem „Suport pentru tableta si telefon pe tetiera” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul pentru tableta si telefon se monteaza pe tetiera scaunului din fata, orientat spre pasagerii din spate. Rotatia la 360 de grade si bratul reglabil permit pozitionarea optima pentru vizionare. Compatibil cu tablete si telefoane de dimensiuni diferite. Ideal pentru calatorii cu copii.","unitPriceUsd":7.29,"pretUnitarRon":33.534,"pretVanzareRon":100.602,"profit":"＄36.45","prp":125.75,"tva":"21%","pragMinim":90.54,"pragMaxim":140.84,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport tabletă și telefon tetieră","idFamilie":33,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/SUP-TET/STTS1.jpg","poza2":"https://89-44-137-240.sslip.io/SUP-TET/STTS2.jpg","poza3":"https://89-44-137-240.sslip.io/SUP-TET/STTS3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"44","itemNo":"PRO202310110195\n/","description":"SUV Car Ceiling Storage Net Pocket Car Roof Bag Interior Cargo Net Breathable Mesh Bag Auto Stowing Tidying Interior Accessories 黑色79x57cm/BLACK/SUV Car Ceiling Storage-Polyester Mesh Fabric","numeProdus":"Depozitare plafon SUV DEP-PLAF, plasa elastica, buzunar plafon, material mesh respirabil, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":44,"codProdus":"DEP-PLAF","ean":9792740437499,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (43)","descriereRo":"Introducem „Depozitare plafon pentru SUV” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Plasa de depozitare pentru plafonul SUV-ului ofera spatiu suplimentar pentru bagaje usoare, haine sau echipament de calatorie. Materialul mesh respirabil permite circulatia aerului. Se monteaza pe plafonul interior cu prinderi incluse. Nu impiedica vizibilitatea soferului atunci cand este instalata corect.","unitPriceUsd":2.15,"pretUnitarRon":9.89,"pretVanzareRon":29.67,"profit":"＄10.75","prp":37.09,"tva":"21%","pragMinim":26.7,"pragMaxim":41.54,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Depozitare plafon SUV","idFamilie":34,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/DEP-PLAF/SDPS4.jpg","poza2":"https://89-44-137-240.sslip.io/DEP-PLAF/SDPS3.jpg","poza3":"https://89-44-137-240.sslip.io/DEP-PLAF/SDPS2.jpg","poza4":"https://89-44-137-240.sslip.io/DEP-PLAF/SDPS1.jpg","poza5":"","poza6":"","poza7":""},{"no":"45","itemNo":"PRO202310110194\n/","description":"Car Tire Repair Kit Puncture Plug Tools Tyre Puncture Emergency for Tire Strips Stirring Glue Repair Tool Kit Car Accessories 多色/MULTICOLOR/CAR TIRE REPAIR KIT","numeProdus":"Set reparatie anvelope REP-ANV, kit pana, dopuri cauciuc, adeziv, scule montaj, urgenta drum","categorie":"Scule auto","brand":"OEM","idProdus":45,"codProdus":"REP-ANV","ean":9617340656623,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (41)","descriereRo":"Introducem „Set reparatie anvelope auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Setul de reparatie anvelope contine dopuri, adeziv si sculele necesare pentru remedierea temporara a unei pene. Permite continuarea drumului pana la cel mai apropiat service. Compact, se depoziteaza in portbagaj sau torpedo. Solutie de urgenta pentru soferi.","unitPriceUsd":6.6,"pretUnitarRon":30.36,"pretVanzareRon":91.08,"profit":"＄33.00","prp":113.85,"tva":"21%","pragMinim":81.97,"pragMaxim":127.51,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Set reparație anvelope auto","idFamilie":35,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/REP-ANV/KRR2.jpg","poza2":"https://89-44-137-240.sslip.io/REP-ANV/KRR3.jpg","poza3":"https://89-44-137-240.sslip.io/REP-ANV/KRR1.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"46","itemNo":"PRO202310110193\n/","description":"360 Degree Car Magnet Mobile Phone Holder For iPhone GPS Smartphone Car Phone Holder Mount Stand Support Xiaomi 黑色/BLACK/Car Magnet Mobile Phone Holder","numeProdus":"Suport telefon magnetic SUP-MAG2, rotatie 360 grade, prindere ventuza sau bord, universal smartphone","categorie":"Suporturi auto","brand":"OEM","idProdus":46,"codProdus":"SUP-MAG2","ean":"5942204655172","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (44)","descriereRo":"Introducem „Suport magnetic pentru telefonul mobil in masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Suportul magnetic pentru telefon ofera rotatie la 360 de grade si prindere stabila prin ventuza sau pe bord. Magnetul puternic mentine dispozitivul vizibil pentru navigare GPS. Compatibil cu smartphone-uri atunci cand este folosit cu placuta metalica. Montaj rapid, fara unelte.","unitPriceUsd":1.83,"pretUnitarRon":8.418,"pretVanzareRon":25.254,"profit":"＄9.15","prp":31.57,"tva":"21%","pragMinim":22.73,"pragMaxim":35.36,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Suport magnetic telefon auto","idFamilie":36,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/SUP-MAG2/SDTM4.jpg","poza2":"https://89-44-137-240.sslip.io/SUP-MAG2/SuportDTM1.jpg","poza3":"https://89-44-137-240.sslip.io/SUP-MAG2/SDTM5.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"47","itemNo":"PRO202310110192\n/","description":"Car Vacuum Cleaner 120W 6500Pa DC 12 Volt Handheld Portable 1 Steel Washable Filter 2 Attachments Carry Bag 16 Foot Power Cord 白色/WHITE/VACCUM CLEANER","numeProdus":"Aspirator auto ASP-AUTO, 120W, 6500Pa, 12V, portabil, filtru lavabil, 2 accesorii, cablu lung","categorie":"Aspiratoare auto","brand":"OEM","idProdus":47,"codProdus":"ASP-AUTO","ean":"5948823882524","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (59)","descriereRo":"Introducem „Aspirator auto portabil” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Aspiratorul auto portabil de 120W ofera o putere de aspirare de 6500Pa pentru curatarea prafului si murdariei din interior. Se alimenteaza la 12V din priza bricheta. Include filtru din otel lavabil si doua accesorii pentru colturi si suprafete inguste. Cablul lung permite curatarea intregului habitaclu.","unitPriceUsd":8.45,"pretUnitarRon":38.87,"pretVanzareRon":116.61,"profit":"＄42.25","prp":145.76,"tva":"21%","pragMinim":104.95,"pragMaxim":163.25,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Aspirator auto","idFamilie":37,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/ASP-AUTO/AM1.jpg","poza2":"https://89-44-137-240.sslip.io/ASP-AUTO/AM2.jpg","poza3":"https://89-44-137-240.sslip.io/ASP-AUTO/AM4.jpg","poza4":"https://89-44-137-240.sslip.io/ASP-AUTO/AM3.jpg","poza5":"","poza6":"","poza7":""},{"no":"48","itemNo":"PRO202310110191\n/","description":"Automotive Accessories Interior Car Lights Magnetic Car Ceiling Light Reading Led Gadgets Portable Rechargeable 黑蓝色/BLACK AND BLUE/Car Ceiling Light","numeProdus":"Lumina plafon auto LUM-PLAF, LED magnetica, portabila, citit interior, alimentare baterii sau USB","categorie":"Becuri si sigurante auto","brand":"OEM","idProdus":48,"codProdus":"LUM-PLAF","ean":"5941342344948","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (49)","descriereRo":"Introducem „Lumina de plafon LED pentru masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Lumina LED magnetica de plafon ofera iluminare suplimentara pentru citit sau cautarea obiectelor in habitaclu. Se fixeaza magnetic pe plafon sau alte suprafete metalice. Portabila, reincarcabila sau pe baterii, in functie de model. Consum redus, lumina uniforma.","unitPriceUsd":2.39,"pretUnitarRon":10.994,"pretVanzareRon":32.982,"profit":"＄11.95","prp":41.23,"tva":"21%","pragMinim":29.68,"pragMaxim":46.17,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Lumină plafon auto","idFamilie":38,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/LUM-PLAF/LPTM1.jpg","poza2":"https://89-44-137-240.sslip.io/LUM-PLAF/LPTM3.jpg","poza3":"https://89-44-137-240.sslip.io/LUM-PLAF/LPTM2.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"49","itemNo":"PRO202310110190\n/","description":"Leather Car key cove case Suit for Mercedes Benz Honda Ford Nissan BMW MAZDA LINCOLN key for holder key fob cover with logo 黑色/BLACK/Car key cove case-Leather","numeProdus":"Husa cheie auto HUS-CHE, piele ecologica, compatibila multi-brand, protectie zgarieturi, compacta","categorie":"Huse auto","brand":"OEM","idProdus":49,"codProdus":"HUS-CHE","ean":"5947764494643","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (48)","descriereRo":"Introducem „Husa pentru cheia de masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Husa pentru cheia de masina protejeaza carcasa telecomenzii de zgarieturi, praf si uzura zilnica. Confectionata din piele ecologica cu finisaj elegant. Compatibila cu chei de la diverse marci auto. Inchidere ferma, dimensiune compacta pentru buzunar sau geanta.","unitPriceUsd":2.96,"pretUnitarRon":13.616,"pretVanzareRon":40.848,"profit":"＄29.60","prp":51.06,"tva":"21%","pragMinim":36.76,"pragMaxim":57.19,"stoc":10,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Husă cheie auto","idFamilie":39,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/HUS-CHE/HPC1.jpg","poza2":"https://89-44-137-240.sslip.io/HUS-CHE/HPC2.jpg","poza3":"https://89-44-137-240.sslip.io/HUS-CHE/HPC3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"50","itemNo":"PRO202310110189\n/","description":"Car Windshield LED Sound Activated Equalizer Car Neon EL Light Music Rhythm Flash Lamp Sticker Styling With Control Box  45*11cm 蓝色/MULTICOLOR/Car Windshield LED","numeProdus":"Lumina LED parbriz LED-PARB, egalizator sunet, ritm muzica, sticker interior, alimentare 12V","categorie":"Accesorii electronice auto","brand":"OEM","idProdus":50,"codProdus":"LED-PARB","ean":8586552124415,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (52)","descriereRo":"Introducem „Lumina LED pentru parbriz auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Lumina LED pentru parbriz reactioneaza la ritmul muzicii si creeaza efecte vizuale in interiorul masinii. Se monteaza pe parbriz ca sticker si se alimenteaza la 12V. Efect de egalizator luminos sincronizat cu audio. Pentru utilizare in masina stationata sau in timpul condusului, conform legislatiei locale.","unitPriceUsd":6.0,"pretUnitarRon":27.6,"pretVanzareRon":82.8,"profit":"＄30.00","prp":103.5,"tva":"21%","pragMinim":74.52,"pragMaxim":115.92,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Lumină LED parbriz auto","idFamilie":40,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/LED-PARB/SDPM31.jpg","poza2":"https://89-44-137-240.sslip.io/LED-PARB/SDPM3.jpg","poza3":"https://89-44-137-240.sslip.io/LED-PARB/SDPM2.jpg","poza4":"https://89-44-137-240.sslip.io/LED-PARB/SDPM1.jpg","poza5":"","poza6":"","poza7":""},{"no":"51","itemNo":"PRO202310110188\n/","description":"Car Exterior Decoration Hood Stickers Universal Side Air Intake Flow Vent Cover Decorative 黑色/BLACK/Car Exterior Decoration-Soft PVC","numeProdus":"Decoratiuni exterior auto DEC-EXT, ventilatie ornament, stickere capota, ABS, montaj adeziv, universal","categorie":"Accesorii si ornamente auto tuning","brand":"OEM","idProdus":51,"codProdus":"DEC-EXT","ean":"5949735744139","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (50)","descriereRo":"Introducem „Decoratiuni exterioare pentru masina” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Setul de decoratiuni exterioare include ornamente pentru zonele de ventilatie si capota. Material ABS rezistent la intemperii, montaj cu banda adeziva inclusa. Adauga un aspect sportiv exteriorului masinii. Verificati compatibilitatea cu modelul auto inainte de montaj.","unitPriceUsd":2.6,"pretUnitarRon":11.96,"pretVanzareRon":35.88,"profit":"＄13.00","prp":44.85,"tva":"21%","pragMinim":32.29,"pragMaxim":50.23,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Decorațiuni exterioare auto","idFamilie":41,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/DEC-EXT/STC2.jpg","poza2":"https://89-44-137-240.sslip.io/DEC-EXT/STC1.jpg","poza3":"https://89-44-137-240.sslip.io/DEC-EXT/STC3.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"52","itemNo":"PRO202310110187\n/","description":"1 Pcs Clip car seat hook car headrest hanger bag car bag wallet cloth grocery storage car fasteners decorative accessories 黑色/BLACK/HANGER FOR THE CAR HEADREST","numeProdus":"Carlig tetiera auto CAR-TET, clip metal, agatare genti, 5 kg sarcina, set 1 bucata, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":52,"codProdus":"CAR-TET","ean":"5941842448221","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (55)","descriereRo":"Introducem „Carlig pentru tetiera masinii” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Carligul pentru tetiera permite agatarea gentilor, sacoșelor sau hainelor pe spatarul scaunului. Clipul metalic rezista la o sarcina de pana la 5 kg. Montaj in cateva secunde, fara unelte. Nu afecteaza functia tetierei. Util pentru cumparaturi si calatorii.","unitPriceUsd":0.07,"pretUnitarRon":0.322,"pretVanzareRon":0.966,"profit":"＄0.35","prp":1.21,"tva":"21%","pragMinim":0.87,"pragMaxim":1.35,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Cârlig tetieră auto","idFamilie":42,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/CAR-TET/ATM1.jpg","poza2":"https://89-44-137-240.sslip.io/CAR-TET/ATM3.jpg","poza3":"https://89-44-137-240.sslip.io/CAR-TET/ATM2.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"53","itemNo":"PRO202310110186\n/","description":"ABS Carbon Fiber Car Handbrake Sticker Gear Shift Knob Cover Shell For BMW 3 Series E91 E90 E92 E93 2006-2012 Tuning Accessories 黑色/BLACK/Car Handbrake Sticker","numeProdus":"Sticker frana mana STK-FRM, imitatie carbon, ABS, protectie decorativa, compatibil BMW seria 3","categorie":"Accesorii si ornamente auto tuning","brand":"OEM","idProdus":53,"codProdus":"STK-FRM","ean":5698485718142,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (53)","descriereRo":"Introducem „Sticker pentru frana de mana auto” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Stickerul pentru frana de mana si schimbator ofera finisaj tip carbon pentru interiorul masinii. Material ABS rezistent, montaj cu banda adeziva. Compatibil cu BMW seria 3 E90 E91 E92 E93. Protejeaza suprafata originala de uzura si zgarieturi usoare.","unitPriceUsd":2.6,"pretUnitarRon":11.96,"pretVanzareRon":35.88,"profit":"＄13.00","prp":44.85,"tva":"21%","pragMinim":32.29,"pragMaxim":50.23,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Sticker frână de mână auto","idFamilie":43,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/STK-FRM/CMSV3.jpg","poza2":"https://89-44-137-240.sslip.io/STK-FRM/CMSV2.jpg","poza3":"https://89-44-137-240.sslip.io/STK-FRM/CMSV1.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"54","itemNo":"PRO202310110185\n/","description":"Car Storage Bag Air Vent Dashboard Tidy Hanging Leather Organizer Box Glasses Phone Holder Storage Organizer Car Accessories 黑色/BLACK/Car Storage Bag Air Vent","numeProdus":"Geanta depozitare ventilatie GEA-VENT, piele ecologica, suport telefon ochelari, montaj grila","categorie":"Suporturi auto","brand":"OEM","idProdus":54,"codProdus":"GEA-VENT","ean":"5943400036451","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (54)","descriereRo":"Introducem „Geanta de depozitare pentru ventilatia masinii” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Geanta de depozitare se monteaza pe grila de ventilatie si ofera spatii pentru telefon, ochelari, carduri si accesorii mici. Material din piele ecologica, design compact. Acces rapid la obiecte in timpul condusului. Nu blocheaza fluxul de aer al ventilatiei.","unitPriceUsd":0.74,"pretUnitarRon":3.404,"pretVanzareRon":10.212,"profit":"＄3.70","prp":12.77,"tva":"21%","pragMinim":9.19,"pragMaxim":14.3,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Geantă depozitare ventilație auto","idFamilie":44,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/GEA-VENT/OPOT1.jpg","poza2":"https://89-44-137-240.sslip.io/GEA-VENT/OPOT3.jpg","poza3":"https://89-44-137-240.sslip.io/GEA-VENT/OPOT4.jpg","poza4":"https://89-44-137-240.sslip.io/GEA-VENT/OPOT2.jpg","poza5":"","poza6":"","poza7":""},{"no":"55","itemNo":"PRO202310110184\n/","description":"Vehicle Car Bling Steering Wheel Table Desk Notebook Laptop Eating Tray Interior Accessories Customized Style 黑色 41.5*27.5*2cm/BLACK/Steering Wheel Table","numeProdus":"Masa volan auto MAS-VOL, tava servire, suport laptop, pliabila, calatorii si pauze, universal","categorie":"Suporturi auto","brand":"OEM","idProdus":55,"codProdus":"MAS-VOL","ean":"5947300861601","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (51)","descriereRo":"Introducem „Masa pentru volanul masinii” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Masa pentru volan se monteaza pe volan si ofera o suprafata plana pentru mancare, laptop sau documente in timpul pauzelor. Design pliabil pentru depozitare usoara. Utila in calatorii lungi sau pentru lucru in masina stationata. Compatibila cu majoritatea volanelor standard.","unitPriceUsd":1.3,"pretUnitarRon":5.98,"pretVanzareRon":17.94,"profit":"＄6.50","prp":22.43,"tva":"21%","pragMinim":16.15,"pragMaxim":25.12,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Masă volan auto","idFamilie":45,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/MAS-VOL/SMVM4.jpg","poza2":"https://89-44-137-240.sslip.io/MAS-VOL/SMVM1.jpg","poza3":"https://89-44-137-240.sslip.io/MAS-VOL/SMVM3.jpg","poza4":"https://89-44-137-240.sslip.io/MAS-VOL/SMVM2.jpg","poza5":"","poza6":"","poza7":""},{"no":"56","itemNo":"PRO202310110183\n/","description":"Solar Car Air Freshener Helicopter Propeller Car Fragrance Male Auto Interior Accessories Deodorant Perfume Diffuser Decoration 金色/GOLD/Solar Car Air Freshener","numeProdus":"Parfum auto solar PARF-SOL, elicopter propeller, alimentare solara, difuzor aroma, montaj bord, culoare auriu","categorie":"Odorizante auto","brand":"OEM","idProdus":56,"codProdus":"PARF-SOL-AURIU","ean":"5942631103741","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (56)","descriereRo":"Introducem „Parfum auto cu energie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Parfumul auto cu design elicopter functioneaza cu energie solara si difuzeaza aroma in habitaclu prin miscarea elicei. Se monteaza pe bord, fara cabluri sau baterii de inlocuit. Rezerva de aroma ofera prospetime indelungata. Design decorativ, potrivit pentru interiorul masinii.","unitPriceUsd":4.15,"pretUnitarRon":19.09,"pretVanzareRon":57.27,"profit":"＄20.75","prp":71.59,"tva":"21%","pragMinim":51.54,"pragMaxim":80.18,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Parfum auto energie solară","idFamilie":46,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PARF-SOL-AURIU/AR.jpg","poza2":"https://89-44-137-240.sslip.io/PARF-SOL-AURIU/AR2.jpg","poza3":"https://89-44-137-240.sslip.io/PARF-SOL-AURIU/AR1.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"57","itemNo":"PRO202310110183\n/","description":"Solar Car Air Freshener Helicopter Propeller Car Fragrance Male Auto Interior Accessories Deodorant Perfume Diffuser Decoration 黑色/BLACK/Solar Car Air Freshener","numeProdus":"Parfum auto solar PARF-SOL, elicopter propeller, alimentare solara, difuzor aroma, montaj bord, culoare negru","categorie":"Odorizante auto","brand":"OEM","idProdus":57,"codProdus":"PARF-SOL-NEGRU","ean":9559247160400,"limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (57)","descriereRo":"Introducem „Parfum auto cu energie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Parfumul auto cu design elicopter functioneaza cu energie solara si difuzeaza aroma in habitaclu prin miscarea elicei. Se monteaza pe bord, fara cabluri sau baterii de inlocuit. Rezerva de aroma ofera prospetime indelungata. Design decorativ, potrivit pentru interiorul masinii.","unitPriceUsd":4.15,"pretUnitarRon":19.09,"pretVanzareRon":57.27,"profit":"＄20.75","prp":71.59,"tva":"21%","pragMinim":51.54,"pragMaxim":80.18,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Parfum auto energie solară","idFamilie":46,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PARF-SOL-NEGRU/NG.jpg","poza2":"https://89-44-137-240.sslip.io/PARF-SOL-NEGRU/NG1.jpg","poza3":"https://89-44-137-240.sslip.io/PARF-SOL-NEGRU/NG2.jpg","poza4":"","poza5":"","poza6":"","poza7":""},{"no":"58","itemNo":"PRO202310110183\n/","description":"Solar Car Air Freshener Helicopter Propeller Car Fragrance Male Auto Interior Accessories Deodorant Perfume Diffuser Decoration 红色/RED/Solar Car Air Freshener","numeProdus":"Parfum auto solar PARF-SOL, elicopter propeller, alimentare solara, difuzor aroma, montaj bord, culoare rosu","categorie":"Odorizante auto","brand":"OEM","idProdus":58,"codProdus":"PARF-SOL-ROSU","ean":"5946163687663","limbaSursa":"Romana","locatiePoze":"D:\\magazine_online\\produse unzipped\\BulkResizePhotos.com (58)","descriereRo":"Introducem „Parfum auto cu energie solara” — accesoriu auto conceput pentru confort si organizare in timpul condusului. Parfumul auto cu design elicopter functioneaza cu energie solara si difuzeaza aroma in habitaclu prin miscarea elicei. Se monteaza pe bord, fara cabluri sau baterii de inlocuit. Rezerva de aroma ofera prospetime indelungata. Design decorativ, potrivit pentru interiorul masinii.","unitPriceUsd":4.15,"pretUnitarRon":19.09,"pretVanzareRon":57.27,"profit":"＄20.75","prp":71.59,"tva":"21%","pragMinim":51.54,"pragMaxim":80.18,"stoc":5,"zileCurier":1,"zileReaprovizionare":7,"numeFamilie":"Parfum auto energie solară","idFamilie":46,"tipFamilie":"Culoare (visible)","pnk":"","poza1":"https://89-44-137-240.sslip.io/PARF-SOL-ROSU/RS.jpg","poza2":"https://89-44-137-240.sslip.io/PARF-SOL-ROSU/RS1.jpg","poza3":"","poza4":"","poza5":"","poza6":"","poza7":""}],"headersRo":["No.","Item No.","Description","Nume produs","Categorie","Brand","ID Produs","COD PRODUS","EAN","Limba sursa","Locatie Poze","Descriere RO","Unit Price (USD)","Preț unitar (RON)","Preț vânzare (RON)","Profit","PRP","TVA : 21%","Validare pret : Prag Minim","Validare pret : Prag Maxim","Stoc","In cate zile predai curierului","In cate zile poti reaproviziona","Nume familie","ID familie","Tip familie","PNK","Poza 1","Poza 2","Poza 3","Poza 4","Poza 5","Poza 6","Poza 7"]};
+    const STORAGE_KEY = "emag_produse_v1";
+    const KEYS = [
+      "no","itemNo","description","numeProdus","categorie","brand","idProdus","codProdus",
+      "ean","limbaSursa","locatiePoze","descriereRo","unitPriceUsd","pretUnitarRon",
+      "pretVanzareRon","profit","prp","tva","pragMinim","pragMaxim","stoc",
+      "zileCurier","zileReaprovizionare","numeFamilie","idFamilie","tipFamilie","pnk",
+      "poza1","poza2","poza3","poza4","poza5","poza6","poza7"
+    ];
+    const HEADERS_RO = EMBEDDED.headersRo;
+
+    let settings = { ...EMBEDDED.settings };
+    let products = structuredClone(EMBEDDED.products);
+    let editIndex = null;
+
+    function toast(msg, type) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = "toast show" + (type ? " " + type : "");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 2600);
+    }
+
+    function num(v) {
+      if (v === null || v === undefined || v === "") return 0;
+      const n = Number(String(v).replace(",", "."));
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function round2(n) {
+      return Math.round(n * 100) / 100;
+    }
+
+    function calcProduct(p, s) {
+      const usd = num(p.unitPriceUsd);
+      const pretUnitar = round2(usd * num(s.usdRate));
+      const pretVanzare = round2(pretUnitar * num(s.multiplicator));
+      p.pretUnitarRon = pretUnitar || "";
+      p.pretVanzareRon = pretVanzare || "";
+      p.prp = pretVanzare ? round2(pretVanzare * num(s.factorPrp)) : "";
+      p.pragMinim = pretVanzare ? round2(pretVanzare * num(s.factorPragMin)) : "";
+      p.pragMaxim = pretVanzare ? round2(pretVanzare * num(s.factorPragMax)) : "";
+      return p;
+    }
+
+    function recalcAll() {
+      products.forEach((p) => calcProduct(p, settings));
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings, products }));
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.products)) return false;
+        settings = { ...EMBEDDED.settings, ...data.settings };
+        products = data.products;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function fillSettingsForm() {
+      document.getElementById("setUsd").value = settings.usdRate;
+      document.getElementById("setMult").value = settings.multiplicator;
+      document.getElementById("setPrp").value = settings.factorPrp;
+      document.getElementById("setPragMin").value = settings.factorPragMin;
+      document.getElementById("setPragMax").value = settings.factorPragMax;
+    }
+
+    function readSettingsForm() {
+      settings = {
+        usdRate: num(document.getElementById("setUsd").value),
+        multiplicator: num(document.getElementById("setMult").value),
+        factorPrp: num(document.getElementById("setPrp").value),
+        factorPragMin: num(document.getElementById("setPragMin").value),
+        factorPragMax: num(document.getElementById("setPragMax").value),
+      };
+    }
+
+    function esc(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function filtered() {
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      if (!q) return products.map((p, i) => ({ p, i }));
+      return products
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => {
+          const hay = [p.codProdus, p.numeProdus, p.brand, p.categorie, p.ean, p.itemNo, p.pnk]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        });
+    }
+
+    function renderTable() {
+      const rows = filtered();
+      const tbody = document.getElementById("tbody");
+      document.getElementById("countLabel").textContent = `(${products.length})`;
+      document.getElementById("filterInfo").textContent =
+        rows.length === products.length
+          ? `${products.length} produse`
+          : `${rows.length} din ${products.length} produse`;
+      document.getElementById("emptyMsg").hidden = rows.length > 0;
+
+      tbody.innerHTML = rows
+        .map(({ p, i }) => {
+          const thumb = p.poza1
+            ? `<img class="thumb" src="${esc(p.poza1)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'thumb-empty',textContent:'—'}))" />`
+            : `<div class="thumb-empty">—</div>`;
+          return `<tr>
+            <td>${esc(p.no)}</td>
+            <td><strong>${esc(p.codProdus)}</strong></td>
+            <td class="col-name">${esc(p.numeProdus)}</td>
+            <td>${esc(p.categorie)}</td>
+            <td>${esc(p.brand)}</td>
+            <td>${esc(p.unitPriceUsd)}</td>
+            <td>${esc(p.pretVanzareRon)}</td>
+            <td>${esc(p.stoc)}</td>
+            <td>${thumb}</td>
+            <td>
+              <button type="button" class="btn btn-sm" data-edit="${i}">Edit</button>
+              <button type="button" class="btn btn-sm btn-danger" data-del="${i}">Șterge</button>
+            </td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    function openModal(index) {
+      editIndex = index;
+      const form = document.getElementById("productForm");
+      form.reset();
+      let p;
+      if (index === null) {
+        document.getElementById("modalTitle").textContent = "Adaugă produs";
+        p = {
+          no: String(products.length + 1),
+          tva: "21%",
+          limbaSursa: "Romana",
+          brand: "OEM",
+          stoc: 5,
+          zileCurier: 1,
+          zileReaprovizionare: 7,
+          tipFamilie: "Culoare (visible)",
+          unitPriceUsd: "",
+        };
+        calcProduct(p, settings);
+      } else {
+        document.getElementById("modalTitle").textContent = "Editează produs";
+        p = { ...products[index] };
+      }
+      KEYS.forEach((k) => {
+        const input = form.elements[k];
+        if (input) input.value = p[k] ?? "";
+      });
+      document.getElementById("modal").classList.add("open");
+    }
+
+    function closeModal() {
+      document.getElementById("modal").classList.remove("open");
+      editIndex = null;
+    }
+
+    function readForm() {
+      const form = document.getElementById("productForm");
+      const p = {};
+      KEYS.forEach((k) => {
+        const input = form.elements[k];
+        p[k] = input ? input.value : "";
+      });
+      if (p.unitPriceUsd !== "") p.unitPriceUsd = num(p.unitPriceUsd);
+      calcProduct(p, settings);
+      return p;
+    }
+
+    function onUnitPriceInput() {
+      const form = document.getElementById("productForm");
+      const tmp = {
+        unitPriceUsd: form.elements.unitPriceUsd.value,
+      };
+      calcProduct(tmp, settings);
+      form.elements.pretUnitarRon.value = tmp.pretUnitarRon;
+      form.elements.pretVanzareRon.value = tmp.pretVanzareRon;
+      form.elements.prp.value = tmp.prp;
+      form.elements.pragMinim.value = tmp.pragMinim;
+      form.elements.pragMaxim.value = tmp.pragMaxim;
+    }
+
+    /* —— Excel export / import —— */
+    function formatUsdCell(v) {
+      if (v === "" || v === null || v === undefined) return "";
+      const n = num(v);
+      return "＄" + n.toFixed(2);
+    }
+
+    function exportExcel() {
+      const wb = XLSX.utils.book_new();
+      const aoa = [];
+
+      aoa[0] = ["1 USD =", settings.usdRate, "RON", "Factor PRP (x Pret vanzare)", settings.factorPrp];
+      aoa[1] = ["Multiplicator", settings.multiplicator, "", "Factor Prag Minim (x Pret vanzare)", settings.factorPragMin];
+      aoa[2] = ["", "", "", "Factor Prag Maxim (x Pret vanzare)", settings.factorPragMax];
+      aoa[3] = HEADERS_RO.slice();
+
+      products.forEach((p, idx) => {
+        const r = idx + 5; // Excel 1-based row
+        const row = KEYS.map((k) => {
+          if (k === "unitPriceUsd") return formatUsdCell(p.unitPriceUsd);
+          if (["pretUnitarRon", "pretVanzareRon", "prp", "pragMinim", "pragMaxim"].includes(k)) return null;
+          return p[k] ?? "";
+        });
+        // formulas (cols N=14, O=15, Q=17, S=19, T=20) — 0-based indices 13,14,16,18,19
+        row[13] = { f: `VALUE(SUBSTITUTE(SUBSTITUTE(M${r},"＄",""),"$",""))*$B$1` };
+        row[14] = { f: `N${r}*$B$2` };
+        row[16] = { f: `IF(O${r}="","",ROUND(O${r}*$E$1,2))` };
+        row[18] = { f: `IF(O${r}="","",ROUND(O${r}*$E$2,2))` };
+        row[19] = { f: `IF(O${r}="","",ROUND(O${r}*$E$3,2))` };
+        aoa.push(row);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, "Ancreu Proforma Invoice");
+      XLSX.writeFile(wb, "document_produse_export.xlsx");
+      toast("Excel exportat", "ok");
+    }
+
+    function parseUsdImport(v) {
+      if (v === null || v === undefined || v === "") return "";
+      if (typeof v === "number") return v;
+      const s = String(v).replace(/＄/g, "").replace(/\$/g, "").replace(/,/g, "").trim();
+      const n = Number(s);
+      return Number.isFinite(n) ? n : s;
+    }
+
+    function importExcel(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+          if (aoa.length < 5) throw new Error("Fișier invalid");
+
+          const s = {
+            usdRate: num(aoa[0][1]) || settings.usdRate,
+            multiplicator: num(aoa[1][1]) || settings.multiplicator,
+            factorPrp: num(aoa[0][4]) || settings.factorPrp,
+            factorPragMin: num(aoa[1][4]) || settings.factorPragMin,
+            factorPragMax: num(aoa[2][4]) || settings.factorPragMax,
+          };
+
+          const imported = [];
+          for (let r = 4; r < aoa.length; r++) {
+            const row = aoa[r];
+            if (!row || (!row[0] && !row[7])) continue;
+            const p = {};
+            KEYS.forEach((k, i) => {
+              p[k] = row[i] ?? "";
+            });
+            p.unitPriceUsd = parseUsdImport(p.unitPriceUsd);
+            calcProduct(p, s);
+            imported.push(p);
+          }
+          if (!imported.length) throw new Error("Niciun produs în fișier");
+
+          settings = s;
+          products = imported;
+          fillSettingsForm();
+          saveState();
+          renderTable();
+          toast(`Importat: ${products.length} produse`, "ok");
+        } catch (err) {
+          console.error(err);
+          toast("Import eșuat: " + err.message, "err");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    /* —— events —— */
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    document.getElementById("search").addEventListener("input", renderTable);
+
+    document.getElementById("tbody").addEventListener("click", (e) => {
+      const edit = e.target.closest("[data-edit]");
+      const del = e.target.closest("[data-del]");
+      if (edit) openModal(Number(edit.dataset.edit));
+      if (del) {
+        const i = Number(del.dataset.del);
+        if (confirm(`Ștergi „${products[i].codProdus || products[i].numeProdus}"?`)) {
+          products.splice(i, 1);
+          saveState();
+          renderTable();
+          toast("Șters", "ok");
+        }
+      }
+    });
+
+    document.getElementById("btnAdd").addEventListener("click", () => openModal(null));
+    document.getElementById("btnCloseModal").addEventListener("click", closeModal);
+    document.getElementById("btnCancelModal").addEventListener("click", closeModal);
+    document.getElementById("modal").addEventListener("click", (e) => {
+      if (e.target.id === "modal") closeModal();
+    });
+
+    document.querySelector('[name="unitPriceUsd"]').addEventListener("input", onUnitPriceInput);
+
+    document.getElementById("btnSaveProduct").addEventListener("click", () => {
+      const form = document.getElementById("productForm");
+      if (!form.reportValidity()) return;
+      const p = readForm();
+      if (editIndex === null) products.push(p);
+      else products[editIndex] = p;
+      saveState();
+      renderTable();
+      closeModal();
+      toast("Salvat", "ok");
+    });
+
+    document.getElementById("btnApplySettings").addEventListener("click", () => {
+      readSettingsForm();
+      recalcAll();
+      saveState();
+      renderTable();
+      toast("Setări aplicate — prețuri recalculate", "ok");
+    });
+
+    document.getElementById("btnResetData").addEventListener("click", () => {
+      if (!confirm("Resetezi toate modificările la datele din Excel original?")) return;
+      localStorage.removeItem(STORAGE_KEY);
+      settings = { ...EMBEDDED.settings };
+      products = structuredClone(EMBEDDED.products);
+      fillSettingsForm();
+      renderTable();
+      toast("Resetat la Excel original", "ok");
+    });
+
+    document.getElementById("btnExport").addEventListener("click", exportExcel);
+    document.getElementById("btnImport").addEventListener("click", () => {
+      document.getElementById("fileImport").click();
+    });
+    document.getElementById("fileImport").addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      if (f) importExcel(f);
+      e.target.value = "";
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeModal();
+    });
+
+    /* init */
+    const fromStore = loadState();
+    if (!fromStore) recalcAll();
+    fillSettingsForm();
+    renderTable();
+    if (fromStore) toast("Date restaurate din browser", "ok");
+  </script>
+</body>
+</html>
