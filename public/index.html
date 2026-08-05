@@ -59,6 +59,39 @@
             placeholder="0"
           />
         </label>
+        <label class="field">
+          <span>Mult PRP</span>
+          <input
+            type="number"
+            id="mult-prp"
+            name="mult-prp"
+            min="0"
+            step="0.01"
+            placeholder="1.15"
+          />
+        </label>
+        <label class="field">
+          <span>Mult pret minim</span>
+          <input
+            type="number"
+            id="mult-min"
+            name="mult-min"
+            min="0"
+            step="0.01"
+            placeholder="0.85"
+          />
+        </label>
+        <label class="field">
+          <span>Mult pret maxim</span>
+          <input
+            type="number"
+            id="mult-max"
+            name="mult-max"
+            min="0"
+            step="0.01"
+            placeholder="1.30"
+          />
+        </label>
         <button type="button" id="btn-save-settings" class="btn btn-secondary">
           Salvează
         </button>
@@ -102,6 +135,11 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="sync-bar">
+        <button type="button" id="btn-sync" class="btn" disabled>
+          Sincronizează cu eMAG
+        </button>
       </div>
     </div>
     <script src="app.js"></script>

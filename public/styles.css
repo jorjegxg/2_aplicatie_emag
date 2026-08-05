@@ -205,6 +205,41 @@ td.col-pret-emag {
   background: #fff1f3;
 }
 
+td.col-pret-emag .input-sale-price {
+  width: 6.5rem;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--emag-price);
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+td.col-pret-emag .input-sale-price:focus {
+  outline: 2px solid color-mix(in srgb, var(--emag-price) 35%, transparent);
+  border-color: var(--emag-price);
+}
+
+tr.is-price-dirty td.col-pret-emag,
+td.col-pret-emag.is-price-dirty {
+  background: #fef08a;
+  box-shadow: inset 3px 0 0 #ca8a04;
+}
+
+td[data-col="prp"].is-price-dirty,
+td[data-col="pret_minim"].is-price-dirty,
+td[data-col="pret_maxim"].is-price-dirty {
+  background: #fef9c3;
+}
+
+.sync-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
 th.col-profit {
   color: var(--ok);
   background: #dcfce7;

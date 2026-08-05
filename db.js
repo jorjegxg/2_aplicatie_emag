@@ -16,16 +16,22 @@ function getDb() {
       pret_transport REAL,
       pret_contabil REAL,
       procentaj_emag REAL,
-      numar_produse REAL
+      numar_produse REAL,
+      mult_prp REAL,
+      mult_min REAL,
+      mult_max REAL
     );
   `);
   const cols = db.prepare("PRAGMA table_info(settings)").all();
-  if (!cols.some((c) => c.name === "numar_produse")) {
-    db.exec("ALTER TABLE settings ADD COLUMN numar_produse REAL");
+  const colNames = new Set(cols.map((c) => c.name));
+  for (const name of ["numar_produse", "mult_prp", "mult_min", "mult_max"]) {
+    if (!colNames.has(name)) {
+      db.exec(`ALTER TABLE settings ADD COLUMN ${name} REAL`);
+    }
   }
   db.exec(`
-    INSERT OR IGNORE INTO settings (id, pret_transport, pret_contabil, procentaj_emag, numar_produse)
-    VALUES (1, NULL, NULL, NULL, NULL);
+    INSERT OR IGNORE INTO settings (id, pret_transport, pret_contabil, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max)
+    VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   `);
   return db;
 }
@@ -71,7 +77,9 @@ function lookupPretCumparare(partNumber, name) {
 function getSettings() {
   const row = getDb()
     .prepare(
-      "SELECT pret_transport, pret_contabil, procentaj_emag, numar_produse FROM settings WHERE id = 1"
+      `SELECT pret_transport, pret_contabil, procentaj_emag, numar_produse,
+              mult_prp, mult_min, mult_max
+       FROM settings WHERE id = 1`
     )
     .get();
   return {
@@ -79,6 +87,9 @@ function getSettings() {
     pret_contabil: row?.pret_contabil ?? null,
     procentaj_emag: row?.procentaj_emag ?? null,
     numar_produse: row?.numar_produse ?? null,
+    mult_prp: row?.mult_prp ?? null,
+    mult_min: row?.mult_min ?? null,
+    mult_max: row?.mult_max ?? null,
   };
 }
 
@@ -87,6 +98,9 @@ function saveSettings({
   pret_contabil,
   procentaj_emag,
   numar_produse,
+  mult_prp,
+  mult_min,
+  mult_max,
 }) {
   getDb()
     .prepare(
@@ -94,7 +108,10 @@ function saveSettings({
        SET pret_transport = @pret_transport,
            pret_contabil = @pret_contabil,
            procentaj_emag = @procentaj_emag,
-           numar_produse = @numar_produse
+           numar_produse = @numar_produse,
+           mult_prp = @mult_prp,
+           mult_min = @mult_min,
+           mult_max = @mult_max
        WHERE id = 1`
     )
     .run({
@@ -102,6 +119,9 @@ function saveSettings({
       pret_contabil,
       procentaj_emag,
       numar_produse,
+      mult_prp,
+      mult_min,
+      mult_max,
     });
   return getSettings();
 }

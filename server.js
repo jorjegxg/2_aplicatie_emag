@@ -121,12 +121,121 @@ app.post("/api/settings", (req, res) => {
       pret_contabil: toNum(req.body?.pret_contabil),
       procentaj_emag: toNum(req.body?.procentaj_emag),
       numar_produse: toNum(req.body?.numar_produse),
+      mult_prp: toNum(req.body?.mult_prp),
+      mult_min: toNum(req.body?.mult_min),
+      mult_max: toNum(req.body?.mult_max),
     });
 
     return res.json(saved);
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la salvare setări" });
+  }
+});
+
+async function emagProductOfferSave(auth, offers) {
+  const body = new URLSearchParams();
+  body.set("data", JSON.stringify(offers));
+
+  const response = await fetch(`${EMAG_API}/product_offer/save`, {
+    method: "POST",
+    headers: {
+      Authorization: auth,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+
+  const text = await response.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+
+  return { response, json, text };
+}
+
+app.post("/api/products/sync-prices", async (req, res) => {
+  try {
+    const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
+    if (rawOffers.length === 0) {
+      return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
+    }
+
+    const toNum = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const offers = [];
+    for (const o of rawOffers) {
+      const id = toNum(o?.id);
+      const sale_price = toNum(o?.sale_price);
+      const recommended_price = toNum(o?.recommended_price);
+      const min_sale_price = toNum(o?.min_sale_price);
+      const max_sale_price = toNum(o?.max_sale_price);
+      if (id == null || sale_price == null) {
+        return res.status(400).json({
+          error: "Fiecare ofertă trebuie să aibă id și sale_price valide",
+        });
+      }
+      const payload = { id, sale_price };
+      if (recommended_price != null) payload.recommended_price = recommended_price;
+      if (min_sale_price != null) payload.min_sale_price = min_sale_price;
+      if (max_sale_price != null) payload.max_sale_price = max_sale_price;
+      offers.push(payload);
+    }
+
+    const creds = loadCredentials();
+    const candidates = authCandidates(creds);
+
+    let lastStatus = null;
+    let lastJson = null;
+    let lastText = "";
+
+    for (const [user, pass] of candidates) {
+      const auth = authHeader(user, pass);
+      const { response, json, text } = await emagProductOfferSave(auth, offers);
+      lastStatus = response.status;
+      lastJson = json;
+      lastText = text;
+
+      if (response.status === 401 || response.status === 403) {
+        continue;
+      }
+
+      if (!json) {
+        return res.status(502).json({
+          error: "Răspuns invalid de la eMAG",
+          status: response.status,
+          detail: text.slice(0, 500),
+        });
+      }
+
+      if (json.isError) {
+        return res.status(502).json({
+          error: "eMAG a returnat eroare la salvare prețuri",
+          messages: json.messages || [],
+        });
+      }
+
+      return res.json({
+        ok: true,
+        count: offers.length,
+        messages: json.messages || [],
+      });
+    }
+
+    return res.status(lastStatus || 401).json({
+      error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
+      messages: lastJson?.messages || [],
+      detail: lastText.slice(0, 300),
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la sync prețuri" });
   }
 });
 
