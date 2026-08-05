@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const { lookupPretCumparare } = require("./db");
 
 const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
@@ -50,13 +51,16 @@ function formatCharacteristics(characteristics) {
 
 function mapOffer(offer) {
   const ean = Array.isArray(offer.ean) ? offer.ean.join(", ") : offer.ean || "";
+  const name = offer.name || "";
+  const part_number = offer.part_number || "";
   return {
     id: offer.id,
-    name: offer.name || "",
+    name,
     brand: offer.brand || offer.brand_name || "",
-    part_number: offer.part_number || "",
+    part_number,
     part_number_key: offer.part_number_key || "",
     sale_price: offer.sale_price ?? null,
+    pret_cumparare: lookupPretCumparare(part_number, name),
     currency: offer.currency || "RON",
     general_stock: offer.general_stock ?? null,
     estimated_stock: offer.estimated_stock ?? null,

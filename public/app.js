@@ -50,6 +50,7 @@ function rowHtml(product, index) {
     <td>${escapeHtml(product.name) || "—"}</td>
     <td>${escapeHtml(product.part_number) || "—"}</td>
     <td>${formatPrice(product.sale_price, product.currency)}</td>
+    <td>${formatPrice(product.pret_cumparare, "RON")}</td>
     <td>${escapeHtml(product.general_stock ?? "—")}</td>
     <td>${formatStatus(product.status)}</td>
     <td>${eanPnk(product)}</td>
@@ -63,7 +64,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="8">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="9">Niciun produs găsit.</td></tr>';
     return;
   }
 
@@ -103,7 +104,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
     }
