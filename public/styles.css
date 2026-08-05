@@ -219,6 +219,30 @@ th {
   z-index: 2;
 }
 
+th[data-col] {
+  cursor: pointer;
+  user-select: none;
+}
+
+th[data-col]:hover {
+  background: #dce6f0;
+}
+
+th.is-sorted-asc::after,
+th.is-sorted-desc::after {
+  margin-left: 0.35rem;
+  font-size: 0.7em;
+  color: var(--muted, #64748b);
+}
+
+th.is-sorted-asc::after {
+  content: "▲";
+}
+
+th.is-sorted-desc::after {
+  content: "▼";
+}
+
 tbody tr:nth-child(even) {
   background: var(--row-alt);
 }
@@ -374,7 +398,9 @@ td.col-procentaj-profit.pct-2 {
   top: calc(100% + 0.35rem);
   left: 0;
   z-index: 20;
-  min-width: 11.5rem;
+  min-width: 13rem;
+  max-height: min(70vh, 28rem);
+  overflow-y: auto;
   padding: 0.45rem;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -382,11 +408,49 @@ td.col-procentaj-profit.pct-2 {
   box-shadow: 0 8px 24px rgba(26, 35, 50, 0.12);
 }
 
-.col-menu label {
+.col-menu-item {
   display: flex;
   align-items: center;
+  gap: 0.2rem;
+  border-radius: 4px;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.col-menu-item.is-dragging {
+  opacity: 0.45;
+}
+
+.col-menu-item.is-drop-before {
+  border-top-color: var(--accent);
+}
+
+.col-menu-item.is-drop-after {
+  border-bottom-color: var(--accent);
+}
+
+.col-drag-handle {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
+  font-size: 0.7rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--muted, #8a94a6);
+  cursor: grab;
+  user-select: none;
+}
+
+.col-menu-item:active .col-drag-handle {
+  cursor: grabbing;
+}
+
+.col-menu label {
+  display: flex;
+  flex: 1;
+  align-items: center;
   gap: 0.45rem;
-  padding: 0.35rem 0.4rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.15rem;
   border-radius: 4px;
   font-size: 0.85rem;
   font-weight: 500;
@@ -394,7 +458,7 @@ td.col-procentaj-profit.pct-2 {
   cursor: pointer;
 }
 
-.col-menu label:hover {
+.col-menu-item:hover {
   background: var(--row-alt);
 }
 

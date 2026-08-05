@@ -17,13 +17,28 @@ const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
+const COL_ORDER_KEY = "emag-column-order";
+
+const DEFAULT_COLUMN_ORDER = [
+  ...table.querySelectorAll("thead th[data-col]"),
+].map((th) => th.dataset.col);
+const COLUMN_LABELS = Object.fromEntries(
+  [...table.querySelectorAll("thead th[data-col]")].map((th) => [
+    th.dataset.col,
+    th.textContent.trim(),
+  ])
+);
 
 let currentPage = 1;
 let loading = false;
 let savingSettings = false;
 let syncing = false;
 let hiddenCols = loadHiddenCols();
+let columnOrder = loadColumnOrder();
+let dragCol = null;
 let savedSettingsSnapshot = null;
+let sortCol = null;
+let sortDir = "asc";
 
 function loadHiddenCols() {
   try {
@@ -39,6 +54,26 @@ function saveHiddenCols() {
   localStorage.setItem(HIDDEN_COLS_KEY, JSON.stringify(hiddenCols));
 }
 
+function loadColumnOrder() {
+  try {
+    const raw = localStorage.getItem(COL_ORDER_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return [...DEFAULT_COLUMN_ORDER];
+    const valid = new Set(DEFAULT_COLUMN_ORDER);
+    const order = parsed.filter((c) => typeof c === "string" && valid.has(c));
+    for (const col of DEFAULT_COLUMN_ORDER) {
+      if (!order.includes(col)) order.push(col);
+    }
+    return order;
+  } catch {
+    return [...DEFAULT_COLUMN_ORDER];
+  }
+}
+
+function saveColumnOrder() {
+  localStorage.setItem(COL_ORDER_KEY, JSON.stringify(columnOrder));
+}
+
 function applyColumnVisibility() {
   const hidden = new Set(hiddenCols);
   table.querySelectorAll("[data-col]").forEach((el) => {
@@ -46,13 +81,35 @@ function applyColumnVisibility() {
   });
 }
 
+function applyColumnOrder() {
+  const headerRow = table.querySelector("thead tr");
+  if (!headerRow) return;
+  const thByCol = Object.fromEntries(
+    [...headerRow.querySelectorAll("th[data-col]")].map((th) => [th.dataset.col, th])
+  );
+  columnOrder.forEach((col) => {
+    if (thByCol[col]) headerRow.appendChild(thByCol[col]);
+  });
+
+  tbody.querySelectorAll("tr:not(.empty-row)").forEach((tr) => {
+    const tdByCol = Object.fromEntries(
+      [...tr.querySelectorAll("td[data-col]")].map((td) => [td.dataset.col, td])
+    );
+    columnOrder.forEach((col) => {
+      if (tdByCol[col]) tr.appendChild(tdByCol[col]);
+    });
+  });
+}
+
 function buildColumnMenu() {
-  const headers = [...table.querySelectorAll("thead th[data-col]")];
-  colMenu.innerHTML = headers
-    .map((th) => {
-      const col = th.dataset.col;
+  colMenu.innerHTML = columnOrder
+    .map((col) => {
       const checked = !hiddenCols.includes(col) ? "checked" : "";
-      return `<label><input type="checkbox" data-col-toggle="${escapeHtml(col)}" ${checked} />${escapeHtml(th.textContent.trim())}</label>`;
+      const label = COLUMN_LABELS[col] || col;
+      return `<div class="col-menu-item" data-col="${escapeHtml(col)}">
+        <span class="col-drag-handle" draggable="true" aria-hidden="true" title="Trage pentru a reordona">⋮⋮</span>
+        <label><input type="checkbox" data-col-toggle="${escapeHtml(col)}" ${checked} />${escapeHtml(label)}</label>
+      </div>`;
     })
     .join("");
 }
@@ -516,27 +573,121 @@ function rowHtml(product, index) {
   const handlingJson = escapeHtml(
     JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
   );
+  const cells = {
+    index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
+    id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
+    name: `<td data-col="name"${cellClass("name")}>${escapeHtml(product.name) || "—"}</td>`,
+    part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
+    id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
+    familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
+    pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
+    pret_transport: `<td data-col="pret_transport"${cellClass("pret_transport", "col-pret-transport")}>${formatPrice(costPerUnit(inputTransport), "RON")}</td>`,
+    pret_contabil: `<td data-col="pret_contabil"${cellClass("pret_contabil", "col-pret-contabil")}>${formatPrice(costPerUnit(inputContabil), "RON")}</td>`,
+    pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
+    pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
+    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>`,
+    procentaj_profit: `<td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>`,
+    prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
+    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>`,
+    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc")}>${escapeHtml(product.general_stock ?? "—")}</td>`,
+    status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
+    ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
+  };
   return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
-    <td data-col="index"${cellClass("index")}>${index}</td>
-    <td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>
-    <td data-col="name"${cellClass("name")}>${escapeHtml(product.name) || "—"}</td>
-    <td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>
-    <td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>
-    <td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>
-    <td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>
-    <td data-col="pret_transport"${cellClass("pret_transport", "col-pret-transport")}>${formatPrice(costPerUnit(inputTransport), "RON")}</td>
-    <td data-col="pret_contabil"${cellClass("pret_contabil", "col-pret-contabil")}>${formatPrice(costPerUnit(inputContabil), "RON")}</td>
-    <td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>
-    <td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>
-    <td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>
-    <td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>
-    <td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>
-    <td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>
-    <td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>
-    <td data-col="stoc"${cellClass("stoc")}>${escapeHtml(product.general_stock ?? "—")}</td>
-    <td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>
-    <td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>
+    ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
+}
+
+function parseSortNumber(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s === "—") return null;
+  const cleaned = s.replace(/[^\d.,\-]/g, "").replace(",", ".");
+  if (!cleaned || cleaned === "-" || cleaned === ".") return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getCellSortValue(tr, col) {
+  const td = tr.querySelector(`td[data-col="${col}"]`);
+  if (!td) return null;
+
+  if (col === "pret_emag" || col === "procentaj_profit") {
+    const input = td.querySelector("input");
+    return parseSortNumber(input?.value);
+  }
+  if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
+    return parseSortNumber(td.dataset.value);
+  }
+  if (col === "profit") {
+    const profit = calcProfit(td.dataset.salePrice, td.dataset.pretCumparare);
+    return profit == null ? null : Number(profit);
+  }
+  if (col === "status") {
+    return parseSortNumber(tr.dataset.status);
+  }
+  if (
+    col === "index" ||
+    col === "id" ||
+    col === "stoc" ||
+    col === "pret_cumparare" ||
+    col === "pret_transport" ||
+    col === "pret_contabil" ||
+    col === "pret_minim_profit"
+  ) {
+    return parseSortNumber(td.textContent);
+  }
+
+  const text = (td.textContent || "").trim();
+  if (!text || text === "—") return null;
+  return text.toLowerCase();
+}
+
+function compareRows(a, b, col, dir) {
+  const va = getCellSortValue(a, col);
+  const vb = getCellSortValue(b, col);
+  const aEmpty = va == null || va === "";
+  const bEmpty = vb == null || vb === "";
+
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return dir === "asc" ? 1 : -1;
+  if (bEmpty) return dir === "asc" ? -1 : 1;
+
+  let cmp;
+  if (typeof va === "number" && typeof vb === "number") {
+    cmp = va - vb;
+  } else {
+    cmp = String(va).localeCompare(String(vb), "ro", { numeric: true, sensitivity: "base" });
+  }
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function updateSortHeaders() {
+  table.querySelectorAll("thead th[data-col]").forEach((th) => {
+    th.classList.remove("is-sorted-asc", "is-sorted-desc");
+    if (sortCol && th.dataset.col === sortCol) {
+      th.classList.add(sortDir === "asc" ? "is-sorted-asc" : "is-sorted-desc");
+      th.setAttribute("aria-sort", sortDir === "asc" ? "ascending" : "descending");
+    } else {
+      th.setAttribute("aria-sort", "none");
+    }
+  });
+}
+
+function sortProductsTable() {
+  updateSortHeaders();
+  if (!sortCol) return;
+
+  const rows = [...tbody.querySelectorAll("tr:not(.empty-row)")];
+  if (rows.length === 0) return;
+
+  rows.sort((a, b) => compareRows(a, b, sortCol, sortDir));
+  rows.forEach((tr, i) => {
+    tbody.appendChild(tr);
+    const indexCell = tr.querySelector('td[data-col="index"]');
+    if (indexCell) indexCell.textContent = String(i + 1);
+  });
 }
 
 function renderProducts(products, append) {
@@ -559,6 +710,7 @@ function renderProducts(products, append) {
     "beforeend",
     products.map((p, i) => rowHtml(p, startIndex + i)).join("")
   );
+  if (sortCol) sortProductsTable();
   updateSyncButton();
 }
 
@@ -765,6 +917,19 @@ btnLoad.addEventListener("click", () => loadProducts({ append: false }));
 btnMore.addEventListener("click", () => loadProducts({ append: true }));
 btnSync.addEventListener("click", syncPrices);
 
+table.querySelector("thead")?.addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-col]");
+  if (!th) return;
+  const col = th.dataset.col;
+  if (sortCol === col) {
+    sortDir = sortDir === "asc" ? "desc" : "asc";
+  } else {
+    sortCol = col;
+    sortDir = "asc";
+  }
+  sortProductsTable();
+});
+
 function onSettingsInput() {
   updateDerivedCells();
   updateSaveDirtyState();
@@ -796,12 +961,66 @@ colMenu.addEventListener("change", (e) => {
   applyColumnVisibility();
 });
 
+colMenu.addEventListener("dragstart", (e) => {
+  const handle = e.target.closest(".col-drag-handle");
+  const item = handle?.closest(".col-menu-item");
+  if (!item) {
+    e.preventDefault();
+    return;
+  }
+  dragCol = item.dataset.col;
+  item.classList.add("is-dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragCol);
+});
+
+colMenu.addEventListener("dragend", () => {
+  dragCol = null;
+  colMenu.querySelectorAll(".col-menu-item").forEach((el) => {
+    el.classList.remove("is-dragging", "is-drop-before", "is-drop-after");
+  });
+});
+
+colMenu.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  const item = e.target.closest(".col-menu-item");
+  if (!item || !dragCol || item.dataset.col === dragCol) return;
+  e.dataTransfer.dropEffect = "move";
+  const rect = item.getBoundingClientRect();
+  const before = e.clientY < rect.top + rect.height / 2;
+  colMenu.querySelectorAll(".col-menu-item").forEach((el) => {
+    el.classList.remove("is-drop-before", "is-drop-after");
+  });
+  item.classList.add(before ? "is-drop-before" : "is-drop-after");
+});
+
+colMenu.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const item = e.target.closest(".col-menu-item");
+  if (!item || !dragCol || item.dataset.col === dragCol) return;
+  const from = columnOrder.indexOf(dragCol);
+  const toCol = item.dataset.col;
+  let to = columnOrder.indexOf(toCol);
+  if (from < 0 || to < 0) return;
+  const rect = item.getBoundingClientRect();
+  const before = e.clientY < rect.top + rect.height / 2;
+  if (!before) to += 1;
+  if (from < to) to -= 1;
+  if (from === to) return;
+  columnOrder.splice(from, 1);
+  columnOrder.splice(to, 0, dragCol);
+  saveColumnOrder();
+  applyColumnOrder();
+  buildColumnMenu();
+});
+
 colMenu.addEventListener("click", (e) => e.stopPropagation());
 
 document.addEventListener("click", () => {
   if (!colMenu.hidden) setColumnMenuOpen(false);
 });
 
+applyColumnOrder();
 buildColumnMenu();
 applyColumnVisibility();
 updateSyncButton();
