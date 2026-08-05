@@ -143,6 +143,33 @@ function formatPrice(price, currency) {
   return `${num.toFixed(2)} ${escapeHtml(currency || "RON")}`;
 }
 
+function formatPercent(value) {
+  if (value == null || value === "") return "—";
+  const num = Number(value);
+  if (Number.isNaN(num)) return "—";
+  return `${num.toFixed(2)}%`;
+}
+
+const PCT_LEVEL_CLASSES = ["pct-neg", "pct-1", "pct-2", "pct-3", "pct-4"];
+
+function procentajLevelClass(value) {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  if (n < 0) return "pct-neg";
+  if (n < 5) return "pct-1";
+  if (n < 15) return "pct-2";
+  if (n < 30) return "pct-3";
+  return "pct-4";
+}
+
+function fillProcentajCell(cell, value) {
+  cell.classList.remove(...PCT_LEVEL_CLASSES);
+  const level = procentajLevelClass(value);
+  if (level) cell.classList.add(level);
+  cell.innerHTML = formatPercent(value);
+}
+
 function roundPrice(n) {
   return Math.round(n * 10000) / 10000;
 }
@@ -199,6 +226,16 @@ function calcProfit(salePrice, pretCumparare) {
   const contabil = costPerUnit(inputContabil) ?? 0;
 
   return afterEmag - buyCost - transport - contabil;
+}
+
+function calcProcentajProfit(salePrice, pretCumparare) {
+  const profit = calcProfit(salePrice, pretCumparare);
+  const minProfit = calcPretMinimProfit(pretCumparare);
+  if (profit == null || minProfit == null) return null;
+  if (!Number.isFinite(profit) || !Number.isFinite(minProfit) || minProfit === 0) {
+    return null;
+  }
+  return (profit / minProfit) * 100;
 }
 
 function calcPretMinimProfit(pretCumparare) {
@@ -269,6 +306,11 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
     );
   }
 
+  const procentajCell = tr.querySelector("td.col-procentaj-profit");
+  if (procentajCell) {
+    fillProcentajCell(procentajCell, calcProcentajProfit(salePrice, pretCumparare));
+  }
+
   const prpCell = tr.querySelector("td[data-col='prp']");
   if (prpCell && derived.prp != null) {
     prpCell.dataset.value = String(derived.prp);
@@ -321,6 +363,10 @@ function updateDerivedCells() {
     if (profitCell) {
       profitCell.dataset.salePrice = sale;
       profitCell.innerHTML = formatPrice(calcProfit(sale, pretCumparare), currency);
+    }
+    const procentajCell = tr.querySelector("td.col-procentaj-profit");
+    if (procentajCell) {
+      fillProcentajCell(procentajCell, calcProcentajProfit(sale, pretCumparare));
     }
     const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
     if (minProfitCell) {
@@ -403,6 +449,10 @@ function rowHtml(product, index) {
     Number.isFinite(saleNum) &&
     prpNum < saleNum;
   const prpExtra = prpLow ? "is-prp-low" : "";
+  const procentajVal = calcProcentajProfit(product.sale_price, product.pret_cumparare);
+  const procentajExtra = ["col-procentaj-profit", procentajLevelClass(procentajVal)]
+    .filter(Boolean)
+    .join(" ");
   const stockJson = escapeHtml(JSON.stringify(product.stock ?? [{ warehouse_id: 1, value: 0 }]));
   const handlingJson = escapeHtml(
     JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
@@ -418,6 +468,7 @@ function rowHtml(product, index) {
     <td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>
     <td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>
     <td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>
+    <td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}>${formatPercent(procentajVal)}</td>
     <td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>
     <td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>
     <td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>
@@ -434,7 +485,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="16">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="17">Niciun produs găsit.</td></tr>';
     updateSyncButton();
     return;
   }
@@ -476,7 +527,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="16">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="17">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
     }
@@ -559,6 +610,7 @@ async function syncPrices() {
   if (syncing) return;
   const { offers, errors } = collectDirtyOffers();
   if (errors.length > 0) {
+    console.error("[eMAG sync] validare eșuată:", errors);
     setStatus(errors.join(" | "), "error");
     return;
   }
@@ -570,6 +622,16 @@ async function syncPrices() {
   syncing = true;
   btnSync.disabled = true;
   setStatus(`Se sincronizează ${offers.length} prețuri…`, "loading");
+  console.log(
+    `[eMAG sync] trimit ${offers.length} oferte:`,
+    offers.map((o) => ({
+      id: o.id,
+      sale_price: o.sale_price,
+      recommended_price: o.recommended_price,
+      min_sale_price: o.min_sale_price,
+      max_sale_price: o.max_sale_price,
+    }))
+  );
 
   try {
     const res = await fetch("/api/products/sync-prices", {
@@ -579,11 +641,13 @@ async function syncPrices() {
     });
     const data = await res.json();
     if (!res.ok) {
+      console.error("[eMAG sync] eșuat:", res.status, data);
       const detail = formatEmagMessages(data.messages);
       throw new Error(
         (data.error || `Eroare HTTP ${res.status}`) + (detail ? ` — ${detail}` : "")
       );
     }
+    console.log("[eMAG sync] OK — updatate pe eMAG:", data);
     clearDirtyAfterSync(offers);
     const msgDetail = formatEmagMessages(data.messages);
     setStatus(
@@ -592,6 +656,7 @@ async function syncPrices() {
       msgDetail ? "loading" : "ok"
     );
   } catch (err) {
+    console.error("[eMAG sync] eroare:", err.message);
     setStatus(err.message || "Eroare la sync", "error");
   } finally {
     syncing = false;

@@ -6,6 +6,7 @@ const { lookupPretCumparare, getSettings, saveSettings } = require("./db");
 const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const ITEMS_PER_PAGE = 100;
+const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 
 const app = express();
 app.use(express.json());
@@ -28,13 +29,86 @@ function authHeader(username, password) {
   return `Basic ${token}`;
 }
 
+function loadPreferredAuthLabel() {
+  try {
+    if (!fs.existsSync(AUTH_CACHE_PATH)) return null;
+    const raw = JSON.parse(fs.readFileSync(AUTH_CACHE_PATH, "utf8"));
+    return typeof raw?.label === "string" ? raw.label : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePreferredAuthLabel(label) {
+  try {
+    fs.mkdirSync(path.dirname(AUTH_CACHE_PATH), { recursive: true });
+    fs.writeFileSync(
+      AUTH_CACHE_PATH,
+      JSON.stringify({ label, savedAt: new Date().toISOString() }, null, 2),
+      "utf8"
+    );
+  } catch (err) {
+    console.warn("[auth] nu am putut salva preferred auth:", err.message);
+  }
+}
+
 function authCandidates(creds) {
   const list = [
-    [creds.USER_EMAIL, creds.ACCOUNT_PASSWORD],
-    [creds.USER_EMAIL, creds.API_CODE],
-    [creds.API_CODE, creds.ACCOUNT_PASSWORD],
-  ];
-  return list.filter(([user, pass]) => user && pass);
+    {
+      label: "email+password",
+      user: creds.USER_EMAIL,
+      pass: creds.ACCOUNT_PASSWORD,
+      userHint: "email",
+      passHint: "ACCOUNT_PASSWORD",
+    },
+    {
+      label: "email+api_code",
+      user: creds.USER_EMAIL,
+      pass: creds.API_CODE,
+      userHint: "email",
+      passHint: "API_CODE",
+    },
+    {
+      label: "api_code+password",
+      user: creds.API_CODE,
+      pass: creds.ACCOUNT_PASSWORD,
+      userHint: "API_CODE",
+      passHint: "ACCOUNT_PASSWORD",
+    },
+  ].filter((c) => c.user && c.pass);
+
+  const preferred = loadPreferredAuthLabel();
+  if (!preferred) return list;
+
+  const idx = list.findIndex((c) => c.label === preferred);
+  if (idx <= 0) return list;
+
+  const ordered = [list[idx], ...list.filter((_, i) => i !== idx)];
+  console.log(`[auth] preferred "${preferred}" mutat primul în listă`);
+  return ordered;
+}
+
+function logAuthAttempt(context, candidate, index, total) {
+  console.log(
+    `[auth:${context}] încerc ${index + 1}/${total} label=${candidate.label} ` +
+      `user=${candidate.userHint} pass=${candidate.passHint}`
+  );
+}
+
+function logAuthResult(context, candidate, status, ok) {
+  if (ok) {
+    console.log(
+      `[auth:${context}] SUCCES label=${candidate.label} HTTP ${status} — salvat ca preferred`
+    );
+  } else if (status === 401 || status === 403) {
+    console.warn(
+      `[auth:${context}] EȘUAT label=${candidate.label} HTTP ${status}`
+    );
+  } else {
+    console.log(
+      `[auth:${context}] răspuns non-auth label=${candidate.label} HTTP ${status}`
+    );
+  }
 }
 
 function formatCharacteristics(characteristics) {
@@ -158,6 +232,24 @@ app.post("/api/settings", (req, res) => {
 });
 
 async function emagProductOfferSave(auth, offers) {
+  console.log(
+    `[eMAG update] POST ${EMAG_API}/product_offer/save — ${offers.length} oferte`
+  );
+  console.log(
+    "[eMAG update] body:",
+    JSON.stringify(
+      offers.map((o) => ({
+        id: o.id,
+        sale_price: o.sale_price,
+        recommended_price: o.recommended_price,
+        min_sale_price: o.min_sale_price,
+        max_sale_price: o.max_sale_price,
+        status: o.status,
+        vat_id: o.vat_id,
+      }))
+    )
+  );
+
   const response = await fetch(`${EMAG_API}/product_offer/save`, {
     method: "POST",
     headers: {
@@ -173,6 +265,16 @@ async function emagProductOfferSave(auth, offers) {
     json = JSON.parse(text);
   } catch {
     json = null;
+  }
+
+  console.log(`[eMAG update] HTTP ${response.status}`);
+  if (json) {
+    console.log(
+      `[eMAG update] isError=${Boolean(json.isError)} messages=`,
+      json.messages || []
+    );
+  } else {
+    console.log("[eMAG update] răspuns non-JSON:", text.slice(0, 500));
   }
 
   return { response, json, text };
@@ -230,40 +332,38 @@ app.post("/api/products/sync-prices", async (req, res) => {
       offers.push(payload);
     }
 
-    console.log(
-      "[sync-prices] payload",
-      JSON.stringify(
-        offers.map((o) => ({
-          id: o.id,
-          sale_price: o.sale_price,
-          recommended_price: o.recommended_price,
-          min_sale_price: o.min_sale_price,
-          max_sale_price: o.max_sale_price,
-          status: o.status,
-          vat_id: o.vat_id,
-        }))
-      )
-    );
+    console.log(`[sync-prices] start — ${offers.length} oferte de updatat pe eMAG`);
 
     const creds = loadCredentials();
     const candidates = authCandidates(creds);
+    console.log(
+      `[auth:sync-prices] ordine încercări:`,
+      candidates.map((c) => c.label).join(" → ")
+    );
 
     let lastStatus = null;
     let lastJson = null;
     let lastText = "";
 
-    for (const [user, pass] of candidates) {
-      const auth = authHeader(user, pass);
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      logAuthAttempt("sync-prices", candidate, i, candidates.length);
+      const auth = authHeader(candidate.user, candidate.pass);
       const { response, json, text } = await emagProductOfferSave(auth, offers);
       lastStatus = response.status;
       lastJson = json;
       lastText = text;
 
       if (response.status === 401 || response.status === 403) {
+        logAuthResult("sync-prices", candidate, response.status, false);
         continue;
       }
 
+      logAuthResult("sync-prices", candidate, response.status, true);
+      savePreferredAuthLabel(candidate.label);
+
       if (!json) {
+        console.error("[sync-prices] răspuns invalid de la eMAG", text.slice(0, 500));
         return res.status(502).json({
           error: "Răspuns invalid de la eMAG",
           status: response.status,
@@ -272,26 +372,33 @@ app.post("/api/products/sync-prices", async (req, res) => {
       }
 
       if (json.isError) {
+        console.error("[sync-prices] eMAG isError:", json.messages || []);
         return res.status(502).json({
           error: "eMAG a returnat eroare la salvare prețuri",
           messages: json.messages || [],
         });
       }
 
+      console.log(
+        `[sync-prices] OK — updatate ${offers.length} oferte pe eMAG (auth=${candidate.label})`,
+        offers.map((o) => ({ id: o.id, sale_price: o.sale_price }))
+      );
       return res.json({
         ok: true,
         count: offers.length,
+        authUsed: candidate.label,
         messages: json.messages || [],
       });
     }
 
+    console.error("[sync-prices] autentificare eMAG eșuată (401/403) — toate combo-urile");
     return res.status(lastStatus || 401).json({
       error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
       messages: lastJson?.messages || [],
       detail: lastText.slice(0, 300),
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("[sync-prices] exception:", err.message);
     return res.status(500).json({ error: err.message || "Eroare la sync prețuri" });
   }
 });
@@ -301,24 +408,31 @@ app.get("/api/products", async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const creds = loadCredentials();
     const candidates = authCandidates(creds);
+    console.log(
+      `[auth:products] ordine încercări:`,
+      candidates.map((c) => c.label).join(" → ")
+    );
 
     let lastStatus = null;
     let lastJson = null;
     let lastText = "";
-    let usedAuthLabel = "";
 
-    for (const [user, pass] of candidates) {
-      const auth = authHeader(user, pass);
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      logAuthAttempt("products", candidate, i, candidates.length);
+      const auth = authHeader(candidate.user, candidate.pass);
       const { response, json, text } = await emagProductOfferRead(auth, page);
       lastStatus = response.status;
       lastJson = json;
       lastText = text;
 
       if (response.status === 401 || response.status === 403) {
+        logAuthResult("products", candidate, response.status, false);
         continue;
       }
 
-      usedAuthLabel = user === creds.USER_EMAIL ? "email" : "api_code";
+      logAuthResult("products", candidate, response.status, true);
+      savePreferredAuthLabel(candidate.label);
 
       if (!json) {
         return res.status(502).json({
@@ -338,16 +452,20 @@ app.get("/api/products", async (req, res) => {
       const results = Array.isArray(json.results) ? json.results : [];
       const products = results.map(mapOffer);
 
+      console.log(
+        `[auth:products] OK page=${page} count=${products.length} auth=${candidate.label}`
+      );
       return res.json({
         page,
         itemsPerPage: ITEMS_PER_PAGE,
         count: products.length,
         hasMore: products.length >= ITEMS_PER_PAGE,
-        authUsed: usedAuthLabel,
+        authUsed: candidate.label,
         products,
       });
     }
 
+    console.error("[auth:products] autentificare eMAG eșuată (401/403) — toate combo-urile");
     return res.status(lastStatus || 401).json({
       error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
       messages: lastJson?.messages || [],
