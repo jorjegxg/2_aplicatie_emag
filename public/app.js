@@ -5,6 +5,7 @@ const btnSync = document.getElementById("btn-sync");
 const btnColumns = document.getElementById("btn-columns");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
+const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const inputTransport = document.getElementById("pret-transport");
@@ -22,6 +23,7 @@ let loading = false;
 let savingSettings = false;
 let syncing = false;
 let hiddenCols = loadHiddenCols();
+let savedSettingsSnapshot = null;
 
 function loadHiddenCols() {
   try {
@@ -77,6 +79,7 @@ function fillSettings(settings) {
   inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
   inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
   inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
+  snapshotSettings();
 }
 
 function readSettingsFromForm() {
@@ -89,6 +92,25 @@ function readSettingsFromForm() {
     mult_min: inputMultMin.value,
     mult_max: inputMultMax.value,
   };
+}
+
+function snapshotSettings() {
+  savedSettingsSnapshot = readSettingsFromForm();
+  updateSaveDirtyState();
+}
+
+function isSettingsDirty() {
+  if (!savedSettingsSnapshot) return false;
+  const current = readSettingsFromForm();
+  return Object.keys(current).some(
+    (key) => String(current[key]) !== String(savedSettingsSnapshot[key])
+  );
+}
+
+function updateSaveDirtyState() {
+  const dirty = isSettingsDirty();
+  btnSaveSettings.classList.toggle("is-dirty", dirty);
+  btnSaveSettings.disabled = savingSettings || !dirty;
 }
 
 async function loadSettings() {
@@ -104,9 +126,9 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  if (savingSettings) return;
+  if (savingSettings || !isSettingsDirty()) return;
   savingSettings = true;
-  btnSaveSettings.disabled = true;
+  updateSaveDirtyState();
   setStatus("Se salvează…", "loading");
 
   try {
@@ -124,7 +146,7 @@ async function saveSettings() {
     setStatus(err.message || "Eroare la salvare", "error");
   } finally {
     savingSettings = false;
-    btnSaveSettings.disabled = false;
+    updateSaveDirtyState();
   }
 }
 
@@ -150,23 +172,31 @@ function formatPercent(value) {
   return `${num.toFixed(2)}%`;
 }
 
-const PCT_LEVEL_CLASSES = ["pct-neg", "pct-1", "pct-2", "pct-3", "pct-4"];
+const PCT_LEVEL_CLASSES = ["pct-1", "pct-2", "pct-3"];
 
 function procentajLevelClass(value) {
   if (value == null || value === "") return "";
   const n = Number(value);
   if (!Number.isFinite(n)) return "";
-  if (n < 0) return "pct-neg";
-  if (n < 5) return "pct-1";
-  if (n < 15) return "pct-2";
-  if (n < 30) return "pct-3";
-  return "pct-4";
+  // Match displayed toFixed(2) so 19.996 → "20.00" gets the same color
+  const shown = Math.round(n * 100) / 100;
+  if (shown < 20) return "pct-1";
+  return "pct-2";
 }
 
 function fillProcentajCell(cell, value) {
   cell.classList.remove(...PCT_LEVEL_CLASSES);
   const level = procentajLevelClass(value);
   if (level) cell.classList.add(level);
+  const input = cell.querySelector("input.input-procentaj-profit");
+  if (input) {
+    if (document.activeElement === input) return;
+    input.value =
+      value == null || value === "" || !Number.isFinite(Number(value))
+        ? ""
+        : Number(value).toFixed(2);
+    return;
+  }
   cell.innerHTML = formatPercent(value);
 }
 
@@ -236,6 +266,32 @@ function calcProcentajProfit(salePrice, pretCumparare) {
     return null;
   }
   return (profit / minProfit) * 100;
+}
+
+function saleFromProcentaj(procentaj, pretCumparare) {
+  if (procentaj == null || procentaj === "" || inputProcentaj.value === "") {
+    return null;
+  }
+  const pctTarget = Number(procentaj);
+  const pctEmag = Number(inputProcentaj.value);
+  if (Number.isNaN(pctTarget) || Number.isNaN(pctEmag) || pctEmag >= 100) {
+    return null;
+  }
+
+  const factor = 1 - pctEmag / 100;
+  if (factor <= 0) return null;
+
+  const minProfit = calcPretMinimProfit(pretCumparare);
+  if (minProfit == null || !Number.isFinite(minProfit)) return null;
+
+  const buy = Number(pretCumparare);
+  const buyCost =
+    pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
+  const transport = costPerUnit(inputTransport) ?? 0;
+  const contabil = costPerUnit(inputContabil) ?? 0;
+  const costs = buyCost + transport + contabil;
+
+  return roundPrice((costs + (pctTarget / 100) * minProfit) / factor);
 }
 
 function calcPretMinimProfit(pretCumparare) {
@@ -331,12 +387,25 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
 
   const pretCell = tr.querySelector("td.col-pret-emag");
   const original = tr.dataset.originalSale ?? "";
-  const isDirty = markDirty && !pricesEqual(salePrice, original);
+  const isDirty =
+    markDirty &&
+    (!pricesEqual(salePrice, original) ||
+      (derived.prp != null && !pricesEqual(derived.prp, tr.dataset.originalPrp)) ||
+      (derived.min != null && !pricesEqual(derived.min, tr.dataset.originalMin)) ||
+      (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
   tr.classList.toggle("is-price-dirty", isDirty);
   if (pretCell) pretCell.classList.toggle("is-price-dirty", isDirty);
   if (prpCell) prpCell.classList.toggle("is-price-dirty", isDirty);
   if (minCell) minCell.classList.toggle("is-price-dirty", isDirty);
   if (maxCell) maxCell.classList.toggle("is-price-dirty", isDirty);
+
+  if (isDirty) {
+    tr.classList.remove("is-just-synced");
+    if (pretCell) pretCell.classList.remove("is-just-synced");
+    if (prpCell) prpCell.classList.remove("is-just-synced");
+    if (minCell) minCell.classList.remove("is-just-synced");
+    if (maxCell) maxCell.classList.remove("is-just-synced");
+  }
 
   syncMinProfitVsEmag(tr, salePrice, pretCumparare);
   syncPrpVsEmag(tr, salePrice);
@@ -359,15 +428,6 @@ function updateDerivedCells() {
     const sale = input.value;
     const pretCumparare = tr.dataset.pretCumparare ?? "";
     const currency = tr.dataset.currency || "RON";
-    const profitCell = tr.querySelector("td.col-profit");
-    if (profitCell) {
-      profitCell.dataset.salePrice = sale;
-      profitCell.innerHTML = formatPrice(calcProfit(sale, pretCumparare), currency);
-    }
-    const procentajCell = tr.querySelector("td.col-procentaj-profit");
-    if (procentajCell) {
-      fillProcentajCell(procentajCell, calcProcentajProfit(sale, pretCumparare));
-    }
     const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
     if (minProfitCell) {
       minProfitCell.innerHTML = formatPrice(
@@ -375,12 +435,7 @@ function updateDerivedCells() {
         currency
       );
     }
-    syncMinProfitVsEmag(tr, sale, pretCumparare);
-    if (tr.classList.contains("is-price-dirty")) {
-      applyRowPrices(tr, sale);
-    } else {
-      syncPrpVsEmag(tr, sale);
-    }
+    applyRowPrices(tr, sale);
   });
   updateSyncButton();
 }
@@ -450,6 +505,10 @@ function rowHtml(product, index) {
     prpNum < saleNum;
   const prpExtra = prpLow ? "is-prp-low" : "";
   const procentajVal = calcProcentajProfit(product.sale_price, product.pret_cumparare);
+  const procentajAttr =
+    procentajVal == null || !Number.isFinite(Number(procentajVal))
+      ? ""
+      : Number(procentajVal).toFixed(2);
   const procentajExtra = ["col-procentaj-profit", procentajLevelClass(procentajVal)]
     .filter(Boolean)
     .join(" ");
@@ -462,13 +521,15 @@ function rowHtml(product, index) {
     <td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>
     <td data-col="name"${cellClass("name")}>${escapeHtml(product.name) || "—"}</td>
     <td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>
+    <td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>
+    <td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>
     <td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>
     <td data-col="pret_transport"${cellClass("pret_transport", "col-pret-transport")}>${formatPrice(costPerUnit(inputTransport), "RON")}</td>
     <td data-col="pret_contabil"${cellClass("pret_contabil", "col-pret-contabil")}>${formatPrice(costPerUnit(inputContabil), "RON")}</td>
     <td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>
     <td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>
     <td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>
-    <td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}>${formatPercent(procentajVal)}</td>
+    <td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>
     <td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>
     <td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>
     <td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>
@@ -587,6 +648,18 @@ function collectDirtyOffers() {
   return { offers, errors };
 }
 
+function markJustSynced(tr) {
+  tr.classList.add("is-just-synced");
+  const pretCell = tr.querySelector("td.col-pret-emag");
+  const prpCell = tr.querySelector("td[data-col='prp']");
+  const minCell = tr.querySelector("td[data-col='pret_minim']");
+  const maxCell = tr.querySelector("td[data-col='pret_maxim']");
+  if (pretCell) pretCell.classList.add("is-just-synced");
+  if (prpCell) prpCell.classList.add("is-just-synced");
+  if (minCell) minCell.classList.add("is-just-synced");
+  if (maxCell) maxCell.classList.add("is-just-synced");
+}
+
 function clearDirtyAfterSync(offers) {
   const byId = new Map(offers.map((o) => [String(o.id), o]));
   tbody.querySelectorAll("tr.is-price-dirty").forEach((tr) => {
@@ -603,6 +676,7 @@ function clearDirtyAfterSync(offers) {
       tr.dataset.originalMax = String(offer.max_sale_price);
     }
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
+    markJustSynced(tr);
   });
 }
 
@@ -649,6 +723,7 @@ async function syncPrices() {
     }
     console.log("[eMAG sync] OK — updatate pe eMAG:", data);
     clearDirtyAfterSync(offers);
+    if (syncInfoBanner) syncInfoBanner.hidden = false;
     const msgDetail = formatEmagMessages(data.messages);
     setStatus(
       `Sincronizate ${offers.length} prețuri cu eMAG.` +
@@ -665,6 +740,19 @@ async function syncPrices() {
 }
 
 tbody.addEventListener("input", (e) => {
+  const pctInput = e.target.closest("input.input-procentaj-profit");
+  if (pctInput) {
+    const tr = pctInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    const pretCumparare = tr.dataset.pretCumparare ?? "";
+    const sale = saleFromProcentaj(pctInput.value, pretCumparare);
+    if (sale == null) return;
+    const saleInput = tr.querySelector("input.input-sale-price");
+    if (saleInput) saleInput.value = String(sale);
+    applyRowPrices(tr, sale);
+    return;
+  }
+
   const input = e.target.closest("input.input-sale-price");
   if (!input) return;
   const tr = input.closest("tr[data-offer-id]");
@@ -676,13 +764,19 @@ btnSaveSettings.addEventListener("click", saveSettings);
 btnLoad.addEventListener("click", () => loadProducts({ append: false }));
 btnMore.addEventListener("click", () => loadProducts({ append: true }));
 btnSync.addEventListener("click", syncPrices);
-inputTransport.addEventListener("input", updateDerivedCells);
-inputContabil.addEventListener("input", updateDerivedCells);
-inputProcentaj.addEventListener("input", updateDerivedCells);
-inputNumarProduse.addEventListener("input", updateDerivedCells);
-inputMultPrp.addEventListener("input", updateDerivedCells);
-inputMultMin.addEventListener("input", updateDerivedCells);
-inputMultMax.addEventListener("input", updateDerivedCells);
+
+function onSettingsInput() {
+  updateDerivedCells();
+  updateSaveDirtyState();
+}
+
+inputTransport.addEventListener("input", onSettingsInput);
+inputContabil.addEventListener("input", onSettingsInput);
+inputProcentaj.addEventListener("input", onSettingsInput);
+inputNumarProduse.addEventListener("input", onSettingsInput);
+inputMultPrp.addEventListener("input", onSettingsInput);
+inputMultMin.addEventListener("input", onSettingsInput);
+inputMultMax.addEventListener("input", onSettingsInput);
 
 btnColumns.addEventListener("click", (e) => {
   e.stopPropagation();

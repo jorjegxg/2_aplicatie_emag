@@ -149,12 +149,15 @@ function mapOffer(offer) {
   const ean = Array.isArray(offer.ean) ? offer.ean.join(", ") : offer.ean || "";
   const name = offer.name || "";
   const part_number = offer.part_number || "";
+  const fam = Array.isArray(offer.family) ? offer.family[0] : offer.family;
   return {
     id: offer.id,
     name,
     brand: offer.brand || offer.brand_name || "",
     part_number,
     part_number_key: offer.part_number_key || "",
+    id_familie: fam?.id ?? null,
+    familie: fam?.name || "",
     sale_price: offer.sale_price ?? null,
     recommended_price: offer.recommended_price ?? null,
     min_sale_price: offer.min_sale_price ?? null,

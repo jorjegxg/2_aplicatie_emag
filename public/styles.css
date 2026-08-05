@@ -48,12 +48,36 @@ body {
   font-size: 0.95rem;
 }
 
+.sync-info-banner {
+  margin: 0.85rem 0 0;
+  padding: 0.85rem 1.1rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0c4a6e;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  border-left: 5px solid #0284c7;
+  border-radius: 6px;
+}
+
+.sync-info-banner[hidden] {
+  display: none;
+}
+
 .toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1.5rem 0 1rem;
+}
+
+.toolbar-fields,
+.toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
-  margin: 1.5rem 0 1rem;
 }
 
 .field {
@@ -95,6 +119,28 @@ body {
   cursor: pointer;
 }
 
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+#btn-save-settings.is-dirty:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+#btn-save-settings.is-dirty:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
 .btn:hover:not(:disabled) {
   background: var(--accent-hover);
 }
@@ -114,7 +160,7 @@ body {
   background: var(--row-alt);
 }
 
-#btn-sync {
+.toolbar-actions #btn-sync {
   margin-left: auto;
   background: #e84a8a;
 }
@@ -256,6 +302,19 @@ td[data-col="pret_maxim"].is-price-dirty {
   background: #fef9c3;
 }
 
+/* Rămâne după sync OK, până la refresh — verificare vizuală subtilă */
+tr.is-just-synced td.col-pret-emag,
+td.col-pret-emag.is-just-synced {
+  background: #dcfce7;
+  box-shadow: inset 3px 0 0 #16a34a;
+}
+
+td[data-col="prp"].is-just-synced,
+td[data-col="pret_minim"].is-just-synced,
+td[data-col="pret_maxim"].is-just-synced {
+  background: #f0fdf4;
+}
+
 th.col-profit {
   color: var(--ok);
   background: #dcfce7;
@@ -278,27 +337,30 @@ td.col-procentaj-profit {
   font-weight: 700;
 }
 
-td.col-procentaj-profit.pct-neg {
+td.col-procentaj-profit .input-procentaj-profit {
+  width: 5.5rem;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: inherit;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+}
+
+td.col-procentaj-profit .input-procentaj-profit:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+  background: #fff;
+}
+
+td.col-procentaj-profit.pct-1 {
   color: var(--danger);
   background: #fef3f2;
 }
 
-td.col-procentaj-profit.pct-1 {
-  color: #64748b;
-  background: #f1f5f9;
-}
-
 td.col-procentaj-profit.pct-2 {
-  color: #b45309;
-  background: #fffbeb;
-}
-
-td.col-procentaj-profit.pct-3 {
-  color: #c2410c;
-  background: #fff7ed;
-}
-
-td.col-procentaj-profit.pct-4 {
   color: var(--accent);
   background: #eff6ff;
 }
