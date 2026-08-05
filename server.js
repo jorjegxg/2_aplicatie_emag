@@ -1,13 +1,14 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const { lookupPretCumparare } = require("./db");
+const { lookupPretCumparare, getSettings, saveSettings } = require("./db");
 
 const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const ITEMS_PER_PAGE = 100;
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 function loadCredentials() {
@@ -60,6 +61,9 @@ function mapOffer(offer) {
     part_number,
     part_number_key: offer.part_number_key || "",
     sale_price: offer.sale_price ?? null,
+    recommended_price: offer.recommended_price ?? null,
+    min_sale_price: offer.min_sale_price ?? null,
+    max_sale_price: offer.max_sale_price ?? null,
     pret_cumparare: lookupPretCumparare(part_number, name),
     currency: offer.currency || "RON",
     general_stock: offer.general_stock ?? null,
@@ -94,6 +98,37 @@ async function emagProductOfferRead(auth, page) {
 
   return { response, json, text };
 }
+
+app.get("/api/settings", (_req, res) => {
+  try {
+    return res.json(getSettings());
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire setări" });
+  }
+});
+
+app.post("/api/settings", (req, res) => {
+  try {
+    const toNum = (v) => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const saved = saveSettings({
+      pret_transport: toNum(req.body?.pret_transport),
+      pret_contabil: toNum(req.body?.pret_contabil),
+      procentaj_emag: toNum(req.body?.procentaj_emag),
+      numar_produse: toNum(req.body?.numar_produse),
+    });
+
+    return res.json(saved);
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare setări" });
+  }
+});
 
 app.get("/api/products", async (req, res) => {
   try {

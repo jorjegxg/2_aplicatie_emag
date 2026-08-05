@@ -14,10 +14,64 @@
       </header>
 
       <div class="toolbar">
+        <label class="field">
+          <span>Pret transport(lei)</span>
+          <input
+            type="number"
+            id="pret-transport"
+            name="pret-transport"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+          />
+        </label>
+        <label class="field">
+          <span>Pret contabil(lei)</span>
+          <input
+            type="number"
+            id="pret-contabil"
+            name="pret-contabil"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+          />
+        </label>
+        <label class="field">
+          <span>Procentaj emag(%)</span>
+          <input
+            type="number"
+            id="procentaj-emag"
+            name="procentaj-emag"
+            min="0"
+            max="100"
+            step="0.01"
+            placeholder="0"
+          />
+        </label>
+        <label class="field">
+          <span>Numar de produse</span>
+          <input
+            type="number"
+            id="numar-produse"
+            name="numar-produse"
+            min="0"
+            step="1"
+            placeholder="0"
+          />
+        </label>
+        <button type="button" id="btn-save-settings" class="btn btn-secondary">
+          Salvează
+        </button>
         <button type="button" id="btn-load" class="btn">Încarcă produse</button>
         <button type="button" id="btn-more" class="btn btn-secondary" hidden>
           Pagina următoare
         </button>
+        <div class="col-menu-wrap">
+          <button type="button" id="btn-columns" class="btn btn-secondary" aria-expanded="false" aria-controls="col-menu">
+            Coloane
+          </button>
+          <div id="col-menu" class="col-menu" hidden role="menu"></div>
+        </div>
         <span id="status" class="status" aria-live="polite"></span>
       </div>
 
@@ -25,20 +79,26 @@
         <table id="products-table">
           <thead>
             <tr>
-              <th>#</th>
-              <th>ID</th>
-              <th>Nume</th>
-              <th>Part number</th>
-              <th>Pret emag</th>
-              <th>Preț cumpărare</th>
-              <th>Stoc</th>
-              <th>Status</th>
-              <th>EAN / PNK</th>
+              <th data-col="index">#</th>
+              <th data-col="id">ID</th>
+              <th data-col="name">Nume</th>
+              <th data-col="part_number">Part number</th>
+              <th data-col="pret_cumparare">Preț cumpărare</th>
+              <th data-col="pret_transport">Pret transport</th>
+              <th data-col="pret_contabil">Pret contabil</th>
+              <th data-col="pret_emag" class="col-pret-emag">Pret emag</th>
+              <th data-col="profit" class="col-profit">Profit</th>
+              <th data-col="prp">PRP</th>
+              <th data-col="pret_minim">Pret minim</th>
+              <th data-col="pret_maxim">Pret maxim</th>
+              <th data-col="stoc">Stoc</th>
+              <th data-col="status">Status</th>
+              <th data-col="ean_pnk">EAN / PNK</th>
             </tr>
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="9">Apasă „Încarcă produse” pentru a afișa ofertele.</td>
+              <td colspan="15">Apasă „Încarcă produse” pentru a afișa ofertele.</td>
             </tr>
           </tbody>
         </table>

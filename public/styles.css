@@ -8,6 +8,7 @@
   --border: #d0d8e0;
   --danger: #b42318;
   --ok: #067647;
+  --emag-price: #e11d48;
   --row-alt: #f7f9fc;
   --font: "Segoe UI", "Helvetica Neue", sans-serif;
 }
@@ -49,9 +50,35 @@ body {
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
   margin: 1.5rem 0 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field input {
+  width: 8.5rem;
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--ink);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.field input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
 }
 
 .btn {
@@ -164,6 +191,73 @@ tbody tr:hover {
 .badge-inactive {
   background: #fee4e2;
   color: var(--danger);
+}
+
+th.col-pret-emag {
+  color: var(--emag-price);
+  background: #ffe4e8;
+  font-weight: 700;
+}
+
+td.col-pret-emag {
+  color: var(--emag-price);
+  font-weight: 700;
+  background: #fff1f3;
+}
+
+th.col-profit {
+  color: var(--ok);
+  background: #dcfce7;
+  font-weight: 700;
+}
+
+td.col-profit {
+  color: var(--ok);
+  font-weight: 700;
+  background: #f0fdf4;
+}
+
+.col-menu-wrap {
+  position: relative;
+}
+
+.col-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  min-width: 11.5rem;
+  padding: 0.45rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(26, 35, 50, 0.12);
+}
+
+.col-menu label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.col-menu label:hover {
+  background: var(--row-alt);
+}
+
+.col-menu input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+#products-table th.is-col-hidden,
+#products-table td.is-col-hidden {
+  display: none;
 }
 
 @media (max-width: 640px) {
