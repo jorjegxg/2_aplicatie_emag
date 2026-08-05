@@ -50,6 +50,27 @@ function formatCharacteristics(characteristics) {
     .join("; ");
 }
 
+function normalizeStock(stock, generalStock) {
+  if (Array.isArray(stock) && stock.length > 0) {
+    return stock.map((s) => ({
+      warehouse_id: Number(s.warehouse_id) || 1,
+      value: Number(s.value) || 0,
+    }));
+  }
+  const qty = Number(generalStock);
+  return [{ warehouse_id: 1, value: Number.isFinite(qty) ? qty : 0 }];
+}
+
+function normalizeHandlingTime(handlingTime) {
+  if (Array.isArray(handlingTime) && handlingTime.length > 0) {
+    return handlingTime.map((h) => ({
+      warehouse_id: Number(h.warehouse_id) || 1,
+      value: Number(h.value) || 0,
+    }));
+  }
+  return [{ warehouse_id: 1, value: 0 }];
+}
+
 function mapOffer(offer) {
   const ean = Array.isArray(offer.ean) ? offer.ean.join(", ") : offer.ean || "";
   const name = offer.name || "";
@@ -69,6 +90,9 @@ function mapOffer(offer) {
     general_stock: offer.general_stock ?? null,
     estimated_stock: offer.estimated_stock ?? null,
     status: offer.status,
+    vat_id: offer.vat_id ?? null,
+    handling_time: normalizeHandlingTime(offer.handling_time),
+    stock: normalizeStock(offer.stock, offer.general_stock),
     ean,
     characteristics: formatCharacteristics(offer.characteristics),
   };
@@ -134,16 +158,13 @@ app.post("/api/settings", (req, res) => {
 });
 
 async function emagProductOfferSave(auth, offers) {
-  const body = new URLSearchParams();
-  body.set("data", JSON.stringify(offers));
-
   const response = await fetch(`${EMAG_API}/product_offer/save`, {
     method: "POST",
     headers: {
       Authorization: auth,
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
     },
-    body: body.toString(),
+    body: JSON.stringify({ data: offers }),
   });
 
   const text = await response.text();
@@ -176,17 +197,53 @@ app.post("/api/products/sync-prices", async (req, res) => {
       const recommended_price = toNum(o?.recommended_price);
       const min_sale_price = toNum(o?.min_sale_price);
       const max_sale_price = toNum(o?.max_sale_price);
+      const status = toNum(o?.status);
+      const vat_id = toNum(o?.vat_id);
       if (id == null || sale_price == null) {
         return res.status(400).json({
           error: "Fiecare ofertă trebuie să aibă id și sale_price valide",
         });
       }
-      const payload = { id, sale_price };
+      if (status == null || vat_id == null) {
+        return res.status(400).json({
+          error: `Oferta ${id}: lipsesc status sau vat_id (reîncarcă produsele)`,
+        });
+      }
+      if (recommended_price != null && recommended_price <= sale_price) {
+        return res.status(400).json({
+          error: `Oferta ${id}: PRP (${recommended_price}) trebuie să fie mai mare decât pretul de vânzare (${sale_price})`,
+        });
+      }
+      const stock = normalizeStock(o?.stock, o?.general_stock);
+      const handling_time = normalizeHandlingTime(o?.handling_time);
+      const payload = {
+        id,
+        status,
+        sale_price,
+        vat_id,
+        handling_time,
+        stock,
+      };
       if (recommended_price != null) payload.recommended_price = recommended_price;
       if (min_sale_price != null) payload.min_sale_price = min_sale_price;
       if (max_sale_price != null) payload.max_sale_price = max_sale_price;
       offers.push(payload);
     }
+
+    console.log(
+      "[sync-prices] payload",
+      JSON.stringify(
+        offers.map((o) => ({
+          id: o.id,
+          sale_price: o.sale_price,
+          recommended_price: o.recommended_price,
+          min_sale_price: o.min_sale_price,
+          max_sale_price: o.max_sale_price,
+          status: o.status,
+          vat_id: o.vat_id,
+        }))
+      )
+    );
 
     const creds = loadCredentials();
     const candidates = authCandidates(creds);

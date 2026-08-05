@@ -8,7 +8,7 @@
   --border: #d0d8e0;
   --danger: #b42318;
   --ok: #067647;
-  --emag-price: #e11d48;
+  --emag-price: #7c3aed;
   --row-alt: #f7f9fc;
   --font: "Segoe UI", "Helvetica Neue", sans-serif;
 }
@@ -29,9 +29,10 @@ body {
 }
 
 .page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.25rem 3rem;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 1.25rem 0.75rem 2rem;
 }
 
 .header h1 {
@@ -113,6 +114,15 @@ body {
   background: var(--row-alt);
 }
 
+#btn-sync {
+  margin-left: auto;
+  background: #e84a8a;
+}
+
+#btn-sync:hover:not(:disabled) {
+  background: #d63678;
+}
+
 .status {
   font-size: 0.875rem;
   color: var(--muted);
@@ -131,7 +141,8 @@ body {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: calc(100vh - 14rem);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -159,6 +170,7 @@ th {
   white-space: nowrap;
   position: sticky;
   top: 0;
+  z-index: 2;
 }
 
 tbody tr:nth-child(even) {
@@ -195,14 +207,24 @@ tbody tr:hover {
 
 th.col-pret-emag {
   color: var(--emag-price);
-  background: #ffe4e8;
+  background: #ede9fe;
   font-weight: 700;
 }
 
 td.col-pret-emag {
   color: var(--emag-price);
   font-weight: 700;
-  background: #fff1f3;
+  background: #f5f3ff;
+}
+
+td[data-col="pret_minim_profit"].is-below-emag {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+td[data-col="prp"].is-prp-low {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 td.col-pret-emag .input-sale-price {
@@ -232,12 +254,6 @@ td[data-col="prp"].is-price-dirty,
 td[data-col="pret_minim"].is-price-dirty,
 td[data-col="pret_maxim"].is-price-dirty {
   background: #fef9c3;
-}
-
-.sync-bar {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 1rem;
 }
 
 th.col-profit {

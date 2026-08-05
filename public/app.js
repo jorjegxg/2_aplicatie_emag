@@ -201,6 +201,23 @@ function calcProfit(salePrice, pretCumparare) {
   return afterEmag - buyCost - transport - contabil;
 }
 
+function calcPretMinimProfit(pretCumparare) {
+  if (inputProcentaj.value === "") return null;
+  const pct = Number(inputProcentaj.value);
+  if (Number.isNaN(pct) || pct >= 100) return null;
+
+  const buy = Number(pretCumparare);
+  const buyCost =
+    pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
+  const transport = costPerUnit(inputTransport) ?? 0;
+  const contabil = costPerUnit(inputContabil) ?? 0;
+  const costs = buyCost + transport + contabil;
+  const factor = 1 - pct / 100;
+  if (factor <= 0) return null;
+
+  return roundPrice(costs / factor);
+}
+
 function pricesEqual(a, b) {
   const na = Number(a);
   const nb = Number(b);
@@ -208,6 +225,29 @@ function pricesEqual(a, b) {
     return String(a ?? "") === String(b ?? "");
   }
   return Math.abs(na - nb) < 0.00005;
+}
+
+function syncMinProfitVsEmag(tr, salePrice, pretCumparare) {
+  const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
+  if (!minProfitCell) return;
+  const minProfit = calcPretMinimProfit(pretCumparare);
+  const sale = Number(salePrice);
+  const below =
+    minProfit != null &&
+    Number.isFinite(minProfit) &&
+    Number.isFinite(sale) &&
+    sale < minProfit;
+  minProfitCell.classList.toggle("is-below-emag", below);
+}
+
+function syncPrpVsEmag(tr, salePrice) {
+  const prpCell = tr.querySelector("td[data-col='prp']");
+  if (!prpCell) return;
+  const prp = Number(prpCell.dataset.value);
+  const sale = Number(salePrice);
+  const low =
+    Number.isFinite(prp) && Number.isFinite(sale) && prp < sale;
+  prpCell.classList.toggle("is-prp-low", low);
 }
 
 function updateSyncButton() {
@@ -256,6 +296,8 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   if (minCell) minCell.classList.toggle("is-price-dirty", isDirty);
   if (maxCell) maxCell.classList.toggle("is-price-dirty", isDirty);
 
+  syncMinProfitVsEmag(tr, salePrice, pretCumparare);
+  syncPrpVsEmag(tr, salePrice);
   updateSyncButton();
 }
 
@@ -280,8 +322,18 @@ function updateDerivedCells() {
       profitCell.dataset.salePrice = sale;
       profitCell.innerHTML = formatPrice(calcProfit(sale, pretCumparare), currency);
     }
+    const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
+    if (minProfitCell) {
+      minProfitCell.innerHTML = formatPrice(
+        calcPretMinimProfit(pretCumparare),
+        currency
+      );
+    }
+    syncMinProfitVsEmag(tr, sale, pretCumparare);
     if (tr.classList.contains("is-price-dirty")) {
       applyRowPrices(tr, sale);
+    } else {
+      syncPrpVsEmag(tr, sale);
     }
   });
   updateSyncButton();
@@ -304,6 +356,29 @@ function eanPnk(product) {
   return parts.length ? escapeHtml(parts.join(" · ")) : "—";
 }
 
+function formatEmagMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return "";
+  return messages
+    .map((m) => {
+      if (typeof m === "string") return m;
+      if (m && typeof m === "object") {
+        const parts = [m.type, m.message || m.msg || JSON.stringify(m)].filter(Boolean);
+        return parts.join(": ");
+      }
+      return String(m);
+    })
+    .join(" | ");
+}
+
+function parseJsonAttr(raw, fallback) {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
 function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
@@ -314,7 +389,25 @@ function rowHtml(product, index) {
     return parts.length ? ` class="${parts.join(" ")}"` : "";
   };
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}">
+  const minProfit = calcPretMinimProfit(pretCumparare);
+  const saleNum = Number(salePrice);
+  const minBelowEmag =
+    minProfit != null &&
+    Number.isFinite(minProfit) &&
+    Number.isFinite(saleNum) &&
+    saleNum < minProfit;
+  const minProfitExtra = minBelowEmag ? "is-below-emag" : "";
+  const prpNum = Number(product.recommended_price);
+  const prpLow =
+    Number.isFinite(prpNum) &&
+    Number.isFinite(saleNum) &&
+    prpNum < saleNum;
+  const prpExtra = prpLow ? "is-prp-low" : "";
+  const stockJson = escapeHtml(JSON.stringify(product.stock ?? [{ warehouse_id: 1, value: 0 }]));
+  const handlingJson = escapeHtml(
+    JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
+  );
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
     <td data-col="index"${cellClass("index")}>${index}</td>
     <td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>
     <td data-col="name"${cellClass("name")}>${escapeHtml(product.name) || "—"}</td>
@@ -322,9 +415,10 @@ function rowHtml(product, index) {
     <td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>
     <td data-col="pret_transport"${cellClass("pret_transport", "col-pret-transport")}>${formatPrice(costPerUnit(inputTransport), "RON")}</td>
     <td data-col="pret_contabil"${cellClass("pret_contabil", "col-pret-contabil")}>${formatPrice(costPerUnit(inputContabil), "RON")}</td>
+    <td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>
     <td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>
     <td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>
-    <td data-col="prp"${cellClass("prp")} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>
+    <td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>
     <td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>
     <td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>
     <td data-col="stoc"${cellClass("stoc")}>${escapeHtml(product.general_stock ?? "—")}</td>
@@ -340,7 +434,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="15">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="16">Niciun produs găsit.</td></tr>';
     updateSyncButton();
     return;
   }
@@ -382,7 +476,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="15">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="16">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
     }
@@ -396,23 +490,50 @@ async function loadProducts({ append = false } = {}) {
 
 function collectDirtyOffers() {
   const offers = [];
+  const errors = [];
   tbody.querySelectorAll("tr.is-price-dirty").forEach((tr) => {
     const id = Number(tr.dataset.offerId);
     const input = tr.querySelector("input.input-sale-price");
     const sale_price = Number(input?.value);
     if (!Number.isFinite(id) || !Number.isFinite(sale_price)) return;
 
+    const status = Number(tr.dataset.status);
+    const vat_id = Number(tr.dataset.vatId);
+    if (!Number.isFinite(status) || !Number.isFinite(vat_id)) {
+      errors.push(`Oferta ${id}: lipsesc status/vat_id — reîncarcă produsele`);
+      return;
+    }
+
     const prp = Number(tr.querySelector("td[data-col='prp']")?.dataset.value);
     const min = Number(tr.querySelector("td[data-col='pret_minim']")?.dataset.value);
     const max = Number(tr.querySelector("td[data-col='pret_maxim']")?.dataset.value);
 
-    const offer = { id, sale_price };
+    if (Number.isFinite(prp) && prp <= sale_price) {
+      errors.push(
+        `Oferta ${id}: PRP (${prp}) trebuie să fie mai mare decât pretul de vânzare (${sale_price})`
+      );
+      return;
+    }
+
+    const stock = parseJsonAttr(tr.dataset.stock, [{ warehouse_id: 1, value: 0 }]);
+    const handling_time = parseJsonAttr(tr.dataset.handlingTime, [
+      { warehouse_id: 1, value: 0 },
+    ]);
+
+    const offer = {
+      id,
+      status,
+      sale_price,
+      vat_id,
+      stock,
+      handling_time,
+    };
     if (Number.isFinite(prp)) offer.recommended_price = prp;
     if (Number.isFinite(min)) offer.min_sale_price = min;
     if (Number.isFinite(max)) offer.max_sale_price = max;
     offers.push(offer);
   });
-  return offers;
+  return { offers, errors };
 }
 
 function clearDirtyAfterSync(offers) {
@@ -436,7 +557,11 @@ function clearDirtyAfterSync(offers) {
 
 async function syncPrices() {
   if (syncing) return;
-  const offers = collectDirtyOffers();
+  const { offers, errors } = collectDirtyOffers();
+  if (errors.length > 0) {
+    setStatus(errors.join(" | "), "error");
+    return;
+  }
   if (offers.length === 0) {
     setStatus("Nicio schimbare de preț de sincronizat.", "error");
     return;
@@ -454,13 +579,18 @@ async function syncPrices() {
     });
     const data = await res.json();
     if (!res.ok) {
-      const detail = Array.isArray(data.messages) && data.messages.length
-        ? ` — ${JSON.stringify(data.messages)}`
-        : "";
-      throw new Error((data.error || `Eroare HTTP ${res.status}`) + detail);
+      const detail = formatEmagMessages(data.messages);
+      throw new Error(
+        (data.error || `Eroare HTTP ${res.status}`) + (detail ? ` — ${detail}` : "")
+      );
     }
     clearDirtyAfterSync(offers);
-    setStatus(`Sincronizate ${offers.length} prețuri cu eMAG.`, "ok");
+    const msgDetail = formatEmagMessages(data.messages);
+    setStatus(
+      `Sincronizate ${offers.length} prețuri cu eMAG.` +
+        (msgDetail ? ` ${msgDetail}` : ""),
+      msgDetail ? "loading" : "ok"
+    );
   } catch (err) {
     setStatus(err.message || "Eroare la sync", "error");
   } finally {

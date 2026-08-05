@@ -106,6 +106,9 @@
           <div id="col-menu" class="col-menu" hidden role="menu"></div>
         </div>
         <span id="status" class="status" aria-live="polite"></span>
+        <button type="button" id="btn-sync" class="btn" disabled>
+          Sincronizează cu eMAG
+        </button>
       </div>
 
       <div class="table-wrap">
@@ -119,6 +122,7 @@
               <th data-col="pret_cumparare">Preț cumpărare</th>
               <th data-col="pret_transport">Pret transport</th>
               <th data-col="pret_contabil">Pret contabil</th>
+              <th data-col="pret_minim_profit">Preț minim pentru profit</th>
               <th data-col="pret_emag" class="col-pret-emag">Pret emag</th>
               <th data-col="profit" class="col-profit">Profit</th>
               <th data-col="prp">PRP</th>
@@ -131,15 +135,10 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="15">Apasă „Încarcă produse” pentru a afișa ofertele.</td>
+              <td colspan="16">Apasă „Încarcă produse” pentru a afișa ofertele.</td>
             </tr>
           </tbody>
         </table>
-      </div>
-      <div class="sync-bar">
-        <button type="button" id="btn-sync" class="btn" disabled>
-          Sincronizează cu eMAG
-        </button>
       </div>
     </div>
     <script src="app.js"></script>
