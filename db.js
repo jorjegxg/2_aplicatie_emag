@@ -90,15 +90,12 @@ function lookupPretCumparare(partNumber, name) {
 function getSettings() {
   const row = getDb()
     .prepare(
-      `SELECT alte_costuri, procentaj_emag, numar_produse,
-              mult_prp, mult_min, mult_max
+      `SELECT procentaj_emag, mult_prp, mult_min, mult_max
        FROM settings WHERE id = 1`
     )
     .get();
   return {
-    alte_costuri: row?.alte_costuri ?? null,
     procentaj_emag: row?.procentaj_emag ?? null,
-    numar_produse: row?.numar_produse ?? null,
     mult_prp: row?.mult_prp ?? null,
     mult_min: row?.mult_min ?? null,
     mult_max: row?.mult_max ?? null,
@@ -106,9 +103,7 @@ function getSettings() {
 }
 
 function saveSettings({
-  alte_costuri,
   procentaj_emag,
-  numar_produse,
   mult_prp,
   mult_min,
   mult_max,
@@ -116,18 +111,14 @@ function saveSettings({
   getDb()
     .prepare(
       `UPDATE settings
-       SET alte_costuri = @alte_costuri,
-           procentaj_emag = @procentaj_emag,
-           numar_produse = @numar_produse,
+       SET procentaj_emag = @procentaj_emag,
            mult_prp = @mult_prp,
            mult_min = @mult_min,
            mult_max = @mult_max
        WHERE id = 1`
     )
     .run({
-      alte_costuri,
       procentaj_emag,
-      numar_produse,
       mult_prp,
       mult_min,
       mult_max,

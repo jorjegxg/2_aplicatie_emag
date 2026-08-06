@@ -297,6 +297,23 @@ td[data-col="prp"].is-prp-low {
   font-weight: 700;
 }
 
+td.col-alte-costuri .input-alte-costuri {
+  width: 5.5rem;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: inherit;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+td.col-alte-costuri .input-alte-costuri:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
 td.col-pret-emag .input-sale-price {
   width: 6.5rem;
   font: inherit;
@@ -322,7 +339,8 @@ td.col-pret-emag.is-price-dirty {
 
 td[data-col="prp"].is-price-dirty,
 td[data-col="pret_minim"].is-price-dirty,
-td[data-col="pret_maxim"].is-price-dirty {
+td[data-col="pret_maxim"].is-price-dirty,
+td[data-col="alte_costuri"].is-price-dirty {
   background: #fef9c3;
 }
 

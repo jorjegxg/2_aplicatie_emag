@@ -8,15 +8,14 @@ const statusEl = document.getElementById("status");
 const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
-const inputAlteCosturi = document.getElementById("alte-costuri");
 const inputProcentaj = document.getElementById("procentaj-emag");
-const inputNumarProduse = document.getElementById("numar-produse");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
+const DEFAULT_ALTE_COSTURI = 12;
 
 const DEFAULT_COLUMN_ORDER = [
   ...table.querySelectorAll("thead th[data-col]"),
@@ -155,12 +154,8 @@ function setStatus(text, type = "") {
 }
 
 function fillSettings(settings) {
-  inputAlteCosturi.value =
-    settings.alte_costuri != null ? settings.alte_costuri : "";
   inputProcentaj.value =
     settings.procentaj_emag != null ? settings.procentaj_emag : "";
-  inputNumarProduse.value =
-    settings.numar_produse != null ? settings.numar_produse : "";
   inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
   inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
   inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
@@ -169,9 +164,7 @@ function fillSettings(settings) {
 
 function readSettingsFromForm() {
   return {
-    alte_costuri: inputAlteCosturi.value,
     procentaj_emag: inputProcentaj.value,
-    numar_produse: inputNumarProduse.value,
     mult_prp: inputMultPrp.value,
     mult_min: inputMultMin.value,
     mult_max: inputMultMax.value,
@@ -309,22 +302,18 @@ function derivePrices(salePrice) {
   };
 }
 
-function costPerUnit(inputEl) {
-  const value = Number(inputEl.value);
-  const count = Number(inputNumarProduse.value);
-  if (
-    inputEl.value === "" ||
-    inputNumarProduse.value === "" ||
-    Number.isNaN(value) ||
-    Number.isNaN(count) ||
-    count <= 0
-  ) {
-    return null;
-  }
-  return value / count;
+function parseAlteCosturi(raw) {
+  if (raw == null || raw === "") return DEFAULT_ALTE_COSTURI;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
 }
 
-function calcProfit(salePrice, pretCumparare) {
+function getRowAlteCosturi(tr) {
+  const input = tr?.querySelector("input.input-alte-costuri");
+  return parseAlteCosturi(input?.value);
+}
+
+function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
   if (salePrice == null || salePrice === "" || inputProcentaj.value === "") {
     return null;
   }
@@ -336,14 +325,14 @@ function calcProfit(salePrice, pretCumparare) {
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
+  const other = parseAlteCosturi(alteCosturi);
 
-  return afterEmag - buyCost - alteCosturi;
+  return afterEmag - buyCost - other;
 }
 
-function calcProcentajProfit(salePrice, pretCumparare) {
-  const profit = calcProfit(salePrice, pretCumparare);
-  const minProfit = calcPretMinimProfit(pretCumparare);
+function calcProcentajProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
+  const profit = calcProfit(salePrice, pretCumparare, alteCosturi);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
   if (profit == null || minProfit == null) return null;
   if (!Number.isFinite(profit) || !Number.isFinite(minProfit) || minProfit === 0) {
     return null;
@@ -351,7 +340,7 @@ function calcProcentajProfit(salePrice, pretCumparare) {
   return (profit / minProfit) * 100;
 }
 
-function saleFromProcentaj(procentaj, pretCumparare) {
+function saleFromProcentaj(procentaj, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
   if (procentaj == null || procentaj === "" || inputProcentaj.value === "") {
     return null;
   }
@@ -364,19 +353,18 @@ function saleFromProcentaj(procentaj, pretCumparare) {
   const factor = 1 - pctEmag / 100;
   if (factor <= 0) return null;
 
-  const minProfit = calcPretMinimProfit(pretCumparare);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
   if (minProfit == null || !Number.isFinite(minProfit)) return null;
 
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
-  const costs = buyCost + alteCosturi;
+  const costs = buyCost + parseAlteCosturi(alteCosturi);
 
   return roundPrice((costs + (pctTarget / 100) * minProfit) / factor);
 }
 
-function calcPretMinimProfit(pretCumparare) {
+function calcPretMinimProfit(pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
   if (inputProcentaj.value === "") return null;
   const pct = Number(inputProcentaj.value);
   if (Number.isNaN(pct) || pct >= 100) return null;
@@ -384,8 +372,7 @@ function calcPretMinimProfit(pretCumparare) {
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
-  const costs = buyCost + alteCosturi;
+  const costs = buyCost + parseAlteCosturi(alteCosturi);
   const factor = 1 - pct / 100;
   if (factor <= 0) return null;
 
@@ -401,10 +388,10 @@ function pricesEqual(a, b) {
   return Math.abs(na - nb) < 0.00005;
 }
 
-function syncMinProfitVsEmag(tr, salePrice, pretCumparare) {
+function syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi) {
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
   if (!minProfitCell) return;
-  const minProfit = calcPretMinimProfit(pretCumparare);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
   const sale = Number(salePrice);
   const below =
     minProfit != null &&
@@ -432,20 +419,24 @@ function updateSyncButton() {
 function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const currency = tr.dataset.currency || "RON";
   const pretCumparare = tr.dataset.pretCumparare ?? "";
+  const alteCosturi = getRowAlteCosturi(tr);
   const derived = derivePrices(salePrice);
 
   const profitCell = tr.querySelector("td.col-profit");
   if (profitCell) {
     profitCell.dataset.salePrice = salePrice ?? "";
     profitCell.innerHTML = formatPrice(
-      calcProfit(salePrice, pretCumparare),
+      calcProfit(salePrice, pretCumparare, alteCosturi),
       currency
     );
   }
 
   const procentajCell = tr.querySelector("td.col-procentaj-profit");
   if (procentajCell) {
-    fillProcentajCell(procentajCell, calcProcentajProfit(salePrice, pretCumparare));
+    fillProcentajCell(
+      procentajCell,
+      calcProcentajProfit(salePrice, pretCumparare, alteCosturi)
+    );
   }
 
   const prpCell = tr.querySelector("td[data-col='prp']");
@@ -467,18 +458,21 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   }
 
   const pretCell = tr.querySelector("td.col-pret-emag");
+  const alteCell = tr.querySelector("td[data-col='alte_costuri']");
   const original = tr.dataset.originalSale ?? "";
   const isDirty =
     markDirty &&
     (!pricesEqual(salePrice, original) ||
       (derived.prp != null && !pricesEqual(derived.prp, tr.dataset.originalPrp)) ||
       (derived.min != null && !pricesEqual(derived.min, tr.dataset.originalMin)) ||
-      (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
+      (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)) ||
+      !pricesEqual(alteCosturi, tr.dataset.originalAlte));
   tr.classList.toggle("is-price-dirty", isDirty);
   if (pretCell) pretCell.classList.toggle("is-price-dirty", isDirty);
   if (prpCell) prpCell.classList.toggle("is-price-dirty", isDirty);
   if (minCell) minCell.classList.toggle("is-price-dirty", isDirty);
   if (maxCell) maxCell.classList.toggle("is-price-dirty", isDirty);
+  if (alteCell) alteCell.classList.toggle("is-price-dirty", isDirty);
 
   if (isDirty) {
     tr.classList.remove("is-just-synced");
@@ -486,33 +480,27 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
     if (prpCell) prpCell.classList.remove("is-just-synced");
     if (minCell) minCell.classList.remove("is-just-synced");
     if (maxCell) maxCell.classList.remove("is-just-synced");
+    if (alteCell) alteCell.classList.remove("is-just-synced");
   }
 
-  syncMinProfitVsEmag(tr, salePrice, pretCumparare);
+  const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
+  if (minProfitCell) {
+    minProfitCell.innerHTML = formatPrice(
+      calcPretMinimProfit(pretCumparare, alteCosturi),
+      currency
+    );
+  }
+
+  syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi);
   syncPrpVsEmag(tr, salePrice);
   updateSyncButton();
 }
 
 function updateDerivedCells() {
-  const alteCosturiFormatted = formatPrice(costPerUnit(inputAlteCosturi), "RON");
-  tbody.querySelectorAll("td.col-alte-costuri").forEach((cell) => {
-    cell.innerHTML = alteCosturiFormatted;
-  });
-
   tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
     const input = tr.querySelector("input.input-sale-price");
     if (!input) return;
-    const sale = input.value;
-    const pretCumparare = tr.dataset.pretCumparare ?? "";
-    const currency = tr.dataset.currency || "RON";
-    const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
-    if (minProfitCell) {
-      minProfitCell.innerHTML = formatPrice(
-        calcPretMinimProfit(pretCumparare),
-        currency
-      );
-    }
-    applyRowPrices(tr, sale);
+    applyRowPrices(tr, input.value);
   });
   updateSyncButton();
 }
@@ -567,7 +555,8 @@ function rowHtml(product, index) {
     return parts.length ? ` class="${parts.join(" ")}"` : "";
   };
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
-  const minProfit = calcPretMinimProfit(pretCumparare);
+  const alteCosturi = DEFAULT_ALTE_COSTURI;
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
   const saleNum = Number(salePrice);
   const minBelowEmag =
     minProfit != null &&
@@ -581,7 +570,11 @@ function rowHtml(product, index) {
     Number.isFinite(saleNum) &&
     prpNum < saleNum;
   const prpExtra = prpLow ? "is-prp-low" : "";
-  const procentajVal = calcProcentajProfit(product.sale_price, product.pret_cumparare);
+  const procentajVal = calcProcentajProfit(
+    product.sale_price,
+    product.pret_cumparare,
+    alteCosturi
+  );
   const procentajAttr =
     procentajVal == null || !Number.isFinite(Number(procentajVal))
       ? ""
@@ -601,10 +594,10 @@ function rowHtml(product, index) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
-    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}>${formatPrice(costPerUnit(inputAlteCosturi), "RON")}</td>`,
+    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${DEFAULT_ALTE_COSTURI}" /></td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
-    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>`,
+    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alteCosturi), currency)}</td>`,
     procentaj_profit: `<td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>`,
@@ -613,7 +606,7 @@ function rowHtml(product, index) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-original-alte="${DEFAULT_ALTE_COSTURI}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -632,7 +625,7 @@ function getCellSortValue(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return null;
 
-  if (col === "pret_emag" || col === "procentaj_profit") {
+  if (col === "pret_emag" || col === "procentaj_profit" || col === "alte_costuri") {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
@@ -640,7 +633,11 @@ function getCellSortValue(tr, col) {
     return parseSortNumber(td.dataset.value);
   }
   if (col === "profit") {
-    const profit = calcProfit(td.dataset.salePrice, td.dataset.pretCumparare);
+    const profit = calcProfit(
+      td.dataset.salePrice,
+      td.dataset.pretCumparare,
+      getRowAlteCosturi(tr)
+    );
     return profit == null ? null : Number(profit);
   }
   if (col === "status") {
@@ -651,7 +648,6 @@ function getCellSortValue(tr, col) {
     col === "id" ||
     col === "stoc" ||
     col === "pret_cumparare" ||
-    col === "alte_costuri" ||
     col === "pret_minim_profit"
   ) {
     return parseSortNumber(td.textContent);
@@ -845,6 +841,7 @@ function clearDirtyAfterSync(offers) {
     if (offer.max_sale_price != null) {
       tr.dataset.originalMax = String(offer.max_sale_price);
     }
+    tr.dataset.originalAlte = String(getRowAlteCosturi(tr));
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
@@ -915,11 +912,21 @@ tbody.addEventListener("input", (e) => {
     const tr = pctInput.closest("tr[data-offer-id]");
     if (!tr) return;
     const pretCumparare = tr.dataset.pretCumparare ?? "";
-    const sale = saleFromProcentaj(pctInput.value, pretCumparare);
+    const alteCosturi = getRowAlteCosturi(tr);
+    const sale = saleFromProcentaj(pctInput.value, pretCumparare, alteCosturi);
     if (sale == null) return;
     const saleInput = tr.querySelector("input.input-sale-price");
     if (saleInput) saleInput.value = String(sale);
     applyRowPrices(tr, sale);
+    return;
+  }
+
+  const alteInput = e.target.closest("input.input-alte-costuri");
+  if (alteInput) {
+    const tr = alteInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    const saleInput = tr.querySelector("input.input-sale-price");
+    applyRowPrices(tr, saleInput?.value ?? "");
     return;
   }
 
@@ -953,9 +960,7 @@ function onSettingsInput() {
   updateSaveDirtyState();
 }
 
-inputAlteCosturi.addEventListener("input", onSettingsInput);
 inputProcentaj.addEventListener("input", onSettingsInput);
-inputNumarProduse.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);
 inputMultMin.addEventListener("input", onSettingsInput);
 inputMultMax.addEventListener("input", onSettingsInput);
