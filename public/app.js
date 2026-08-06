@@ -12,10 +12,12 @@ const inputProcentaj = document.getElementById("procentaj-emag");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
+const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const DEFAULT_ALTE_COSTURI = 12;
+const TARGET_TOTAL_ALTE_STOC = 3400;
 
 const DEFAULT_COLUMN_ORDER = [
   ...table.querySelectorAll("thead th[data-col]"),
@@ -313,6 +315,76 @@ function getRowAlteCosturi(tr) {
   return parseAlteCosturi(input?.value);
 }
 
+function productStockQty(product) {
+  const s = Number(product?.general_stock);
+  if (Number.isFinite(s)) return s;
+  const stock = product?.stock;
+  if (Array.isArray(stock) && stock.length) {
+    return stock.reduce((sum, x) => sum + (Number(x.value) || 0), 0);
+  }
+  return 0;
+}
+
+function computeAlteScale(products, existingDenom = 0) {
+  let denom = existingDenom;
+  for (const p of products) {
+    const buy = Number(p.pret_cumparare);
+    const stock = productStockQty(p);
+    if (Number.isFinite(buy)) denom += buy * stock;
+  }
+  return denom > 0 ? TARGET_TOTAL_ALTE_STOC / denom : 0;
+}
+
+function alteFromPretCumparare(pretCumparare, k) {
+  const buy = Number(pretCumparare);
+  if (!Number.isFinite(buy) || !(k > 0)) return DEFAULT_ALTE_COSTURI;
+  return Math.round(buy * k * 100) / 100;
+}
+
+function tablePretStocDenom() {
+  let denom = 0;
+  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
+    const buy = Number(tr.dataset.pretCumparare);
+    if (!Number.isFinite(buy)) return;
+    denom += buy * getRowStock(tr);
+  });
+  return denom;
+}
+
+function getRowStock(tr) {
+  const stock = parseJsonAttr(tr?.dataset?.stock, []);
+  if (Array.isArray(stock) && stock.length) {
+    return stock.reduce((sum, x) => sum + (Number(x.value) || 0), 0);
+  }
+  const n = Number(tr?.querySelector("td[data-col='stoc']")?.textContent);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function updateTotalAlteStoc() {
+  if (!inputTotalAlteStoc) return;
+  const rows = tbody.querySelectorAll("tr[data-offer-id]");
+  if (!rows.length) {
+    inputTotalAlteStoc.value = "—";
+    return;
+  }
+  let total = 0;
+  rows.forEach((tr) => {
+    total += getRowAlteCosturi(tr) * getRowStock(tr);
+  });
+  inputTotalAlteStoc.value = total.toFixed(2);
+}
+
+function applyAlteScaleToExistingRows(k) {
+  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
+    const alte = alteFromPretCumparare(tr.dataset.pretCumparare, k);
+    const input = tr.querySelector("input.input-alte-costuri");
+    if (input) input.value = String(alte);
+    tr.dataset.originalAlte = String(alte);
+    const saleInput = tr.querySelector("input.input-sale-price");
+    applyRowPrices(tr, saleInput?.value ?? "");
+  });
+}
+
 function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
   if (salePrice == null || salePrice === "" || inputProcentaj.value === "") {
     return null;
@@ -545,7 +617,7 @@ function parseJsonAttr(raw, fallback) {
   }
 }
 
-function rowHtml(product, index) {
+function rowHtml(product, index, alteCosturi = DEFAULT_ALTE_COSTURI) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
   const pretCumparare = product.pret_cumparare ?? "";
@@ -555,8 +627,8 @@ function rowHtml(product, index) {
     return parts.length ? ` class="${parts.join(" ")}"` : "";
   };
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
-  const alteCosturi = DEFAULT_ALTE_COSTURI;
-  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
+  const alte = parseAlteCosturi(alteCosturi);
+  const minProfit = calcPretMinimProfit(pretCumparare, alte);
   const saleNum = Number(salePrice);
   const minBelowEmag =
     minProfit != null &&
@@ -573,7 +645,7 @@ function rowHtml(product, index) {
   const procentajVal = calcProcentajProfit(
     product.sale_price,
     product.pret_cumparare,
-    alteCosturi
+    alte
   );
   const procentajAttr =
     procentajVal == null || !Number.isFinite(Number(procentajVal))
@@ -594,10 +666,10 @@ function rowHtml(product, index) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
-    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${DEFAULT_ALTE_COSTURI}" /></td>`,
+    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alte)}" /></td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
-    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alteCosturi), currency)}</td>`,
+    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alte), currency)}</td>`,
     procentaj_profit: `<td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>`,
@@ -606,7 +678,7 @@ function rowHtml(product, index) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-original-alte="${DEFAULT_ALTE_COSTURI}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-original-alte="${escapeHtml(alte)}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -713,19 +785,31 @@ function renderProducts(products, append) {
     tbody.innerHTML =
       '<tr class="empty-row"><td colspan="18">Niciun produs găsit.</td></tr>';
     updateSyncButton();
+    updateTotalAlteStoc();
     return;
   }
 
   const empty = tbody.querySelector(".empty-row");
   if (empty) empty.remove();
 
+  const existingDenom = append ? tablePretStocDenom() : 0;
+  const k = computeAlteScale(products, existingDenom);
+  if (append && k > 0) {
+    applyAlteScaleToExistingRows(k);
+  }
+
   const startIndex = tbody.querySelectorAll("tr:not(.empty-row)").length + 1;
   tbody.insertAdjacentHTML(
     "beforeend",
-    products.map((p, i) => rowHtml(p, startIndex + i)).join("")
+    products
+      .map((p, i) =>
+        rowHtml(p, startIndex + i, alteFromPretCumparare(p.pret_cumparare, k))
+      )
+      .join("")
   );
   if (sortCol) sortProductsTable();
   updateSyncButton();
+  updateTotalAlteStoc();
 }
 
 async function loadProducts({ append = false } = {}) {
@@ -927,6 +1011,7 @@ tbody.addEventListener("input", (e) => {
     if (!tr) return;
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
+    updateTotalAlteStoc();
     return;
   }
 

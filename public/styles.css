@@ -106,6 +106,17 @@ body {
   border-color: var(--accent);
 }
 
+.field input[readonly] {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 85%, var(--border));
+  cursor: default;
+}
+
+.field input[readonly]:focus {
+  outline: none;
+  border-color: var(--border);
+}
+
 .btn {
   appearance: none;
   border: none;
