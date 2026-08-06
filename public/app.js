@@ -9,6 +9,7 @@ const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const inputProcentaj = document.getElementById("procentaj-emag");
+const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
@@ -16,8 +17,7 @@ const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
-const DEFAULT_ALTE_COSTURI = 12;
-const TARGET_TOTAL_ALTE_STOC = 3400;
+const DEFAULT_ALTE_COSTURI = 0;
 
 const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
 const DEFAULT_COLUMN_ORDER = [
@@ -42,17 +42,22 @@ let sortCol = null;
 let sortDir = "asc";
 
 function migrateLegacyCostCols(cols) {
-  const OLD = new Set(["pret_transport", "pret_contabil"]);
+  const OLD = new Set([
+    "pret_transport",
+    "pret_contabil",
+    "procentaj_alte_costuri",
+  ]);
   const out = [];
   let insertedAlte = false;
   for (const c of cols) {
-    if (OLD.has(c)) {
+    if (c === "pret_transport" || c === "pret_contabil") {
       if (!insertedAlte) {
         out.push("alte_costuri");
         insertedAlte = true;
       }
       continue;
     }
+    if (OLD.has(c)) continue;
     out.push(c);
   }
   return out;
@@ -63,17 +68,7 @@ function loadHiddenCols() {
     const raw = localStorage.getItem(HIDDEN_COLS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
-    const migrated = migrateLegacyCostCols(
-      parsed.filter((c) => typeof c === "string")
-    );
-    // If both old cols were hidden, keep alte_costuri hidden; if only one, still hide.
-    const hadLegacyHidden = parsed.some(
-      (c) => c === "pret_transport" || c === "pret_contabil"
-    );
-    if (hadLegacyHidden && !migrated.includes("alte_costuri")) {
-      migrated.push("alte_costuri");
-    }
-    return migrated.filter((c) => c !== "pret_transport" && c !== "pret_contabil");
+    return migrateLegacyCostCols(parsed.filter((c) => typeof c === "string"));
   } catch {
     return [];
   }
@@ -81,6 +76,24 @@ function loadHiddenCols() {
 
 function saveHiddenCols() {
   localStorage.setItem(HIDDEN_COLS_KEY, JSON.stringify(hiddenCols));
+}
+
+function insertMissingColumns(order) {
+  const result = [...order];
+  for (const col of DEFAULT_COLUMN_ORDER) {
+    if (result.includes(col)) continue;
+    const defIdx = DEFAULT_COLUMN_ORDER.indexOf(col);
+    let insertAt = result.length;
+    for (let i = defIdx - 1; i >= 0; i--) {
+      const prevIdx = result.indexOf(DEFAULT_COLUMN_ORDER[i]);
+      if (prevIdx !== -1) {
+        insertAt = prevIdx + 1;
+        break;
+      }
+    }
+    result.splice(insertAt, 0, col);
+  }
+  return result;
 }
 
 function loadColumnOrder() {
@@ -92,11 +105,7 @@ function loadColumnOrder() {
       parsed.filter((c) => typeof c === "string")
     );
     const valid = new Set(DEFAULT_COLUMN_ORDER);
-    const order = migrated.filter((c) => valid.has(c));
-    for (const col of DEFAULT_COLUMN_ORDER) {
-      if (!order.includes(col)) order.push(col);
-    }
-    return order;
+    return insertMissingColumns(migrated.filter((c) => valid.has(c)));
   } catch {
     return [...DEFAULT_COLUMN_ORDER];
   }
@@ -158,6 +167,10 @@ function setStatus(text, type = "") {
 function fillSettings(settings) {
   inputProcentaj.value =
     settings.procentaj_emag != null ? settings.procentaj_emag : "";
+  inputProcentajAlte.value =
+    settings.procentaj_alte_costuri != null
+      ? settings.procentaj_alte_costuri
+      : "";
   inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
   inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
   inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
@@ -167,6 +180,7 @@ function fillSettings(settings) {
 function readSettingsFromForm() {
   return {
     procentaj_emag: inputProcentaj.value,
+    procentaj_alte_costuri: inputProcentajAlte.value,
     mult_prp: inputMultPrp.value,
     mult_min: inputMultMin.value,
     mult_max: inputMultMax.value,
@@ -310,45 +324,26 @@ function parseAlteCosturi(raw) {
   return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
 }
 
+function getGlobalProcentajAlte() {
+  const raw = inputProcentajAlte?.value;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function getRowAlteCosturi(tr) {
-  const input = tr?.querySelector("input.input-alte-costuri");
-  return parseAlteCosturi(input?.value);
+  const pct = getGlobalProcentajAlte();
+  if (pct == null) return DEFAULT_ALTE_COSTURI;
+  return alteFromProcentaj(pct, tr?.dataset?.pretCumparare ?? "");
 }
 
-function productStockQty(product) {
-  const s = Number(product?.general_stock);
-  if (Number.isFinite(s)) return s;
-  const stock = product?.stock;
-  if (Array.isArray(stock) && stock.length) {
-    return stock.reduce((sum, x) => sum + (Number(x.value) || 0), 0);
-  }
-  return 0;
-}
-
-function computeAlteScale(products, existingDenom = 0) {
-  let denom = existingDenom;
-  for (const p of products) {
-    const buy = Number(p.pret_cumparare);
-    const stock = productStockQty(p);
-    if (Number.isFinite(buy)) denom += buy * stock;
-  }
-  return denom > 0 ? TARGET_TOTAL_ALTE_STOC / denom : 0;
-}
-
-function alteFromPretCumparare(pretCumparare, k) {
+function alteFromProcentaj(procentaj, pretCumparare) {
   const buy = Number(pretCumparare);
-  if (!Number.isFinite(buy) || !(k > 0)) return DEFAULT_ALTE_COSTURI;
-  return Math.round(buy * k * 100) / 100;
-}
-
-function tablePretStocDenom() {
-  let denom = 0;
-  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
-    const buy = Number(tr.dataset.pretCumparare);
-    if (!Number.isFinite(buy)) return;
-    denom += buy * getRowStock(tr);
-  });
-  return denom;
+  const pct = Number(procentaj);
+  if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(pct)) {
+    return DEFAULT_ALTE_COSTURI;
+  }
+  return Math.round(buy * (pct / 100) * 100) / 100;
 }
 
 function getRowStock(tr) {
@@ -372,17 +367,6 @@ function updateTotalAlteStoc() {
     total += getRowAlteCosturi(tr) * getRowStock(tr);
   });
   inputTotalAlteStoc.value = total.toFixed(2);
-}
-
-function applyAlteScaleToExistingRows(k) {
-  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
-    const alte = alteFromPretCumparare(tr.dataset.pretCumparare, k);
-    const input = tr.querySelector("input.input-alte-costuri");
-    if (input) input.value = String(alte);
-    tr.dataset.originalAlte = String(alte);
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-  });
 }
 
 function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
@@ -531,20 +515,21 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
 
   const pretCell = tr.querySelector("td.col-pret-emag");
   const alteCell = tr.querySelector("td[data-col='alte_costuri']");
+  if (alteCell) {
+    alteCell.innerHTML = formatPrice(alteCosturi, "RON");
+  }
   const original = tr.dataset.originalSale ?? "";
   const isDirty =
     markDirty &&
     (!pricesEqual(salePrice, original) ||
       (derived.prp != null && !pricesEqual(derived.prp, tr.dataset.originalPrp)) ||
       (derived.min != null && !pricesEqual(derived.min, tr.dataset.originalMin)) ||
-      (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)) ||
-      !pricesEqual(alteCosturi, tr.dataset.originalAlte));
+      (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
   tr.classList.toggle("is-price-dirty", isDirty);
   if (pretCell) pretCell.classList.toggle("is-price-dirty", isDirty);
   if (prpCell) prpCell.classList.toggle("is-price-dirty", isDirty);
   if (minCell) minCell.classList.toggle("is-price-dirty", isDirty);
   if (maxCell) maxCell.classList.toggle("is-price-dirty", isDirty);
-  if (alteCell) alteCell.classList.toggle("is-price-dirty", isDirty);
 
   if (isDirty) {
     tr.classList.remove("is-just-synced");
@@ -552,7 +537,6 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
     if (prpCell) prpCell.classList.remove("is-just-synced");
     if (minCell) minCell.classList.remove("is-just-synced");
     if (maxCell) maxCell.classList.remove("is-just-synced");
-    if (alteCell) alteCell.classList.remove("is-just-synced");
   }
 
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
@@ -574,6 +558,7 @@ function updateDerivedCells() {
     if (!input) return;
     applyRowPrices(tr, input.value);
   });
+  updateTotalAlteStoc();
   updateSyncButton();
 }
 
@@ -617,7 +602,7 @@ function parseJsonAttr(raw, fallback) {
   }
 }
 
-function rowHtml(product, index, alteCosturi = DEFAULT_ALTE_COSTURI) {
+function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
   const pretCumparare = product.pret_cumparare ?? "";
@@ -627,7 +612,7 @@ function rowHtml(product, index, alteCosturi = DEFAULT_ALTE_COSTURI) {
     return parts.length ? ` class="${parts.join(" ")}"` : "";
   };
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
-  const alte = parseAlteCosturi(alteCosturi);
+  const alte = alteFromProcentaj(getGlobalProcentajAlte() ?? "", pretCumparare);
   const minProfit = calcPretMinimProfit(pretCumparare, alte);
   const saleNum = Number(salePrice);
   const minBelowEmag =
@@ -666,7 +651,7 @@ function rowHtml(product, index, alteCosturi = DEFAULT_ALTE_COSTURI) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
-    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alte)}" /></td>`,
+    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri")}>${formatPrice(alte, "RON")}</td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alte), currency)}</td>`,
@@ -678,7 +663,7 @@ function rowHtml(product, index, alteCosturi = DEFAULT_ALTE_COSTURI) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-original-alte="${escapeHtml(alte)}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}">
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -697,7 +682,7 @@ function getCellSortValue(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return null;
 
-  if (col === "pret_emag" || col === "procentaj_profit" || col === "alte_costuri") {
+  if (col === "pret_emag" || col === "procentaj_profit") {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
@@ -720,6 +705,7 @@ function getCellSortValue(tr, col) {
     col === "id" ||
     col === "stoc" ||
     col === "pret_cumparare" ||
+    col === "alte_costuri" ||
     col === "pret_minim_profit"
   ) {
     return parseSortNumber(td.textContent);
@@ -765,7 +751,7 @@ function getCellFilterText(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return "";
 
-  if (col === "pret_emag" || col === "procentaj_profit" || col === "alte_costuri") {
+  if (col === "pret_emag" || col === "procentaj_profit") {
     return String(td.querySelector("input")?.value ?? "").trim();
   }
   if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
@@ -867,19 +853,11 @@ function renderProducts(products, append) {
   const empty = tbody.querySelector(".empty-row");
   if (empty) empty.remove();
 
-  const existingDenom = append ? tablePretStocDenom() : 0;
-  const k = computeAlteScale(products, existingDenom);
-  if (append && k > 0) {
-    applyAlteScaleToExistingRows(k);
-  }
-
   const startIndex = tbody.querySelectorAll("tr[data-offer-id]").length + 1;
   tbody.insertAdjacentHTML(
     "beforeend",
     products
-      .map((p, i) =>
-        rowHtml(p, startIndex + i, alteFromPretCumparare(p.pret_cumparare, k))
-      )
+      .map((p, i) => rowHtml(p, startIndex + i))
       .join("")
   );
   if (sortCol) sortProductsTable();
@@ -1001,7 +979,6 @@ function clearDirtyAfterSync(offers) {
     if (offer.max_sale_price != null) {
       tr.dataset.originalMax = String(offer.max_sale_price);
     }
-    tr.dataset.originalAlte = String(getRowAlteCosturi(tr));
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
@@ -1081,16 +1058,6 @@ tbody.addEventListener("input", (e) => {
     return;
   }
 
-  const alteInput = e.target.closest("input.input-alte-costuri");
-  if (alteInput) {
-    const tr = alteInput.closest("tr[data-offer-id]");
-    if (!tr) return;
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-    updateTotalAlteStoc();
-    return;
-  }
-
   const input = e.target.closest("input.input-sale-price");
   if (!input) return;
   const tr = input.closest("tr[data-offer-id]");
@@ -1132,6 +1099,7 @@ function onSettingsInput() {
 }
 
 inputProcentaj.addEventListener("input", onSettingsInput);
+inputProcentajAlte.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);
 inputMultMin.addEventListener("input", onSettingsInput);
 inputMultMax.addEventListener("input", onSettingsInput);

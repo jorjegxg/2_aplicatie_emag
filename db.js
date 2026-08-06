@@ -30,6 +30,7 @@ function getDb() {
     "mult_min",
     "mult_max",
     "alte_costuri",
+    "procentaj_alte_costuri",
   ]) {
     if (!colNames.has(name)) {
       db.exec(`ALTER TABLE settings ADD COLUMN ${name} REAL`);
@@ -90,12 +91,13 @@ function lookupPretCumparare(partNumber, name) {
 function getSettings() {
   const row = getDb()
     .prepare(
-      `SELECT procentaj_emag, mult_prp, mult_min, mult_max
+      `SELECT procentaj_emag, procentaj_alte_costuri, mult_prp, mult_min, mult_max
        FROM settings WHERE id = 1`
     )
     .get();
   return {
     procentaj_emag: row?.procentaj_emag ?? null,
+    procentaj_alte_costuri: row?.procentaj_alte_costuri ?? null,
     mult_prp: row?.mult_prp ?? null,
     mult_min: row?.mult_min ?? null,
     mult_max: row?.mult_max ?? null,
@@ -104,6 +106,7 @@ function getSettings() {
 
 function saveSettings({
   procentaj_emag,
+  procentaj_alte_costuri,
   mult_prp,
   mult_min,
   mult_max,
@@ -112,6 +115,7 @@ function saveSettings({
     .prepare(
       `UPDATE settings
        SET procentaj_emag = @procentaj_emag,
+           procentaj_alte_costuri = @procentaj_alte_costuri,
            mult_prp = @mult_prp,
            mult_min = @mult_min,
            mult_max = @mult_max
@@ -119,6 +123,7 @@ function saveSettings({
     )
     .run({
       procentaj_emag,
+      procentaj_alte_costuri,
       mult_prp,
       mult_min,
       mult_max,

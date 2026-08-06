@@ -219,6 +219,7 @@ app.post("/api/settings", (req, res) => {
 
     const saved = saveSettings({
       procentaj_emag: toNum(req.body?.procentaj_emag),
+      procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
       mult_max: toNum(req.body?.mult_max),
