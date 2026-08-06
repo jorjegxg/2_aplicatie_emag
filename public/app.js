@@ -8,8 +8,7 @@ const statusEl = document.getElementById("status");
 const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
-const inputTransport = document.getElementById("pret-transport");
-const inputContabil = document.getElementById("pret-contabil");
+const inputAlteCosturi = document.getElementById("alte-costuri");
 const inputProcentaj = document.getElementById("procentaj-emag");
 const inputNumarProduse = document.getElementById("numar-produse");
 const inputMultPrp = document.getElementById("mult-prp");
@@ -40,11 +39,39 @@ let savedSettingsSnapshot = null;
 let sortCol = null;
 let sortDir = "asc";
 
+function migrateLegacyCostCols(cols) {
+  const OLD = new Set(["pret_transport", "pret_contabil"]);
+  const out = [];
+  let insertedAlte = false;
+  for (const c of cols) {
+    if (OLD.has(c)) {
+      if (!insertedAlte) {
+        out.push("alte_costuri");
+        insertedAlte = true;
+      }
+      continue;
+    }
+    out.push(c);
+  }
+  return out;
+}
+
 function loadHiddenCols() {
   try {
     const raw = localStorage.getItem(HIDDEN_COLS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((c) => typeof c === "string") : [];
+    if (!Array.isArray(parsed)) return [];
+    const migrated = migrateLegacyCostCols(
+      parsed.filter((c) => typeof c === "string")
+    );
+    // If both old cols were hidden, keep alte_costuri hidden; if only one, still hide.
+    const hadLegacyHidden = parsed.some(
+      (c) => c === "pret_transport" || c === "pret_contabil"
+    );
+    if (hadLegacyHidden && !migrated.includes("alte_costuri")) {
+      migrated.push("alte_costuri");
+    }
+    return migrated.filter((c) => c !== "pret_transport" && c !== "pret_contabil");
   } catch {
     return [];
   }
@@ -59,8 +86,11 @@ function loadColumnOrder() {
     const raw = localStorage.getItem(COL_ORDER_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(parsed)) return [...DEFAULT_COLUMN_ORDER];
+    const migrated = migrateLegacyCostCols(
+      parsed.filter((c) => typeof c === "string")
+    );
     const valid = new Set(DEFAULT_COLUMN_ORDER);
-    const order = parsed.filter((c) => typeof c === "string" && valid.has(c));
+    const order = migrated.filter((c) => valid.has(c));
     for (const col of DEFAULT_COLUMN_ORDER) {
       if (!order.includes(col)) order.push(col);
     }
@@ -125,10 +155,8 @@ function setStatus(text, type = "") {
 }
 
 function fillSettings(settings) {
-  inputTransport.value =
-    settings.pret_transport != null ? settings.pret_transport : "";
-  inputContabil.value =
-    settings.pret_contabil != null ? settings.pret_contabil : "";
+  inputAlteCosturi.value =
+    settings.alte_costuri != null ? settings.alte_costuri : "";
   inputProcentaj.value =
     settings.procentaj_emag != null ? settings.procentaj_emag : "";
   inputNumarProduse.value =
@@ -141,8 +169,7 @@ function fillSettings(settings) {
 
 function readSettingsFromForm() {
   return {
-    pret_transport: inputTransport.value,
-    pret_contabil: inputContabil.value,
+    alte_costuri: inputAlteCosturi.value,
     procentaj_emag: inputProcentaj.value,
     numar_produse: inputNumarProduse.value,
     mult_prp: inputMultPrp.value,
@@ -309,10 +336,9 @@ function calcProfit(salePrice, pretCumparare) {
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const transport = costPerUnit(inputTransport) ?? 0;
-  const contabil = costPerUnit(inputContabil) ?? 0;
+  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
 
-  return afterEmag - buyCost - transport - contabil;
+  return afterEmag - buyCost - alteCosturi;
 }
 
 function calcProcentajProfit(salePrice, pretCumparare) {
@@ -344,9 +370,8 @@ function saleFromProcentaj(procentaj, pretCumparare) {
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const transport = costPerUnit(inputTransport) ?? 0;
-  const contabil = costPerUnit(inputContabil) ?? 0;
-  const costs = buyCost + transport + contabil;
+  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
+  const costs = buyCost + alteCosturi;
 
   return roundPrice((costs + (pctTarget / 100) * minProfit) / factor);
 }
@@ -359,9 +384,8 @@ function calcPretMinimProfit(pretCumparare) {
   const buy = Number(pretCumparare);
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-  const transport = costPerUnit(inputTransport) ?? 0;
-  const contabil = costPerUnit(inputContabil) ?? 0;
-  const costs = buyCost + transport + contabil;
+  const alteCosturi = costPerUnit(inputAlteCosturi) ?? 0;
+  const costs = buyCost + alteCosturi;
   const factor = 1 - pct / 100;
   if (factor <= 0) return null;
 
@@ -470,13 +494,9 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
 }
 
 function updateDerivedCells() {
-  const transportFormatted = formatPrice(costPerUnit(inputTransport), "RON");
-  const contabilFormatted = formatPrice(costPerUnit(inputContabil), "RON");
-  tbody.querySelectorAll("td.col-pret-transport").forEach((cell) => {
-    cell.innerHTML = transportFormatted;
-  });
-  tbody.querySelectorAll("td.col-pret-contabil").forEach((cell) => {
-    cell.innerHTML = contabilFormatted;
+  const alteCosturiFormatted = formatPrice(costPerUnit(inputAlteCosturi), "RON");
+  tbody.querySelectorAll("td.col-alte-costuri").forEach((cell) => {
+    cell.innerHTML = alteCosturiFormatted;
   });
 
   tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
@@ -581,8 +601,7 @@ function rowHtml(product, index) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
-    pret_transport: `<td data-col="pret_transport"${cellClass("pret_transport", "col-pret-transport")}>${formatPrice(costPerUnit(inputTransport), "RON")}</td>`,
-    pret_contabil: `<td data-col="pret_contabil"${cellClass("pret_contabil", "col-pret-contabil")}>${formatPrice(costPerUnit(inputContabil), "RON")}</td>`,
+    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", "col-alte-costuri")}>${formatPrice(costPerUnit(inputAlteCosturi), "RON")}</td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare), currency)}</td>`,
@@ -632,8 +651,7 @@ function getCellSortValue(tr, col) {
     col === "id" ||
     col === "stoc" ||
     col === "pret_cumparare" ||
-    col === "pret_transport" ||
-    col === "pret_contabil" ||
+    col === "alte_costuri" ||
     col === "pret_minim_profit"
   ) {
     return parseSortNumber(td.textContent);
@@ -697,7 +715,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="17">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="18">Niciun produs găsit.</td></tr>';
     updateSyncButton();
     return;
   }
@@ -740,7 +758,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="17">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="18">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
     }
@@ -935,8 +953,7 @@ function onSettingsInput() {
   updateSaveDirtyState();
 }
 
-inputTransport.addEventListener("input", onSettingsInput);
-inputContabil.addEventListener("input", onSettingsInput);
+inputAlteCosturi.addEventListener("input", onSettingsInput);
 inputProcentaj.addEventListener("input", onSettingsInput);
 inputNumarProduse.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);

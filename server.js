@@ -218,8 +218,7 @@ app.post("/api/settings", (req, res) => {
     };
 
     const saved = saveSettings({
-      pret_transport: toNum(req.body?.pret_transport),
-      pret_contabil: toNum(req.body?.pret_contabil),
+      alte_costuri: toNum(req.body?.alte_costuri),
       procentaj_emag: toNum(req.body?.procentaj_emag),
       numar_produse: toNum(req.body?.numar_produse),
       mult_prp: toNum(req.body?.mult_prp),

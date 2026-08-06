@@ -24,14 +24,27 @@ function getDb() {
   `);
   const cols = db.prepare("PRAGMA table_info(settings)").all();
   const colNames = new Set(cols.map((c) => c.name));
-  for (const name of ["numar_produse", "mult_prp", "mult_min", "mult_max"]) {
+  for (const name of [
+    "numar_produse",
+    "mult_prp",
+    "mult_min",
+    "mult_max",
+    "alte_costuri",
+  ]) {
     if (!colNames.has(name)) {
       db.exec(`ALTER TABLE settings ADD COLUMN ${name} REAL`);
     }
   }
   db.exec(`
-    INSERT OR IGNORE INTO settings (id, pret_transport, pret_contabil, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max)
-    VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    INSERT OR IGNORE INTO settings (id, pret_transport, pret_contabil, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max, alte_costuri)
+    VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  `);
+  db.exec(`
+    UPDATE settings
+    SET alte_costuri = COALESCE(pret_transport, 0) + COALESCE(pret_contabil, 0)
+    WHERE id = 1
+      AND alte_costuri IS NULL
+      AND (pret_transport IS NOT NULL OR pret_contabil IS NOT NULL);
   `);
   return db;
 }
@@ -77,14 +90,13 @@ function lookupPretCumparare(partNumber, name) {
 function getSettings() {
   const row = getDb()
     .prepare(
-      `SELECT pret_transport, pret_contabil, procentaj_emag, numar_produse,
+      `SELECT alte_costuri, procentaj_emag, numar_produse,
               mult_prp, mult_min, mult_max
        FROM settings WHERE id = 1`
     )
     .get();
   return {
-    pret_transport: row?.pret_transport ?? null,
-    pret_contabil: row?.pret_contabil ?? null,
+    alte_costuri: row?.alte_costuri ?? null,
     procentaj_emag: row?.procentaj_emag ?? null,
     numar_produse: row?.numar_produse ?? null,
     mult_prp: row?.mult_prp ?? null,
@@ -94,8 +106,7 @@ function getSettings() {
 }
 
 function saveSettings({
-  pret_transport,
-  pret_contabil,
+  alte_costuri,
   procentaj_emag,
   numar_produse,
   mult_prp,
@@ -105,8 +116,7 @@ function saveSettings({
   getDb()
     .prepare(
       `UPDATE settings
-       SET pret_transport = @pret_transport,
-           pret_contabil = @pret_contabil,
+       SET alte_costuri = @alte_costuri,
            procentaj_emag = @procentaj_emag,
            numar_produse = @numar_produse,
            mult_prp = @mult_prp,
@@ -115,8 +125,7 @@ function saveSettings({
        WHERE id = 1`
     )
     .run({
-      pret_transport,
-      pret_contabil,
+      alte_costuri,
       procentaj_emag,
       numar_produse,
       mult_prp,
