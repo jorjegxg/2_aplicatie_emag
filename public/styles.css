@@ -227,16 +227,55 @@ th {
   white-space: nowrap;
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
 }
 
-th[data-col] {
+thead tr:not(.filter-row) th[data-col] {
   cursor: pointer;
   user-select: none;
 }
 
-th[data-col]:hover {
+thead tr:not(.filter-row) th[data-col]:hover {
   background: #dce6f0;
+}
+
+.filter-row th {
+  top: 2.45rem;
+  z-index: 2;
+  padding: 0.35rem 0.5rem;
+  font-weight: 400;
+  white-space: normal;
+  vertical-align: middle;
+  background: #eef3f8;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.filter-row th:hover {
+  background: #eef3f8;
+}
+
+.col-filter {
+  width: 100%;
+  min-width: 4.5rem;
+  box-sizing: border-box;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.col-filter:focus {
+  outline: none;
+  border-color: var(--accent, #3b6ea5);
+  box-shadow: 0 0 0 2px rgba(59, 110, 165, 0.15);
+}
+
+.is-row-filtered {
+  display: none;
 }
 
 th.is-sorted-asc::after,

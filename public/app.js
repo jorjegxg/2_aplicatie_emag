@@ -19,11 +19,12 @@ const COL_ORDER_KEY = "emag-column-order";
 const DEFAULT_ALTE_COSTURI = 12;
 const TARGET_TOTAL_ALTE_STOC = 3400;
 
+const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
 const DEFAULT_COLUMN_ORDER = [
-  ...table.querySelectorAll("thead th[data-col]"),
+  ...headerLabelRow.querySelectorAll("th[data-col]"),
 ].map((th) => th.dataset.col);
 const COLUMN_LABELS = Object.fromEntries(
-  [...table.querySelectorAll("thead th[data-col]")].map((th) => [
+  [...headerLabelRow.querySelectorAll("th[data-col]")].map((th) => [
     th.dataset.col,
     th.textContent.trim(),
   ])
@@ -112,23 +113,22 @@ function applyColumnVisibility() {
   });
 }
 
-function applyColumnOrder() {
-  const headerRow = table.querySelector("thead tr");
-  if (!headerRow) return;
-  const thByCol = Object.fromEntries(
-    [...headerRow.querySelectorAll("th[data-col]")].map((th) => [th.dataset.col, th])
+function reorderRowByColumnOrder(row) {
+  if (!row) return;
+  const byCol = Object.fromEntries(
+    [...row.querySelectorAll("[data-col]")].map((el) => [el.dataset.col, el])
   );
   columnOrder.forEach((col) => {
-    if (thByCol[col]) headerRow.appendChild(thByCol[col]);
+    if (byCol[col]) row.appendChild(byCol[col]);
   });
+}
+
+function applyColumnOrder() {
+  reorderRowByColumnOrder(table.querySelector("thead tr:not(.filter-row)"));
+  reorderRowByColumnOrder(table.querySelector("thead tr.filter-row"));
 
   tbody.querySelectorAll("tr:not(.empty-row)").forEach((tr) => {
-    const tdByCol = Object.fromEntries(
-      [...tr.querySelectorAll("td[data-col]")].map((td) => [td.dataset.col, td])
-    );
-    columnOrder.forEach((col) => {
-      if (tdByCol[col]) tr.appendChild(tdByCol[col]);
-    });
+    reorderRowByColumnOrder(tr);
   });
 }
 
@@ -750,7 +750,7 @@ function compareRows(a, b, col, dir) {
 }
 
 function updateSortHeaders() {
-  table.querySelectorAll("thead th[data-col]").forEach((th) => {
+  table.querySelectorAll("thead tr:not(.filter-row) th[data-col]").forEach((th) => {
     th.classList.remove("is-sorted-asc", "is-sorted-desc");
     if (sortCol && th.dataset.col === sortCol) {
       th.classList.add(sortDir === "asc" ? "is-sorted-asc" : "is-sorted-desc");
@@ -761,12 +761,86 @@ function updateSortHeaders() {
   });
 }
 
+function getCellFilterText(tr, col) {
+  const td = tr.querySelector(`td[data-col="${col}"]`);
+  if (!td) return "";
+
+  if (col === "pret_emag" || col === "procentaj_profit" || col === "alte_costuri") {
+    return String(td.querySelector("input")?.value ?? "").trim();
+  }
+  if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
+    return String(td.dataset.value ?? "").trim();
+  }
+
+  const text = (td.textContent || "").trim();
+  if (!text || text === "—") return "";
+  return text;
+}
+
+function getActiveColumnFilters() {
+  return [...table.querySelectorAll("thead .col-filter")]
+    .map((input) => ({
+      col: input.dataset.filterCol,
+      q: String(input.value || "").trim().toLowerCase(),
+    }))
+    .filter((f) => f.col && f.q);
+}
+
+function applyColumnFilters() {
+  const filters = getActiveColumnFilters();
+  const rows = [...tbody.querySelectorAll("tr[data-offer-id]")];
+  let existingEmpty = tbody.querySelector(".empty-row");
+
+  if (rows.length === 0) {
+    if (existingEmpty?.dataset.filterEmpty === "1") {
+      existingEmpty.remove();
+    }
+    return;
+  }
+
+  if (existingEmpty) {
+    existingEmpty.remove();
+    existingEmpty = null;
+  }
+
+  let visibleCount = 0;
+  for (const tr of rows) {
+    const match =
+      filters.length === 0 ||
+      filters.every((f) => getCellFilterText(tr, f.col).toLowerCase().includes(f.q));
+    tr.classList.toggle("is-row-filtered", !match);
+    if (match) visibleCount += 1;
+  }
+
+  if (visibleCount === 0 && filters.length > 0) {
+    tbody.insertAdjacentHTML(
+      "beforeend",
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="18">Niciun rezultat pentru filtre.</td></tr>'
+    );
+  }
+}
+
+let filterDebounceTimer = null;
+function scheduleColumnFilters() {
+  clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = setTimeout(applyColumnFilters, 150);
+}
+
 function sortProductsTable() {
   updateSortHeaders();
-  if (!sortCol) return;
+  if (!sortCol) {
+    applyColumnFilters();
+    return;
+  }
 
-  const rows = [...tbody.querySelectorAll("tr:not(.empty-row)")];
-  if (rows.length === 0) return;
+  const rows = [...tbody.querySelectorAll("tr[data-offer-id]")];
+  if (rows.length === 0) {
+    applyColumnFilters();
+    return;
+  }
+
+  const filterEmpty = tbody.querySelector('.empty-row[data-filter-empty="1"]');
+  if (filterEmpty) filterEmpty.remove();
 
   rows.sort((a, b) => compareRows(a, b, sortCol, sortDir));
   rows.forEach((tr, i) => {
@@ -774,6 +848,7 @@ function sortProductsTable() {
     const indexCell = tr.querySelector('td[data-col="index"]');
     if (indexCell) indexCell.textContent = String(i + 1);
   });
+  applyColumnFilters();
 }
 
 function renderProducts(products, append) {
@@ -798,7 +873,7 @@ function renderProducts(products, append) {
     applyAlteScaleToExistingRows(k);
   }
 
-  const startIndex = tbody.querySelectorAll("tr:not(.empty-row)").length + 1;
+  const startIndex = tbody.querySelectorAll("tr[data-offer-id]").length + 1;
   tbody.insertAdjacentHTML(
     "beforeend",
     products
@@ -808,6 +883,7 @@ function renderProducts(products, append) {
       .join("")
   );
   if (sortCol) sortProductsTable();
+  else applyColumnFilters();
   updateSyncButton();
   updateTotalAlteStoc();
 }
@@ -1028,7 +1104,8 @@ btnMore.addEventListener("click", () => loadProducts({ append: true }));
 btnSync.addEventListener("click", syncPrices);
 
 table.querySelector("thead")?.addEventListener("click", (e) => {
-  const th = e.target.closest("th[data-col]");
+  if (e.target.closest(".filter-row") || e.target.closest(".col-filter")) return;
+  const th = e.target.closest("thead tr:not(.filter-row) th[data-col]");
   if (!th) return;
   const col = th.dataset.col;
   if (sortCol === col) {
@@ -1038,6 +1115,15 @@ table.querySelector("thead")?.addEventListener("click", (e) => {
     sortDir = "asc";
   }
   sortProductsTable();
+});
+
+table.querySelector("thead tr.filter-row")?.addEventListener("input", (e) => {
+  if (!e.target.closest(".col-filter")) return;
+  scheduleColumnFilters();
+});
+
+table.querySelector("thead tr.filter-row")?.addEventListener("click", (e) => {
+  e.stopPropagation();
 });
 
 function onSettingsInput() {
