@@ -675,6 +675,171 @@ td.col-procentaj-profit.pct-2 {
   display: none;
 }
 
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.site-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  padding-bottom: 0.1rem;
+}
+
+.site-nav a:hover {
+  color: var(--accent);
+}
+
+.site-nav a[aria-current="page"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.field select {
+  width: 8.5rem;
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--ink);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.field input[type="datetime-local"] {
+  width: 14rem;
+}
+
+.btn-expand {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.btn-expand:hover {
+  background: var(--row-alt);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.orders-table .col-expand {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.order-row.is-expanded {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.order-detail-row > td {
+  background: #f3f6fa;
+  padding: 0.5rem 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.order-products-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.order-products-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.order-products-table th,
+.order-products-table td {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.order-products-table th {
+  background: var(--row-alt);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.order-products-table tr:last-child td {
+  border-bottom: none;
+}
+
+.order-products-table .is-missing,
+.order-products-table .muted,
+.product-cancelled {
+  color: var(--muted);
+}
+
+.product-cancelled td {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.product-cancelled .muted {
+  text-decoration: none;
+}
+
+.status-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--row-alt);
+  color: var(--ink);
+}
+
+.status-new {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-progress {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-prepared {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-finalized {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-returned {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
 @media (max-width: 640px) {
   .page {
     padding: 0.75rem 0.35rem 0.35rem;
@@ -682,5 +847,10 @@ td.col-procentaj-profit.pct-2 {
 
   .header h1 {
     font-size: 1.4rem;
+  }
+
+  .field input[type="datetime-local"] {
+    width: 100%;
+    max-width: 14rem;
   }
 }

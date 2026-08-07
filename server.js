@@ -247,6 +247,75 @@ async function emagProductOfferRead(auth, page) {
   return { response, json, text };
 }
 
+function mapOrderProduct(product) {
+  const name = product.name || product.product_name || "";
+  const part_number = product.part_number || "";
+  const product_id = product.product_id ?? null;
+  return {
+    id: product.id ?? null,
+    product_id,
+    name,
+    part_number,
+    quantity: product.quantity ?? null,
+    sale_price: product.sale_price ?? null,
+    status: product.status ?? null,
+    currency: product.currency || "RON",
+    pret_cumparare: lookupPretCumparare(part_number, name),
+    alte_costuri: lookupAlteCosturi(product_id),
+  };
+}
+
+function mapOrder(order) {
+  const customerRaw = Array.isArray(order.customer)
+    ? order.customer[0]
+    : order.customer;
+  const products = Array.isArray(order.products)
+    ? order.products.map(mapOrderProduct)
+    : [];
+  return {
+    id: order.id,
+    status: order.status,
+    date: order.date || order.created || null,
+    payment_mode_id: order.payment_mode_id ?? null,
+    customer_name: customerRaw?.name || customerRaw?.billing_name || "",
+    products,
+  };
+}
+
+async function emagOrderRead(auth, { page, status, createdAfter, createdBefore }) {
+  const body = new URLSearchParams();
+  body.set("currentPage", String(page));
+  body.set("itemsPerPage", String(ITEMS_PER_PAGE));
+
+  if (status != null && status !== "") {
+    const statuses = Array.isArray(status) ? status : [status];
+    statuses.forEach((s, i) => {
+      body.set(`status[${i}]`, String(s));
+    });
+  }
+  if (createdAfter) body.set("createdAfter", String(createdAfter));
+  if (createdBefore) body.set("createdBefore", String(createdBefore));
+
+  const response = await emagFetch(`${EMAG_API}/order/read`, {
+    method: "POST",
+    headers: {
+      Authorization: auth,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+
+  const text = await response.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+
+  return { response, json, text };
+}
+
 app.get("/api/settings", (_req, res) => {
   try {
     return res.json(getSettings());
@@ -537,6 +606,123 @@ app.get("/api/products", async (req, res) => {
     }
 
     console.error("[auth:products] autentificare eMAG eșuată (401/403) — toate combo-urile");
+    return res.status(lastStatus || 401).json({
+      error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
+      messages: lastJson?.messages || [],
+      detail: lastText.slice(0, 300),
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
+app.get("/api/orders", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const createdAfter =
+      typeof req.query.createdAfter === "string" && req.query.createdAfter.trim()
+        ? req.query.createdAfter.trim()
+        : null;
+    const createdBefore =
+      typeof req.query.createdBefore === "string" && req.query.createdBefore.trim()
+        ? req.query.createdBefore.trim()
+        : null;
+
+    let status = null;
+    if (req.query.status != null && req.query.status !== "") {
+      const raw = Array.isArray(req.query.status)
+        ? req.query.status
+        : String(req.query.status).split(",");
+      status = raw
+        .map((s) => parseInt(String(s).trim(), 10))
+        .filter((n) => Number.isFinite(n) && n >= 0 && n <= 5);
+      if (status.length === 0) status = null;
+    }
+
+    if (createdAfter && createdBefore) {
+      const after = Date.parse(createdAfter.replace(" ", "T"));
+      const before = Date.parse(createdBefore.replace(" ", "T"));
+      if (Number.isFinite(after) && Number.isFinite(before)) {
+        const maxMs = 31 * 24 * 60 * 60 * 1000;
+        if (before < after) {
+          return res.status(400).json({
+            error: "createdBefore trebuie să fie după createdAfter",
+          });
+        }
+        if (before - after > maxMs) {
+          return res.status(400).json({
+            error: "Intervalul de dată eMAG e max 1 lună",
+          });
+        }
+      }
+    }
+
+    const creds = loadCredentials();
+    const candidates = authCandidates(creds);
+    console.log(
+      `[auth:orders] ordine încercări:`,
+      candidates.map((c) => c.label).join(" → ")
+    );
+
+    let lastStatus = null;
+    let lastJson = null;
+    let lastText = "";
+
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      logAuthAttempt("orders", candidate, i, candidates.length);
+      const auth = authHeader(candidate.user, candidate.pass);
+      const { response, json, text } = await emagOrderRead(auth, {
+        page,
+        status,
+        createdAfter,
+        createdBefore,
+      });
+      lastStatus = response.status;
+      lastJson = json;
+      lastText = text;
+
+      if (response.status === 401 || response.status === 403) {
+        logAuthResult("orders", candidate, response.status, false);
+        continue;
+      }
+
+      logAuthResult("orders", candidate, response.status, true);
+      savePreferredAuthLabel(candidate.label);
+
+      if (!json) {
+        return res.status(502).json({
+          error: "Răspuns invalid de la eMAG",
+          status: response.status,
+          detail: text.slice(0, 500),
+        });
+      }
+
+      if (json.isError) {
+        return res.status(502).json({
+          error: "eMAG a returnat eroare",
+          messages: json.messages || [],
+        });
+      }
+
+      const results = Array.isArray(json.results) ? json.results : [];
+      const orders = results.map(mapOrder);
+
+      console.log(
+        `[auth:orders] OK page=${page} count=${orders.length} auth=${candidate.label}`
+      );
+      return res.json({
+        page,
+        itemsPerPage: ITEMS_PER_PAGE,
+        count: orders.length,
+        hasMore: orders.length >= ITEMS_PER_PAGE,
+        authUsed: candidate.label,
+        orders,
+      });
+    }
+
+    console.error("[auth:orders] autentificare eMAG eșuată (401/403) — toate combo-urile");
     return res.status(lastStatus || 401).json({
       error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
       messages: lastJson?.messages || [],
