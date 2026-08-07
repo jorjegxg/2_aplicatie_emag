@@ -14,6 +14,7 @@ const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
 const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
+const inputTotalProfitStoc = document.getElementById("total-profit-stoc");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
@@ -369,6 +370,39 @@ function updateTotalAlteStoc() {
   inputTotalAlteStoc.value = total.toFixed(2);
 }
 
+function getRowSalePrice(tr) {
+  const input = tr?.querySelector("input.input-sale-price");
+  if (input && input.value !== "") return input.value;
+  return tr?.querySelector("td.col-profit")?.dataset?.salePrice ?? "";
+}
+
+function updateTotalProfitStoc() {
+  if (!inputTotalProfitStoc) return;
+  const rows = tbody.querySelectorAll("tr[data-offer-id]");
+  if (!rows.length) {
+    inputTotalProfitStoc.value = "—";
+    return;
+  }
+  let total = 0;
+  let any = false;
+  rows.forEach((tr) => {
+    const profit = calcProfit(
+      getRowSalePrice(tr),
+      tr.dataset.pretCumparare ?? "",
+      getRowAlteCosturi(tr)
+    );
+    if (profit == null || !Number.isFinite(profit)) return;
+    total += profit * getRowStock(tr);
+    any = true;
+  });
+  inputTotalProfitStoc.value = any ? total.toFixed(2) : "—";
+}
+
+function updateToolbarTotals() {
+  updateTotalAlteStoc();
+  updateTotalProfitStoc();
+}
+
 function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
   if (salePrice == null || salePrice === "" || inputProcentaj.value === "") {
     return null;
@@ -558,7 +592,7 @@ function updateDerivedCells() {
     if (!input) return;
     applyRowPrices(tr, input.value);
   });
-  updateTotalAlteStoc();
+  updateToolbarTotals();
   updateSyncButton();
 }
 
@@ -846,7 +880,7 @@ function renderProducts(products, append) {
     tbody.innerHTML =
       '<tr class="empty-row"><td colspan="18">Niciun produs găsit.</td></tr>';
     updateSyncButton();
-    updateTotalAlteStoc();
+    updateToolbarTotals();
     return;
   }
 
@@ -863,7 +897,7 @@ function renderProducts(products, append) {
   if (sortCol) sortProductsTable();
   else applyColumnFilters();
   updateSyncButton();
-  updateTotalAlteStoc();
+  updateToolbarTotals();
 }
 
 async function loadProducts({ append = false } = {}) {
@@ -982,6 +1016,7 @@ function clearDirtyAfterSync(offers) {
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
+  updateToolbarTotals();
 }
 
 async function syncPrices() {
@@ -1055,6 +1090,7 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     if (saleInput) saleInput.value = String(sale);
     applyRowPrices(tr, sale);
+    updateToolbarTotals();
     return;
   }
 
@@ -1063,6 +1099,7 @@ tbody.addEventListener("input", (e) => {
   const tr = input.closest("tr[data-offer-id]");
   if (!tr) return;
   applyRowPrices(tr, input.value);
+  updateToolbarTotals();
 });
 
 btnSaveSettings.addEventListener("click", saveSettings);

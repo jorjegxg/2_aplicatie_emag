@@ -1,5 +1,6 @@
 const express = require("express");
 const fs = require("fs");
+const https = require("https");
 const path = require("path");
 const { lookupPretCumparare, getSettings, saveSettings } = require("./db");
 
@@ -7,6 +8,44 @@ const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const ITEMS_PER_PAGE = 100;
 const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
+// eMAG marketplace cert currently expired (CERT_HAS_EXPIRED) — scoped bypass only for this host
+const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
+
+function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const payload = body == null ? null : Buffer.from(String(body), "utf8");
+    const reqHeaders = { ...headers };
+    if (payload) reqHeaders["Content-Length"] = payload.length;
+
+    const req = https.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || 443,
+        path: parsed.pathname + parsed.search,
+        method,
+        headers: reqHeaders,
+        agent: EMAG_HTTPS_AGENT,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({
+            status: res.statusCode,
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            text: async () => text,
+          });
+        });
+      }
+    );
+    req.on("error", reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
 
 const app = express();
 app.use(express.json());
@@ -180,7 +219,7 @@ async function emagProductOfferRead(auth, page) {
   body.set("currentPage", String(page));
   body.set("itemsPerPage", String(ITEMS_PER_PAGE));
 
-  const response = await fetch(`${EMAG_API}/product_offer/read`, {
+  const response = await emagFetch(`${EMAG_API}/product_offer/read`, {
     method: "POST",
     headers: {
       Authorization: auth,
@@ -251,7 +290,7 @@ async function emagProductOfferSave(auth, offers) {
     )
   );
 
-  const response = await fetch(`${EMAG_API}/product_offer/save`, {
+  const response = await emagFetch(`${EMAG_API}/product_offer/save`, {
     method: "POST",
     headers: {
       Authorization: auth,
