@@ -3,11 +3,13 @@ const btnMore = document.getElementById("btn-more");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 const btnSync = document.getElementById("btn-sync");
 const btnColumns = document.getElementById("btn-columns");
+const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
 const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
+const pageEl = document.querySelector(".page");
 const inputProcentaj = document.getElementById("procentaj-emag");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputMultPrp = document.getElementById("mult-prp");
@@ -18,6 +20,7 @@ const inputTotalProfitStoc = document.getElementById("total-profit-stoc");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
+const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
 const DEFAULT_ALTE_COSTURI = 0;
 
 const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
@@ -1153,6 +1156,47 @@ btnColumns.addEventListener("click", (e) => {
   e.stopPropagation();
   setColumnMenuOpen(colMenu.hidden);
 });
+
+function setTableFullscreen(on) {
+  if (!pageEl || !btnTableFullscreen) return;
+  pageEl.classList.toggle("is-table-fullscreen", on);
+  btnTableFullscreen.setAttribute("aria-pressed", on ? "true" : "false");
+  btnTableFullscreen.title = on ? "Ieși din toată pagina" : "Tabel pe toată pagina";
+  const label = btnTableFullscreen.querySelector(".btn-fullscreen-label");
+  if (label) label.textContent = on ? "Micșorează" : "Toată pagina";
+  const path = btnTableFullscreen.querySelector("svg path");
+  if (path) {
+    path.setAttribute(
+      "d",
+      on
+        ? "M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
+        : "M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"
+    );
+  }
+  try {
+    localStorage.setItem(TABLE_FULLSCREEN_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+btnTableFullscreen?.addEventListener("click", () => {
+  setTableFullscreen(!pageEl.classList.contains("is-table-fullscreen"));
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && pageEl?.classList.contains("is-table-fullscreen")) {
+    setTableFullscreen(false);
+  }
+});
+
+try {
+  if (localStorage.getItem(TABLE_FULLSCREEN_KEY) === "1") {
+    setTableFullscreen(true);
+  }
+} catch {
+  /* ignore */
+}
 
 colMenu.addEventListener("change", (e) => {
   const input = e.target.closest("input[data-col-toggle]");
