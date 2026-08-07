@@ -235,8 +235,31 @@ thead tr:not(.filter-row) th[data-col] {
   user-select: none;
 }
 
-thead tr:not(.filter-row) th[data-col]:hover {
-  background: #dce6f0;
+thead tr:not(.filter-row) th[data-src="emag"] {
+  background: #dbeafe;
+  box-shadow: inset 0 -2px 0 #3b82f6;
+}
+
+thead tr:not(.filter-row) th[data-src="db"] {
+  background: #fef3c7;
+  box-shadow: inset 0 -2px 0 #d97706;
+}
+
+thead tr:not(.filter-row) th[data-src="calc"] {
+  background: #dcfce7;
+  box-shadow: inset 0 -2px 0 #16a34a;
+}
+
+thead tr:not(.filter-row) th[data-src="emag"]:hover {
+  background: #bfdbfe;
+}
+
+thead tr:not(.filter-row) th[data-src="db"]:hover {
+  background: #fde68a;
+}
+
+thead tr:not(.filter-row) th[data-src="calc"]:hover {
+  background: #bbf7d0;
 }
 
 .filter-row th {
@@ -325,10 +348,14 @@ tbody tr:hover {
   color: var(--danger);
 }
 
-th.col-pret-emag {
+thead tr:not(.filter-row) th.col-pret-emag {
   color: var(--emag-price);
-  background: #ede9fe;
+  background: #c7d2fe;
   font-weight: 700;
+}
+
+thead tr:not(.filter-row) th.col-pret-emag:hover {
+  background: #a5b4fc;
 }
 
 td.col-pret-emag {
@@ -389,10 +416,14 @@ td[data-col="pret_maxim"].is-just-synced {
   background: #f0fdf4;
 }
 
-th.col-profit {
+thead tr:not(.filter-row) th.col-profit {
   color: var(--ok);
-  background: #dcfce7;
+  background: #bbf7d0;
   font-weight: 700;
+}
+
+thead tr:not(.filter-row) th.col-profit:hover {
+  background: #86efac;
 }
 
 td.col-profit {
@@ -401,10 +432,14 @@ td.col-profit {
   background: #f0fdf4;
 }
 
-th.col-procentaj-profit {
+thead tr:not(.filter-row) th.col-procentaj-profit {
   color: var(--ink);
-  background: #e8eef4;
+  background: #bbf7d0;
   font-weight: 700;
+}
+
+thead tr:not(.filter-row) th.col-procentaj-profit:hover {
+  background: #86efac;
 }
 
 td.col-procentaj-profit {
@@ -467,6 +502,21 @@ td.col-procentaj-profit.pct-2 {
   border-bottom: 2px solid transparent;
 }
 
+.col-menu-item[data-src="emag"] {
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.col-menu-item[data-src="db"] {
+  background: #fef3c7;
+  box-shadow: inset 3px 0 0 #d97706;
+}
+
+.col-menu-item[data-src="calc"] {
+  background: #dcfce7;
+  box-shadow: inset 3px 0 0 #16a34a;
+}
+
 .col-menu-item.is-dragging {
   opacity: 0.45;
 }
@@ -509,7 +559,19 @@ td.col-procentaj-profit.pct-2 {
 }
 
 .col-menu-item:hover {
-  background: var(--row-alt);
+  filter: brightness(0.96);
+}
+
+.col-menu-item[data-src="emag"]:hover {
+  background: #bfdbfe;
+}
+
+.col-menu-item[data-src="db"]:hover {
+  background: #fde68a;
+}
+
+.col-menu-item[data-src="calc"]:hover {
+  background: #bbf7d0;
 }
 
 .col-menu input {

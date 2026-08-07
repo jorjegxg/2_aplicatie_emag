@@ -30,6 +30,12 @@ const COLUMN_LABELS = Object.fromEntries(
     th.textContent.trim(),
   ])
 );
+const COLUMN_SOURCES = Object.fromEntries(
+  [...headerLabelRow.querySelectorAll("th[data-col]")].map((th) => [
+    th.dataset.col,
+    th.dataset.src || "",
+  ])
+);
 
 let currentPage = 1;
 let loading = false;
@@ -147,7 +153,9 @@ function buildColumnMenu() {
     .map((col) => {
       const checked = !hiddenCols.includes(col) ? "checked" : "";
       const label = COLUMN_LABELS[col] || col;
-      return `<div class="col-menu-item" data-col="${escapeHtml(col)}">
+      const src = COLUMN_SOURCES[col] || "";
+      const srcAttr = src ? ` data-src="${escapeHtml(src)}"` : "";
+      return `<div class="col-menu-item"${srcAttr} data-col="${escapeHtml(col)}">
         <span class="col-drag-handle" draggable="true" aria-hidden="true" title="Trage pentru a reordona">⋮⋮</span>
         <label><input type="checkbox" data-col-toggle="${escapeHtml(col)}" ${checked} />${escapeHtml(label)}</label>
       </div>`;

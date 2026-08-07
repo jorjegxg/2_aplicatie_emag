@@ -122,24 +122,24 @@
         <table id="products-table">
           <thead>
             <tr>
-              <th data-col="index">#</th>
-              <th data-col="id">ID</th>
-              <th data-col="name">Nume</th>
-              <th data-col="part_number">Part number</th>
-              <th data-col="id_familie">ID familie</th>
-              <th data-col="familie">Familie</th>
-              <th data-col="pret_cumparare">Preț cumpărare</th>
-              <th data-col="alte_costuri">Alte costuri</th>
-              <th data-col="pret_minim_profit">Preț minim pentru profit</th>
-              <th data-col="pret_emag" class="col-pret-emag">Pret emag</th>
-              <th data-col="profit" class="col-profit">Profit</th>
-              <th data-col="procentaj_profit" class="col-procentaj-profit">Procentaj profit %</th>
-              <th data-col="prp">PRP</th>
-              <th data-col="pret_minim">Pret minim</th>
-              <th data-col="pret_maxim">Pret maxim</th>
-              <th data-col="stoc">Stoc</th>
-              <th data-col="status">Status</th>
-              <th data-col="ean_pnk">EAN / PNK</th>
+              <th data-col="index" data-src="calc">#</th>
+              <th data-col="id" data-src="emag">ID</th>
+              <th data-col="name" data-src="emag">Nume</th>
+              <th data-col="part_number" data-src="emag">Part number</th>
+              <th data-col="id_familie" data-src="emag">ID familie</th>
+              <th data-col="familie" data-src="emag">Familie</th>
+              <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
+              <th data-col="alte_costuri" data-src="calc">Alte costuri</th>
+              <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
+              <th data-col="pret_emag" data-src="emag" class="col-pret-emag">Pret emag</th>
+              <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
+              <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
+              <th data-col="prp" data-src="emag">PRP</th>
+              <th data-col="pret_minim" data-src="emag">Pret minim</th>
+              <th data-col="pret_maxim" data-src="emag">Pret maxim</th>
+              <th data-col="stoc" data-src="emag">Stoc</th>
+              <th data-col="status" data-src="emag">Status</th>
+              <th data-col="ean_pnk" data-src="emag">EAN / PNK</th>
             </tr>
             <tr class="filter-row">
               <th data-col="index"></th>
