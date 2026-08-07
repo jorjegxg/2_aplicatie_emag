@@ -47,6 +47,12 @@ function getDb() {
       AND alte_costuri IS NULL
       AND (pret_transport IS NOT NULL OR pret_contabil IS NOT NULL);
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_alte_costuri (
+      offer_id INTEGER PRIMARY KEY,
+      alte_costuri REAL NOT NULL
+    );
+  `);
   return db;
 }
 
@@ -131,8 +137,55 @@ function saveSettings({
   return getSettings();
 }
 
+function lookupAlteCosturi(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) return null;
+  try {
+    const row = getDb()
+      .prepare(
+        "SELECT alte_costuri FROM product_alte_costuri WHERE offer_id = ? LIMIT 1"
+      )
+      .get(id);
+    if (row == null || row.alte_costuri == null) return null;
+    const n = Number(row.alte_costuri);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAlteCosturi(offerId, value) {
+  const id = Number(offerId);
+  const n = Number(value);
+  if (!Number.isFinite(id) || !Number.isFinite(n)) {
+    throw new Error("id și alte_costuri trebuie să fie numere");
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO product_alte_costuri (offer_id, alte_costuri)
+       VALUES (@offer_id, @alte_costuri)
+       ON CONFLICT(offer_id) DO UPDATE SET alte_costuri = excluded.alte_costuri`
+    )
+    .run({ offer_id: id, alte_costuri: n });
+  return n;
+}
+
+function clearAlteCosturi(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) {
+    throw new Error("id invalid");
+  }
+  getDb()
+    .prepare("DELETE FROM product_alte_costuri WHERE offer_id = ?")
+    .run(id);
+  return null;
+}
+
 module.exports = {
   lookupPretCumparare,
+  lookupAlteCosturi,
+  saveAlteCosturi,
+  clearAlteCosturi,
   getSettings,
   saveSettings,
   DB_PATH,

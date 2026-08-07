@@ -2,7 +2,14 @@ const express = require("express");
 const fs = require("fs");
 const https = require("https");
 const path = require("path");
-const { lookupPretCumparare, getSettings, saveSettings } = require("./db");
+const {
+  lookupPretCumparare,
+  lookupAlteCosturi,
+  saveAlteCosturi,
+  clearAlteCosturi,
+  getSettings,
+  saveSettings,
+} = require("./db");
 
 const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
@@ -202,6 +209,7 @@ function mapOffer(offer) {
     min_sale_price: offer.min_sale_price ?? null,
     max_sale_price: offer.max_sale_price ?? null,
     pret_cumparare: lookupPretCumparare(part_number, name),
+    alte_costuri: lookupAlteCosturi(offer.id),
     currency: offer.currency || "RON",
     general_stock: offer.general_stock ?? null,
     estimated_stock: offer.estimated_stock ?? null,
@@ -268,6 +276,29 @@ app.post("/api/settings", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la salvare setări" });
+  }
+});
+
+app.post("/api/products/alte-costuri", (req, res) => {
+  try {
+    const id = Number(req.body?.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "id invalid" });
+    }
+    const raw = req.body?.alte_costuri;
+    if (raw === null || raw === undefined || raw === "") {
+      clearAlteCosturi(id);
+      return res.json({ ok: true, id, alte_costuri: null });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: "alte_costuri invalid" });
+    }
+    const saved = saveAlteCosturi(id, n);
+    return res.json({ ok: true, id, alte_costuri: saved });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare alte costuri" });
   }
 });
 
