@@ -21,7 +21,7 @@ const inputTotalProfitStoc = document.getElementById("total-profit-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
-const PRODUCTS_CACHE_KEY = "emag-products-cache-v1";
+const PRODUCTS_CACHE_KEY = "emag-products-cache-v2";
 const DEFAULT_ALTE_COSTURI = 0;
 
 const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
@@ -432,6 +432,25 @@ function isNameDirty(tr) {
   return getRowName(tr) !== String(tr.dataset.originalName ?? "").trim();
 }
 
+const DESC_MAX_HEIGHT_PX = 160;
+
+function getRowDescription(tr) {
+  const input = tr?.querySelector("textarea.input-description");
+  return String(input?.value ?? "").trim();
+}
+
+function autosizeDescriptionTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, DESC_MAX_HEIGHT_PX)}px`;
+}
+
+function isDescriptionDirty(tr) {
+  return (
+    getRowDescription(tr) !== String(tr.dataset.originalDescription ?? "").trim()
+  );
+}
+
 function updateTotalAlteStoc() {
   if (!inputTotalAlteStoc) return;
   const rows = tbody.querySelectorAll("tr[data-offer-id]");
@@ -626,6 +645,7 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const pretCell = tr.querySelector("td.col-pret-emag");
   const stocCell = tr.querySelector("td[data-col='stoc']");
   const nameCell = tr.querySelector("td[data-col='name']");
+  const descriptionCell = tr.querySelector("td[data-col='description']");
   syncAlteCosturiCell(tr, alteCosturi);
   const original = tr.dataset.originalSale ?? "";
   const priceDirty =
@@ -636,7 +656,8 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
       (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
   const stockDirty = markDirty && isStockDirty(tr);
   const nameDirty = markDirty && isNameDirty(tr);
-  const isDirty = priceDirty || stockDirty || nameDirty;
+  const descriptionDirty = markDirty && isDescriptionDirty(tr);
+  const isDirty = priceDirty || stockDirty || nameDirty || descriptionDirty;
   tr.classList.toggle("is-price-dirty", isDirty);
   if (pretCell) pretCell.classList.toggle("is-price-dirty", priceDirty);
   if (prpCell) prpCell.classList.toggle("is-price-dirty", priceDirty);
@@ -644,6 +665,9 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   if (maxCell) maxCell.classList.toggle("is-price-dirty", priceDirty);
   if (stocCell) stocCell.classList.toggle("is-price-dirty", stockDirty);
   if (nameCell) nameCell.classList.toggle("is-price-dirty", nameDirty);
+  if (descriptionCell) {
+    descriptionCell.classList.toggle("is-price-dirty", descriptionDirty);
+  }
 
   if (isDirty) {
     tr.classList.remove("is-just-synced");
@@ -655,6 +679,9 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
     }
     if (stockDirty && stocCell) stocCell.classList.remove("is-just-synced");
     if (nameDirty && nameCell) nameCell.classList.remove("is-just-synced");
+    if (descriptionDirty && descriptionCell) {
+      descriptionCell.classList.remove("is-just-synced");
+    }
   }
 
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
@@ -775,6 +802,7 @@ function rowHtml(product, index) {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="1">${escapeHtml(product.name || "")}</textarea></td>`,
+    description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
@@ -791,7 +819,7 @@ function rowHtml(product, index) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -834,6 +862,10 @@ function getCellSortValue(tr, col) {
   if (col === "name") {
     const name = getRowName(tr);
     return name ? name.toLowerCase() : null;
+  }
+  if (col === "description") {
+    const description = getRowDescription(tr);
+    return description ? description.toLowerCase() : null;
   }
   if (
     col === "index" ||
@@ -895,6 +927,11 @@ function getCellFilterText(tr, col) {
   if (col === "name") {
     return String(td.querySelector("textarea.input-name")?.value ?? "").trim();
   }
+  if (col === "description") {
+    return String(
+      td.querySelector("textarea.input-description")?.value ?? ""
+    ).trim();
+  }
   if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
     return String(td.dataset.value ?? "").trim();
   }
@@ -942,7 +979,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="18">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="19">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -1042,7 +1079,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="18">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="19">Niciun produs găsit.</td></tr>';
     updateSyncButton();
     updateToolbarTotals();
     return;
@@ -1058,9 +1095,19 @@ function renderProducts(products, append) {
       .map((p, i) => rowHtml(p, startIndex + i))
       .join("")
   );
+  const rows = tbody.querySelectorAll("tr[data-offer-id]");
+  products.forEach((p, i) => {
+    const tr = rows[startIndex - 1 + i];
+    if (!tr) return;
+    // Descrieri lungi/HTML: set via dataset, nu în atribut HTML (newlines sparg atributul)
+    tr.dataset.originalDescription = String(p.description || "");
+  });
   tbody
     .querySelectorAll("textarea.input-name")
     .forEach((el) => autosizeNameTextarea(el));
+  tbody
+    .querySelectorAll("textarea.input-description")
+    .forEach((el) => autosizeDescriptionTextarea(el));
   if (sortCol) sortProductsTable();
   else applyColumnFilters();
   updateSyncButton();
@@ -1107,7 +1154,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="18">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="19">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
       if (loadedProducts.length === 0) {
@@ -1169,6 +1216,9 @@ function collectDirtyOffers() {
       const name = getRowName(tr);
       if (name) offer.name = name;
     }
+    if (isDescriptionDirty(tr)) {
+      offer.description = getRowDescription(tr);
+    }
     if (Number.isFinite(prp)) offer.recommended_price = prp;
     if (Number.isFinite(min)) offer.min_sale_price = min;
     if (Number.isFinite(max)) offer.max_sale_price = max;
@@ -1185,12 +1235,14 @@ function markJustSynced(tr) {
   const maxCell = tr.querySelector("td[data-col='pret_maxim']");
   const stocCell = tr.querySelector("td[data-col='stoc']");
   const nameCell = tr.querySelector("td[data-col='name']");
+  const descriptionCell = tr.querySelector("td[data-col='description']");
   if (pretCell) pretCell.classList.add("is-just-synced");
   if (prpCell) prpCell.classList.add("is-just-synced");
   if (minCell) minCell.classList.add("is-just-synced");
   if (maxCell) maxCell.classList.add("is-just-synced");
   if (stocCell) stocCell.classList.add("is-just-synced");
   if (nameCell) nameCell.classList.add("is-just-synced");
+  if (descriptionCell) descriptionCell.classList.add("is-just-synced");
 }
 
 function clearDirtyAfterSync(offers) {
@@ -1224,6 +1276,15 @@ function clearDirtyAfterSync(offers) {
         autosizeNameTextarea(nameInput);
       }
     }
+    if (offer.description != null) {
+      const syncedDescription = String(offer.description);
+      tr.dataset.originalDescription = syncedDescription;
+      const descriptionInput = tr.querySelector("textarea.input-description");
+      if (descriptionInput) {
+        descriptionInput.value = syncedDescription;
+        autosizeDescriptionTextarea(descriptionInput);
+      }
+    }
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
@@ -1239,18 +1300,25 @@ async function syncPrices() {
     return;
   }
   if (offers.length === 0) {
-    setStatus("Nicio schimbare de preț/stoc/nume de sincronizat.", "error");
+    setStatus("Nicio schimbare de preț/stoc/nume/descriere de sincronizat.", "error");
     return;
   }
 
   syncing = true;
   btnSync.disabled = true;
-  setStatus(`Se sincronizează ${offers.length} oferte (preț/stoc/nume)…`, "loading");
+  setStatus(
+    `Se sincronizează ${offers.length} oferte (preț/stoc/nume/descriere)…`,
+    "loading"
+  );
   console.log(
     `[eMAG sync] trimit ${offers.length} oferte:`,
     offers.map((o) => ({
       id: o.id,
       name: o.name,
+      description:
+        o.description != null
+          ? `${String(o.description).slice(0, 80)}…`
+          : undefined,
       sale_price: o.sale_price,
       stock: o.stock,
       recommended_price: o.recommended_price,
@@ -1278,7 +1346,7 @@ async function syncPrices() {
     if (syncInfoBanner) syncInfoBanner.hidden = false;
     const msgDetail = formatEmagMessages(data.messages);
     setStatus(
-      `Sincronizate ${offers.length} oferte (preț/stoc) cu eMAG.` +
+      `Sincronizate ${offers.length} oferte (preț/stoc/nume/descriere) cu eMAG.` +
         (msgDetail ? ` ${msgDetail}` : ""),
       msgDetail ? "loading" : "ok"
     );
@@ -1340,6 +1408,17 @@ tbody.addEventListener("input", (e) => {
     const tr = nameInput.closest("tr[data-offer-id]");
     if (!tr) return;
     autosizeNameTextarea(nameInput);
+    const saleInput = tr.querySelector("input.input-sale-price");
+    applyRowPrices(tr, saleInput?.value ?? "");
+    updateToolbarTotals();
+    return;
+  }
+
+  const descriptionInput = e.target.closest("textarea.input-description");
+  if (descriptionInput) {
+    const tr = descriptionInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    autosizeDescriptionTextarea(descriptionInput);
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();

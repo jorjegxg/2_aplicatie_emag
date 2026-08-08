@@ -199,6 +199,7 @@ function mapOffer(offer) {
   return {
     id: offer.id,
     name,
+    description: offer.description || "",
     brand: offer.brand || offer.brand_name || "",
     part_number,
     part_number_key: offer.part_number_key || "",
@@ -461,6 +462,8 @@ app.post("/api/products/sync-prices", async (req, res) => {
       const handling_time = normalizeHandlingTime(o?.handling_time);
       const name =
         typeof o?.name === "string" ? o.name.trim() : "";
+      const description =
+        typeof o?.description === "string" ? o.description : null;
       const payload = {
         id,
         status,
@@ -470,6 +473,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
         stock,
       };
       if (name) payload.name = name;
+      if (description != null) payload.description = description;
       if (recommended_price != null) payload.recommended_price = recommended_price;
       if (min_sale_price != null) payload.min_sale_price = min_sale_price;
       if (max_sale_price != null) payload.max_sale_price = max_sale_price;
