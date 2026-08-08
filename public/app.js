@@ -417,6 +417,21 @@ function isStockDirty(tr) {
   return getRowStock(tr) !== original;
 }
 
+function getRowName(tr) {
+  const input = tr?.querySelector("textarea.input-name");
+  return String(input?.value ?? "").trim();
+}
+
+function autosizeNameTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+function isNameDirty(tr) {
+  return getRowName(tr) !== String(tr.dataset.originalName ?? "").trim();
+}
+
 function updateTotalAlteStoc() {
   if (!inputTotalAlteStoc) return;
   const rows = tbody.querySelectorAll("tr[data-offer-id]");
@@ -610,6 +625,7 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
 
   const pretCell = tr.querySelector("td.col-pret-emag");
   const stocCell = tr.querySelector("td[data-col='stoc']");
+  const nameCell = tr.querySelector("td[data-col='name']");
   syncAlteCosturiCell(tr, alteCosturi);
   const original = tr.dataset.originalSale ?? "";
   const priceDirty =
@@ -619,13 +635,15 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
       (derived.min != null && !pricesEqual(derived.min, tr.dataset.originalMin)) ||
       (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
   const stockDirty = markDirty && isStockDirty(tr);
-  const isDirty = priceDirty || stockDirty;
+  const nameDirty = markDirty && isNameDirty(tr);
+  const isDirty = priceDirty || stockDirty || nameDirty;
   tr.classList.toggle("is-price-dirty", isDirty);
   if (pretCell) pretCell.classList.toggle("is-price-dirty", priceDirty);
   if (prpCell) prpCell.classList.toggle("is-price-dirty", priceDirty);
   if (minCell) minCell.classList.toggle("is-price-dirty", priceDirty);
   if (maxCell) maxCell.classList.toggle("is-price-dirty", priceDirty);
   if (stocCell) stocCell.classList.toggle("is-price-dirty", stockDirty);
+  if (nameCell) nameCell.classList.toggle("is-price-dirty", nameDirty);
 
   if (isDirty) {
     tr.classList.remove("is-just-synced");
@@ -636,6 +654,7 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
       if (maxCell) maxCell.classList.remove("is-just-synced");
     }
     if (stockDirty && stocCell) stocCell.classList.remove("is-just-synced");
+    if (nameDirty && nameCell) nameCell.classList.remove("is-just-synced");
   }
 
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
@@ -755,7 +774,7 @@ function rowHtml(product, index) {
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
-    name: `<td data-col="name"${cellClass("name")}>${escapeHtml(product.name) || "—"}</td>`,
+    name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="1">${escapeHtml(product.name || "")}</textarea></td>`,
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
@@ -772,7 +791,7 @@ function rowHtml(product, index) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -811,6 +830,10 @@ function getCellSortValue(tr, col) {
   }
   if (col === "stoc") {
     return getRowStock(tr);
+  }
+  if (col === "name") {
+    const name = getRowName(tr);
+    return name ? name.toLowerCase() : null;
   }
   if (
     col === "index" ||
@@ -868,6 +891,9 @@ function getCellFilterText(tr, col) {
     col === "stoc"
   ) {
     return String(td.querySelector("input")?.value ?? "").trim();
+  }
+  if (col === "name") {
+    return String(td.querySelector("textarea.input-name")?.value ?? "").trim();
   }
   if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
     return String(td.dataset.value ?? "").trim();
@@ -1032,6 +1058,9 @@ function renderProducts(products, append) {
       .map((p, i) => rowHtml(p, startIndex + i))
       .join("")
   );
+  tbody
+    .querySelectorAll("textarea.input-name")
+    .forEach((el) => autosizeNameTextarea(el));
   if (sortCol) sortProductsTable();
   else applyColumnFilters();
   updateSyncButton();
@@ -1136,6 +1165,10 @@ function collectDirtyOffers() {
       stock,
       handling_time,
     };
+    if (isNameDirty(tr)) {
+      const name = getRowName(tr);
+      if (name) offer.name = name;
+    }
     if (Number.isFinite(prp)) offer.recommended_price = prp;
     if (Number.isFinite(min)) offer.min_sale_price = min;
     if (Number.isFinite(max)) offer.max_sale_price = max;
@@ -1151,11 +1184,13 @@ function markJustSynced(tr) {
   const minCell = tr.querySelector("td[data-col='pret_minim']");
   const maxCell = tr.querySelector("td[data-col='pret_maxim']");
   const stocCell = tr.querySelector("td[data-col='stoc']");
+  const nameCell = tr.querySelector("td[data-col='name']");
   if (pretCell) pretCell.classList.add("is-just-synced");
   if (prpCell) prpCell.classList.add("is-just-synced");
   if (minCell) minCell.classList.add("is-just-synced");
   if (maxCell) maxCell.classList.add("is-just-synced");
   if (stocCell) stocCell.classList.add("is-just-synced");
+  if (nameCell) nameCell.classList.add("is-just-synced");
 }
 
 function clearDirtyAfterSync(offers) {
@@ -1180,6 +1215,15 @@ function clearDirtyAfterSync(offers) {
       const stockInput = tr.querySelector("input.input-stock");
       if (stockInput) stockInput.value = String(sum);
     }
+    if (offer.name != null) {
+      const syncedName = String(offer.name);
+      tr.dataset.originalName = syncedName;
+      const nameInput = tr.querySelector("textarea.input-name");
+      if (nameInput) {
+        nameInput.value = syncedName;
+        autosizeNameTextarea(nameInput);
+      }
+    }
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
@@ -1195,17 +1239,18 @@ async function syncPrices() {
     return;
   }
   if (offers.length === 0) {
-    setStatus("Nicio schimbare de preț/stoc de sincronizat.", "error");
+    setStatus("Nicio schimbare de preț/stoc/nume de sincronizat.", "error");
     return;
   }
 
   syncing = true;
   btnSync.disabled = true;
-  setStatus(`Se sincronizează ${offers.length} oferte (preț/stoc)…`, "loading");
+  setStatus(`Se sincronizează ${offers.length} oferte (preț/stoc/nume)…`, "loading");
   console.log(
     `[eMAG sync] trimit ${offers.length} oferte:`,
     offers.map((o) => ({
       id: o.id,
+      name: o.name,
       sale_price: o.sale_price,
       stock: o.stock,
       recommended_price: o.recommended_price,
@@ -1284,6 +1329,17 @@ tbody.addEventListener("input", (e) => {
     const tr = stockInput.closest("tr[data-offer-id]");
     if (!tr) return;
     setRowStock(tr, stockInput.value === "" ? 0 : stockInput.value);
+    const saleInput = tr.querySelector("input.input-sale-price");
+    applyRowPrices(tr, saleInput?.value ?? "");
+    updateToolbarTotals();
+    return;
+  }
+
+  const nameInput = e.target.closest("textarea.input-name");
+  if (nameInput) {
+    const tr = nameInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    autosizeNameTextarea(nameInput);
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();

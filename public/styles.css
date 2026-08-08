@@ -449,6 +449,33 @@ td.col-stoc .input-stock:focus {
   border-color: var(--accent);
 }
 
+td.col-name .input-name,
+td[data-col="name"] .input-name {
+  display: block;
+  width: 100%;
+  min-width: 12rem;
+  min-height: 2rem;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  field-sizing: content;
+}
+
+td.col-name .input-name:focus,
+td[data-col="name"] .input-name:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
 td.col-alte-costuri .alte-costuri-wrap {
   display: flex;
   align-items: center;
@@ -516,6 +543,12 @@ td[data-col="stoc"].is-price-dirty {
   box-shadow: inset 3px 0 0 #ca8a04;
 }
 
+td.col-name.is-price-dirty,
+td[data-col="name"].is-price-dirty {
+  background: #fef08a;
+  box-shadow: inset 3px 0 0 #ca8a04;
+}
+
 /* Rămâne după sync OK, până la refresh — verificare vizuală subtilă */
 tr.is-just-synced td.col-pret-emag,
 td.col-pret-emag.is-just-synced {
@@ -531,6 +564,12 @@ td[data-col="pret_maxim"].is-just-synced {
 
 td.col-stoc.is-just-synced,
 td[data-col="stoc"].is-just-synced {
+  background: #dcfce7;
+  box-shadow: inset 3px 0 0 #16a34a;
+}
+
+td.col-name.is-just-synced,
+td[data-col="name"].is-just-synced {
   background: #dcfce7;
   box-shadow: inset 3px 0 0 #16a34a;
 }

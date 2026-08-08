@@ -380,6 +380,7 @@ async function emagProductOfferSave(auth, offers) {
     JSON.stringify(
       offers.map((o) => ({
         id: o.id,
+        name: o.name,
         sale_price: o.sale_price,
         recommended_price: o.recommended_price,
         min_sale_price: o.min_sale_price,
@@ -458,6 +459,8 @@ app.post("/api/products/sync-prices", async (req, res) => {
       }
       const stock = normalizeStock(o?.stock, o?.general_stock);
       const handling_time = normalizeHandlingTime(o?.handling_time);
+      const name =
+        typeof o?.name === "string" ? o.name.trim() : "";
       const payload = {
         id,
         status,
@@ -466,6 +469,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
         handling_time,
         stock,
       };
+      if (name) payload.name = name;
       if (recommended_price != null) payload.recommended_price = recommended_price;
       if (min_sale_price != null) payload.min_sale_price = min_sale_price;
       if (max_sale_price != null) payload.max_sale_price = max_sale_price;
