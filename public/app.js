@@ -21,6 +21,7 @@ const inputTotalProfitStoc = document.getElementById("total-profit-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
+const PRODUCTS_CACHE_KEY = "emag-products-cache-v1";
 const DEFAULT_ALTE_COSTURI = 0;
 
 const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
@@ -41,6 +42,9 @@ const COLUMN_SOURCES = Object.fromEntries(
 );
 
 let currentPage = 1;
+let hasMore = false;
+/** @type {Array<object>} */
+let loadedProducts = [];
 let loading = false;
 let savingSettings = false;
 let syncing = false;
@@ -907,6 +911,63 @@ function sortProductsTable() {
   applyColumnFilters();
 }
 
+function saveProductsCache() {
+  try {
+    const payload = {
+      products: loadedProducts,
+      page: currentPage,
+      hasMore,
+      savedAt: new Date().toISOString(),
+    };
+    sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn("cache produse:", err.message);
+  }
+}
+
+function clearProductsCache() {
+  try {
+    sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readProductsCache() {
+  try {
+    const raw = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.products)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function restoreProductsCache() {
+  const data = readProductsCache();
+  if (!data || data.products.length === 0) return false;
+
+  loadedProducts = data.products;
+  currentPage = Number(data.page) || 1;
+  hasMore = Boolean(data.hasMore);
+
+  renderProducts(loadedProducts, false);
+  btnMore.hidden = !hasMore;
+
+  const when = data.savedAt
+    ? new Date(data.savedAt).toLocaleString("ro-RO")
+    : "";
+  setStatus(
+    `Cache: ${loadedProducts.length} produse` +
+      (when ? ` (din ${when})` : "") +
+      " — Reload pentru date noi",
+    "ok"
+  );
+  return true;
+}
+
 function renderProducts(products, append) {
   if (!append) {
     tbody.innerHTML = "";
@@ -952,19 +1013,36 @@ async function loadProducts({ append = false } = {}) {
       throw new Error(data.error || `Eroare HTTP ${res.status}`);
     }
 
-    currentPage = data.page;
-    renderProducts(data.products, append);
+    const products = Array.isArray(data.products) ? data.products : [];
+    currentPage = data.page || page;
+    hasMore = Boolean(data.hasMore);
 
-    const totalShown = tbody.querySelectorAll("tr:not(.empty-row)").length;
-    setStatus(`Afișate ${totalShown} produse (pagina ${data.page}).`, "ok");
+    if (append) {
+      loadedProducts = loadedProducts.concat(products);
+    } else {
+      loadedProducts = products;
+    }
 
-    btnMore.hidden = !data.hasMore;
+    saveProductsCache();
+    renderProducts(products, append);
+
+    setStatus(
+      `Pagina ${currentPage}: ${products.length} produse` +
+        (data.authUsed ? ` (${data.authUsed})` : "") +
+        " — cached până la Reload",
+      "ok"
+    );
+
+    btnMore.hidden = !hasMore;
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
       tbody.innerHTML = `<tr class="empty-row"><td colspan="18">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
+      if (loadedProducts.length === 0) {
+        clearProductsCache();
+      }
     }
   } finally {
     loading = false;
@@ -1374,4 +1452,8 @@ applyColumnOrder();
 buildColumnMenu();
 applyColumnVisibility();
 updateSyncButton();
-loadSettings();
+loadSettings().then(() => {
+  if (!restoreProductsCache()) {
+    setStatus("Apasă Reload produse — sau rămâi pe cache după încărcare.", "");
+  }
+});
