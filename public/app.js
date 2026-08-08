@@ -385,13 +385,36 @@ function alteFromProcentaj(procentaj, pretCumparare) {
   return Math.round(buy * (pct / 100) * 100) / 100;
 }
 
+function stockSumFromArr(stock) {
+  if (!Array.isArray(stock) || !stock.length) return 0;
+  return stock.reduce((sum, x) => sum + (Number(x.value) || 0), 0);
+}
+
 function getRowStock(tr) {
-  const stock = parseJsonAttr(tr?.dataset?.stock, []);
-  if (Array.isArray(stock) && stock.length) {
-    return stock.reduce((sum, x) => sum + (Number(x.value) || 0), 0);
+  const input = tr?.querySelector("input.input-stock");
+  if (input && input.value !== "") {
+    const n = Number(input.value);
+    if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
   }
-  const n = Number(tr?.querySelector("td[data-col='stoc']")?.textContent);
-  return Number.isFinite(n) ? n : 0;
+  const stock = parseJsonAttr(tr?.dataset?.stock, []);
+  return stockSumFromArr(stock);
+}
+
+function setRowStock(tr, qty) {
+  const n = Number(qty);
+  const value = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  const prev = parseJsonAttr(tr.dataset.stock, [{ warehouse_id: 1, value: 0 }]);
+  const warehouse_id = Number(prev[0]?.warehouse_id) || 1;
+  tr.dataset.stock = JSON.stringify([{ warehouse_id, value }]);
+  const input = tr.querySelector("input.input-stock");
+  if (input) input.value = String(value);
+  return value;
+}
+
+function isStockDirty(tr) {
+  const original = Number(tr.dataset.originalStock);
+  if (!Number.isFinite(original)) return false;
+  return getRowStock(tr) !== original;
 }
 
 function updateTotalAlteStoc() {
@@ -586,26 +609,33 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   }
 
   const pretCell = tr.querySelector("td.col-pret-emag");
+  const stocCell = tr.querySelector("td[data-col='stoc']");
   syncAlteCosturiCell(tr, alteCosturi);
   const original = tr.dataset.originalSale ?? "";
-  const isDirty =
+  const priceDirty =
     markDirty &&
     (!pricesEqual(salePrice, original) ||
       (derived.prp != null && !pricesEqual(derived.prp, tr.dataset.originalPrp)) ||
       (derived.min != null && !pricesEqual(derived.min, tr.dataset.originalMin)) ||
       (derived.max != null && !pricesEqual(derived.max, tr.dataset.originalMax)));
+  const stockDirty = markDirty && isStockDirty(tr);
+  const isDirty = priceDirty || stockDirty;
   tr.classList.toggle("is-price-dirty", isDirty);
-  if (pretCell) pretCell.classList.toggle("is-price-dirty", isDirty);
-  if (prpCell) prpCell.classList.toggle("is-price-dirty", isDirty);
-  if (minCell) minCell.classList.toggle("is-price-dirty", isDirty);
-  if (maxCell) maxCell.classList.toggle("is-price-dirty", isDirty);
+  if (pretCell) pretCell.classList.toggle("is-price-dirty", priceDirty);
+  if (prpCell) prpCell.classList.toggle("is-price-dirty", priceDirty);
+  if (minCell) minCell.classList.toggle("is-price-dirty", priceDirty);
+  if (maxCell) maxCell.classList.toggle("is-price-dirty", priceDirty);
+  if (stocCell) stocCell.classList.toggle("is-price-dirty", stockDirty);
 
   if (isDirty) {
     tr.classList.remove("is-just-synced");
-    if (pretCell) pretCell.classList.remove("is-just-synced");
-    if (prpCell) prpCell.classList.remove("is-just-synced");
-    if (minCell) minCell.classList.remove("is-just-synced");
-    if (maxCell) maxCell.classList.remove("is-just-synced");
+    if (priceDirty) {
+      if (pretCell) pretCell.classList.remove("is-just-synced");
+      if (prpCell) prpCell.classList.remove("is-just-synced");
+      if (minCell) minCell.classList.remove("is-just-synced");
+      if (maxCell) maxCell.classList.remove("is-just-synced");
+    }
+    if (stockDirty && stocCell) stocCell.classList.remove("is-just-synced");
   }
 
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
@@ -714,7 +744,11 @@ function rowHtml(product, index) {
   const procentajExtra = ["col-procentaj-profit", procentajLevelClass(procentajVal)]
     .filter(Boolean)
     .join(" ");
-  const stockJson = escapeHtml(JSON.stringify(product.stock ?? [{ warehouse_id: 1, value: 0 }]));
+  const stockArr = product.stock ?? [{ warehouse_id: 1, value: 0 }];
+  const stockSum = stockSumFromArr(stockArr);
+  const gs = Number(product.general_stock);
+  const stockVal = Number.isFinite(gs) ? gs : stockSum;
+  const stockJson = escapeHtml(JSON.stringify(stockArr));
   const handlingJson = escapeHtml(
     JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
   );
@@ -734,11 +768,11 @@ function rowHtml(product, index) {
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")} data-value="${escapeHtml(product.min_sale_price ?? "")}">${formatPrice(product.min_sale_price, currency)}</td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
-    stoc: `<td data-col="stoc"${cellClass("stoc")}>${escapeHtml(product.general_stock ?? "—")}</td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" /></td>`,
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}>
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -775,10 +809,12 @@ function getCellSortValue(tr, col) {
   if (col === "status") {
     return parseSortNumber(tr.dataset.status);
   }
+  if (col === "stoc") {
+    return getRowStock(tr);
+  }
   if (
     col === "index" ||
     col === "id" ||
-    col === "stoc" ||
     col === "pret_cumparare" ||
     col === "pret_minim_profit"
   ) {
@@ -825,7 +861,12 @@ function getCellFilterText(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return "";
 
-  if (col === "pret_emag" || col === "procentaj_profit" || col === "alte_costuri") {
+  if (
+    col === "pret_emag" ||
+    col === "procentaj_profit" ||
+    col === "alte_costuri" ||
+    col === "stoc"
+  ) {
     return String(td.querySelector("input")?.value ?? "").trim();
   }
   if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
@@ -1079,7 +1120,10 @@ function collectDirtyOffers() {
       return;
     }
 
-    const stock = parseJsonAttr(tr.dataset.stock, [{ warehouse_id: 1, value: 0 }]);
+    const stockQty = getRowStock(tr);
+    const prevStock = parseJsonAttr(tr.dataset.stock, [{ warehouse_id: 1, value: 0 }]);
+    const warehouse_id = Number(prevStock[0]?.warehouse_id) || 1;
+    const stock = [{ warehouse_id, value: stockQty }];
     const handling_time = parseJsonAttr(tr.dataset.handlingTime, [
       { warehouse_id: 1, value: 0 },
     ]);
@@ -1106,10 +1150,12 @@ function markJustSynced(tr) {
   const prpCell = tr.querySelector("td[data-col='prp']");
   const minCell = tr.querySelector("td[data-col='pret_minim']");
   const maxCell = tr.querySelector("td[data-col='pret_maxim']");
+  const stocCell = tr.querySelector("td[data-col='stoc']");
   if (pretCell) pretCell.classList.add("is-just-synced");
   if (prpCell) prpCell.classList.add("is-just-synced");
   if (minCell) minCell.classList.add("is-just-synced");
   if (maxCell) maxCell.classList.add("is-just-synced");
+  if (stocCell) stocCell.classList.add("is-just-synced");
 }
 
 function clearDirtyAfterSync(offers) {
@@ -1127,6 +1173,13 @@ function clearDirtyAfterSync(offers) {
     if (offer.max_sale_price != null) {
       tr.dataset.originalMax = String(offer.max_sale_price);
     }
+    if (Array.isArray(offer.stock)) {
+      const sum = stockSumFromArr(offer.stock);
+      tr.dataset.originalStock = String(sum);
+      tr.dataset.stock = JSON.stringify(offer.stock);
+      const stockInput = tr.querySelector("input.input-stock");
+      if (stockInput) stockInput.value = String(sum);
+    }
     applyRowPrices(tr, offer.sale_price, { markDirty: true });
     markJustSynced(tr);
   });
@@ -1142,18 +1195,19 @@ async function syncPrices() {
     return;
   }
   if (offers.length === 0) {
-    setStatus("Nicio schimbare de preț de sincronizat.", "error");
+    setStatus("Nicio schimbare de preț/stoc de sincronizat.", "error");
     return;
   }
 
   syncing = true;
   btnSync.disabled = true;
-  setStatus(`Se sincronizează ${offers.length} prețuri…`, "loading");
+  setStatus(`Se sincronizează ${offers.length} oferte (preț/stoc)…`, "loading");
   console.log(
     `[eMAG sync] trimit ${offers.length} oferte:`,
     offers.map((o) => ({
       id: o.id,
       sale_price: o.sale_price,
+      stock: o.stock,
       recommended_price: o.recommended_price,
       min_sale_price: o.min_sale_price,
       max_sale_price: o.max_sale_price,
@@ -1179,7 +1233,7 @@ async function syncPrices() {
     if (syncInfoBanner) syncInfoBanner.hidden = false;
     const msgDetail = formatEmagMessages(data.messages);
     setStatus(
-      `Sincronizate ${offers.length} prețuri cu eMAG.` +
+      `Sincronizate ${offers.length} oferte (preț/stoc) cu eMAG.` +
         (msgDetail ? ` ${msgDetail}` : ""),
       msgDetail ? "loading" : "ok"
     );
@@ -1221,6 +1275,17 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     if (saleInput) saleInput.value = String(sale);
     applyRowPrices(tr, sale);
+    updateToolbarTotals();
+    return;
+  }
+
+  const stockInput = e.target.closest("input.input-stock");
+  if (stockInput) {
+    const tr = stockInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    setRowStock(tr, stockInput.value === "" ? 0 : stockInput.value);
+    const saleInput = tr.querySelector("input.input-sale-price");
+    applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();
     return;
   }

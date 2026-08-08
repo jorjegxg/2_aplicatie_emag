@@ -433,6 +433,22 @@ td.col-pret-emag .input-sale-price:focus {
   border-color: var(--emag-price);
 }
 
+td.col-stoc .input-stock {
+  width: 4.5rem;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+td.col-stoc .input-stock:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
 td.col-alte-costuri .alte-costuri-wrap {
   display: flex;
   align-items: center;
@@ -494,6 +510,12 @@ td[data-col="pret_maxim"].is-price-dirty {
   background: #fef9c3;
 }
 
+td.col-stoc.is-price-dirty,
+td[data-col="stoc"].is-price-dirty {
+  background: #fef08a;
+  box-shadow: inset 3px 0 0 #ca8a04;
+}
+
 /* Rămâne după sync OK, până la refresh — verificare vizuală subtilă */
 tr.is-just-synced td.col-pret-emag,
 td.col-pret-emag.is-just-synced {
@@ -505,6 +527,12 @@ td[data-col="prp"].is-just-synced,
 td[data-col="pret_minim"].is-just-synced,
 td[data-col="pret_maxim"].is-just-synced {
   background: #f0fdf4;
+}
+
+td.col-stoc.is-just-synced,
+td[data-col="stoc"].is-just-synced {
+  background: #dcfce7;
+  box-shadow: inset 3px 0 0 #16a34a;
 }
 
 thead tr:not(.filter-row) th.col-profit {
