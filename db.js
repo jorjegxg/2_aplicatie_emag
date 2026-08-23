@@ -53,6 +53,12 @@ function getDb() {
       alte_costuri REAL NOT NULL
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_pret_minim (
+      offer_id INTEGER PRIMARY KEY,
+      pret_minim REAL NOT NULL
+    );
+  `);
   return db;
 }
 
@@ -181,11 +187,58 @@ function clearAlteCosturi(offerId) {
   return null;
 }
 
+function lookupPretMinim(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) return null;
+  try {
+    const row = getDb()
+      .prepare(
+        "SELECT pret_minim FROM product_pret_minim WHERE offer_id = ? LIMIT 1"
+      )
+      .get(id);
+    if (row == null || row.pret_minim == null) return null;
+    const n = Number(row.pret_minim);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePretMinim(offerId, value) {
+  const id = Number(offerId);
+  const n = Number(value);
+  if (!Number.isFinite(id) || !Number.isFinite(n)) {
+    throw new Error("id și pret_minim trebuie să fie numere");
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO product_pret_minim (offer_id, pret_minim)
+       VALUES (@offer_id, @pret_minim)
+       ON CONFLICT(offer_id) DO UPDATE SET pret_minim = excluded.pret_minim`
+    )
+    .run({ offer_id: id, pret_minim: n });
+  return n;
+}
+
+function clearPretMinim(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) {
+    throw new Error("id invalid");
+  }
+  getDb()
+    .prepare("DELETE FROM product_pret_minim WHERE offer_id = ?")
+    .run(id);
+  return null;
+}
+
 module.exports = {
   lookupPretCumparare,
   lookupAlteCosturi,
   saveAlteCosturi,
   clearAlteCosturi,
+  lookupPretMinim,
+  savePretMinim,
+  clearPretMinim,
   getSettings,
   saveSettings,
   DB_PATH,

@@ -7,6 +7,9 @@ const {
   lookupAlteCosturi,
   saveAlteCosturi,
   clearAlteCosturi,
+  lookupPretMinim,
+  savePretMinim,
+  clearPretMinim,
   getSettings,
   saveSettings,
 } = require("./db");
@@ -211,6 +214,7 @@ function mapOffer(offer) {
     max_sale_price: offer.max_sale_price ?? null,
     pret_cumparare: lookupPretCumparare(part_number, name),
     alte_costuri: lookupAlteCosturi(offer.id),
+    pret_minim_override: lookupPretMinim(offer.id),
     currency: offer.currency || "RON",
     general_stock: offer.general_stock ?? null,
     estimated_stock: offer.estimated_stock ?? null,
@@ -369,6 +373,29 @@ app.post("/api/products/alte-costuri", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la salvare alte costuri" });
+  }
+});
+
+app.post("/api/products/pret-minim", (req, res) => {
+  try {
+    const id = Number(req.body?.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "id invalid" });
+    }
+    const raw = req.body?.pret_minim;
+    if (raw === null || raw === undefined || raw === "") {
+      clearPretMinim(id);
+      return res.json({ ok: true, id, pret_minim: null });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: "pret_minim invalid" });
+    }
+    const saved = savePretMinim(id, n);
+    return res.json({ ok: true, id, pret_minim: saved });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare pret minim" });
   }
 });
 
