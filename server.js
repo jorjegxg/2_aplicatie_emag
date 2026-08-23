@@ -10,12 +10,16 @@ const {
   lookupPretMinim,
   savePretMinim,
   clearPretMinim,
+  lookupCommission,
+  saveCommissionFromEmag,
   getSettings,
   saveSettings,
 } = require("./db");
 
 const PORT = process.env.PORT || 3000;
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
+const EMAG_API_V1 = "https://marketplace-api.emag.ro/api/v1";
+const COMMISSION_FETCH_CONCURRENCY = 5;
 const ITEMS_PER_PAGE = 100;
 const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 // eMAG marketplace cert currently expired (CERT_HAS_EXPIRED) — scoped bypass only for this host
@@ -199,6 +203,7 @@ function mapOffer(offer) {
   const name = offer.name || "";
   const part_number = offer.part_number || "";
   const fam = Array.isArray(offer.family) ? offer.family[0] : offer.family;
+  const commission = lookupCommission(offer.id);
   return {
     id: offer.id,
     name,
@@ -215,6 +220,9 @@ function mapOffer(offer) {
     pret_cumparare: lookupPretCumparare(part_number, name),
     alte_costuri: lookupAlteCosturi(offer.id),
     pret_minim_override: lookupPretMinim(offer.id),
+    procentaj_emag: commission?.procentaj_emag ?? null,
+    commission_value: commission?.commission_value ?? null,
+    commission_fetched_at: commission?.fetched_at ?? null,
     currency: offer.currency || "RON",
     general_stock: offer.general_stock ?? null,
     estimated_stock: offer.estimated_stock ?? null,
@@ -252,10 +260,90 @@ async function emagProductOfferRead(auth, page) {
   return { response, json, text };
 }
 
+function commissionToPercent(commissionValue, salePrice) {
+  const comm = Number(commissionValue);
+  const sale = Number(salePrice);
+  if (!Number.isFinite(comm) || !Number.isFinite(sale) || sale <= 0) return null;
+  return Math.round((comm / sale) * 10000) / 100;
+}
+
+async function emagCommissionEstimate(auth, offerId) {
+  const response = await emagFetch(
+    `${EMAG_API_V1}/commission/estimate/${offerId}`,
+    {
+      method: "GET",
+      headers: { Authorization: auth },
+    }
+  );
+  const text = await response.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  return { response, json, text };
+}
+
+function parseCommissionValue(json) {
+  const raw =
+    json?.data?.value ??
+    json?.data?.commission ??
+    json?.value ??
+    json?.commission;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function resolveEmagAuth(probeFn) {
+  const creds = loadCredentials();
+  const candidates = authCandidates(creds);
+  let lastStatus = null;
+  let lastDetail = "";
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    logAuthAttempt("commission", candidate, i, candidates.length);
+    const auth = authHeader(candidate.user, candidate.pass);
+    const probe = await probeFn(auth);
+    lastStatus = probe.status;
+    lastDetail = probe.detail || "";
+
+    if (probe.status === 401 || probe.status === 403) {
+      logAuthResult("commission", candidate, probe.status, false);
+      continue;
+    }
+
+    if (probe.ok) {
+      logAuthResult("commission", candidate, probe.status, true);
+      savePreferredAuthLabel(candidate.label);
+      return { auth, label: candidate.label };
+    }
+  }
+
+  throw new Error(
+    lastStatus === 401 || lastStatus === 403
+      ? "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist."
+      : `eMAG commission API eșuat (HTTP ${lastStatus || "?"}): ${lastDetail.slice(0, 200)}`
+  );
+}
+
+async function mapPool(items, limit, fn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
 function mapOrderProduct(product) {
   const name = product.name || product.product_name || "";
   const part_number = product.part_number || "";
   const product_id = product.product_id ?? null;
+  const commission = lookupCommission(product_id);
   return {
     id: product.id ?? null,
     product_id,
@@ -267,6 +355,9 @@ function mapOrderProduct(product) {
     currency: product.currency || "RON",
     pret_cumparare: lookupPretCumparare(part_number, name),
     alte_costuri: lookupAlteCosturi(product_id),
+    procentaj_emag: commission?.procentaj_emag ?? null,
+    commission_value: commission?.commission_value ?? null,
+    commission_fetched_at: commission?.fetched_at ?? null,
   };
 }
 
@@ -339,7 +430,6 @@ app.post("/api/settings", (req, res) => {
     };
 
     const saved = saveSettings({
-      procentaj_emag: toNum(req.body?.procentaj_emag),
       procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
@@ -396,6 +486,99 @@ app.post("/api/products/pret-minim", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la salvare pret minim" });
+  }
+});
+
+app.post("/api/products/fetch-commission", async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (items.length === 0) {
+      return res.status(400).json({ error: "items lipsă" });
+    }
+
+    const normalized = items
+      .map((item) => ({
+        id: Number(item?.id),
+        sale_price: Number(item?.sale_price),
+      }))
+      .filter((item) => Number.isFinite(item.id));
+
+    if (normalized.length === 0) {
+      return res.status(400).json({ error: "niciun id valid" });
+    }
+
+    const probeId = normalized[0].id;
+    const { auth } = await resolveEmagAuth(async (authHeaderValue) => {
+      const { response, json, text } = await emagCommissionEstimate(
+        authHeaderValue,
+        probeId
+      );
+      const value = parseCommissionValue(json);
+      return {
+        status: response.status,
+        ok: response.ok && value != null,
+        detail: text,
+      };
+    });
+
+    const fetched = await mapPool(normalized, COMMISSION_FETCH_CONCURRENCY, async (item) => {
+      if (!Number.isFinite(item.sale_price) || item.sale_price <= 0) {
+        return {
+          id: item.id,
+          error: "sale_price invalid — reîncarcă produsele",
+        };
+      }
+
+      try {
+        const { response, json, text } = await emagCommissionEstimate(auth, item.id);
+        if (response.status === 401 || response.status === 403) {
+          return { id: item.id, error: "autentificare eMAG eșuată" };
+        }
+        if (!response.ok) {
+          return {
+            id: item.id,
+            error: `HTTP ${response.status}: ${text.slice(0, 120)}`,
+          };
+        }
+        const commissionValue = parseCommissionValue(json);
+        if (commissionValue == null) {
+          return {
+            id: item.id,
+            error: json?.message || "răspuns fără comision",
+          };
+        }
+        const procentaj_emag = commissionToPercent(commissionValue, item.sale_price);
+        if (procentaj_emag == null) {
+          return { id: item.id, error: "procent invalid" };
+        }
+        const saved = saveCommissionFromEmag(item.id, {
+          commission_value: commissionValue,
+          procentaj_emag,
+        });
+        return {
+          id: item.id,
+          procentaj_emag: saved.procentaj_emag,
+          commission_value: saved.commission_value,
+          fetched_at: saved.fetched_at,
+        };
+      } catch (err) {
+        return { id: item.id, error: err.message || "eroare necunoscută" };
+      }
+    });
+
+    const results = fetched.filter((r) => !r.error);
+    const errors = fetched.filter((r) => r.error);
+
+    return res.json({
+      ok: true,
+      count: results.length,
+      errorCount: errors.length,
+      results,
+      errors,
+    });
+  } catch (err) {
+    console.error("[fetch-commission]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la preluare comision" });
   }
 });
 

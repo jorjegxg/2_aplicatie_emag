@@ -23,18 +23,6 @@
       <div class="toolbar">
         <div class="toolbar-fields">
           <label class="field">
-            <span>Procentaj emag(%)</span>
-            <input
-              type="number"
-              id="procentaj-emag"
-              name="procentaj-emag"
-              min="0"
-              max="100"
-              step="0.01"
-              placeholder="0"
-            />
-          </label>
-          <label class="field">
             <span>Procentaj pentru Alte costuri (%)</span>
             <input
               type="number"
@@ -130,6 +118,9 @@
             </svg>
             <span class="btn-fullscreen-label">Toată pagina</span>
           </button>
+          <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
+            Preia comision eMAG
+          </button>
           <span id="status" class="status" aria-live="polite"></span>
           <button type="button" id="btn-sync" class="btn" disabled>
             Sincronizează cu eMAG
@@ -150,6 +141,7 @@
               <th data-col="familie" data-src="emag">Familie</th>
               <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
               <th data-col="alte_costuri" data-src="calc">Alte costuri</th>
+              <th data-col="procentaj_emag" data-src="emag">Procentaj emag %</th>
               <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
               <th data-col="pret_emag" data-src="emag" class="col-pret-emag">Pret emag</th>
               <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
@@ -171,6 +163,7 @@
               <th data-col="familie"><input type="search" class="col-filter" data-filter-col="familie" placeholder="Filtrează…" aria-label="Filtrează Familie" /></th>
               <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
               <th data-col="alte_costuri"><input type="search" class="col-filter" data-filter-col="alte_costuri" placeholder="Filtrează…" aria-label="Filtrează Alte costuri" /></th>
+              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Procentaj emag" /></th>
               <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
               <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Pret emag" /></th>
               <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
@@ -185,7 +178,7 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="18">Apasă „Reload produse” pentru a afișa ofertele.</td>
+              <td colspan="19">Apasă „Reload produse” pentru a afișa ofertele.</td>
             </tr>
           </tbody>
         </table>

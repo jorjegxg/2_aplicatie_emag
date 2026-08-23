@@ -1,6 +1,7 @@
 const btnLoad = document.getElementById("btn-load");
 const btnMore = document.getElementById("btn-more");
 const btnSaveSettings = document.getElementById("btn-save-settings");
+const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const btnSync = document.getElementById("btn-sync");
 const btnColumns = document.getElementById("btn-columns");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
@@ -10,7 +11,6 @@ const syncInfoBanner = document.getElementById("sync-info-banner");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const pageEl = document.querySelector(".page");
-const inputProcentaj = document.getElementById("procentaj-emag");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
@@ -48,6 +48,7 @@ let loadedProducts = [];
 let loading = false;
 let savingSettings = false;
 let syncing = false;
+let fetchingCommission = false;
 let hiddenCols = loadHiddenCols();
 let columnOrder = loadColumnOrder();
 let dragCol = null;
@@ -181,8 +182,6 @@ function setStatus(text, type = "") {
 }
 
 function fillSettings(settings) {
-  inputProcentaj.value =
-    settings.procentaj_emag != null ? settings.procentaj_emag : "";
   inputProcentajAlte.value =
     settings.procentaj_alte_costuri != null
       ? settings.procentaj_alte_costuri
@@ -195,7 +194,6 @@ function fillSettings(settings) {
 
 function readSettingsFromForm() {
   return {
-    procentaj_emag: inputProcentaj.value,
     procentaj_alte_costuri: inputProcentajAlte.value,
     mult_prp: inputMultPrp.value,
     mult_min: inputMultMin.value,
@@ -376,6 +374,44 @@ function syncAlteCosturiCell(tr, alteCosturi) {
   alteCell.classList.toggle("is-alte-override", overridden);
 }
 
+function getRowProcentajEmag(tr) {
+  const raw = tr?.dataset?.emagPct;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatProcentajEmagDisplay(pct, commissionValue, fetchedAt) {
+  if (pct == null || !Number.isFinite(Number(pct))) return "—";
+  return `${Number(pct).toFixed(2)} %`;
+}
+
+function procentajEmagTooltip(commissionValue, fetchedAt) {
+  const parts = [];
+  if (commissionValue != null && Number.isFinite(Number(commissionValue))) {
+    parts.push(`Comision: ${Number(commissionValue).toFixed(2)} RON`);
+  }
+  if (fetchedAt) {
+    try {
+      parts.push(`preluat ${new Date(fetchedAt).toLocaleString("ro-RO")}`);
+    } catch {
+      parts.push(`preluat ${fetchedAt}`);
+    }
+  }
+  return parts.length ? parts.join(" · ") : "";
+}
+
+function syncProcentajEmagCell(tr, pct, commissionValue, fetchedAt) {
+  const cell = tr.querySelector("td[data-col='procentaj_emag']");
+  if (!cell) return;
+  cell.textContent = formatProcentajEmagDisplay(pct, commissionValue, fetchedAt);
+  const tip = procentajEmagTooltip(commissionValue, fetchedAt);
+  if (tip) cell.title = tip;
+  else cell.removeAttribute("title");
+  cell.classList.toggle("col-procentaj-emag", true);
+  cell.classList.toggle("has-emag-commission", pct != null && Number.isFinite(Number(pct)));
+}
+
 function hasMinOverride(tr) {
   return tr?.dataset?.minOverride != null && tr.dataset.minOverride !== "";
 }
@@ -513,7 +549,8 @@ function updateTotalProfitStoc() {
     const profit = calcProfit(
       getRowSalePrice(tr),
       tr.dataset.pretCumparare ?? "",
-      getRowAlteCosturi(tr)
+      getRowAlteCosturi(tr),
+      getRowProcentajEmag(tr)
     );
     if (profit == null || !Number.isFinite(profit)) return;
     total += profit * getRowStock(tr);
@@ -527,13 +564,19 @@ function updateToolbarTotals() {
   updateTotalProfitStoc();
 }
 
-function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
-  if (salePrice == null || salePrice === "" || inputProcentaj.value === "") {
+function calcProfit(
+  salePrice,
+  pretCumparare,
+  alteCosturi = DEFAULT_ALTE_COSTURI,
+  pctEmag
+) {
+  if (pctEmag == null || pctEmag === "") return null;
+  const pct = Number(pctEmag);
+  if (salePrice == null || salePrice === "" || Number.isNaN(pct)) {
     return null;
   }
   const sale = Number(salePrice);
-  const pct = Number(inputProcentaj.value);
-  if (Number.isNaN(sale) || Number.isNaN(pct)) return null;
+  if (Number.isNaN(sale)) return null;
 
   const afterEmag = sale * (1 - pct / 100);
   const buy = Number(pretCumparare);
@@ -544,9 +587,14 @@ function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI
   return afterEmag - buyCost - other;
 }
 
-function calcProcentajProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
-  const profit = calcProfit(salePrice, pretCumparare, alteCosturi);
-  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
+function calcProcentajProfit(
+  salePrice,
+  pretCumparare,
+  alteCosturi = DEFAULT_ALTE_COSTURI,
+  pctEmag
+) {
+  const profit = calcProfit(salePrice, pretCumparare, alteCosturi, pctEmag);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi, pctEmag);
   if (profit == null || minProfit == null) return null;
   if (!Number.isFinite(profit) || !Number.isFinite(minProfit) || minProfit === 0) {
     return null;
@@ -554,20 +602,25 @@ function calcProcentajProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALT
   return (profit / minProfit) * 100;
 }
 
-function saleFromProcentaj(procentaj, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
-  if (procentaj == null || procentaj === "" || inputProcentaj.value === "") {
+function saleFromProcentaj(
+  procentaj,
+  pretCumparare,
+  alteCosturi = DEFAULT_ALTE_COSTURI,
+  pctEmag
+) {
+  if (procentaj == null || procentaj === "" || pctEmag == null || pctEmag === "") {
     return null;
   }
+  const pctEmagVal = Number(pctEmag);
   const pctTarget = Number(procentaj);
-  const pctEmag = Number(inputProcentaj.value);
-  if (Number.isNaN(pctTarget) || Number.isNaN(pctEmag) || pctEmag >= 100) {
+  if (Number.isNaN(pctTarget) || Number.isNaN(pctEmagVal) || pctEmagVal >= 100) {
     return null;
   }
 
-  const factor = 1 - pctEmag / 100;
+  const factor = 1 - pctEmagVal / 100;
   if (factor <= 0) return null;
 
-  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi, pctEmagVal);
   if (minProfit == null || !Number.isFinite(minProfit)) return null;
 
   const buy = Number(pretCumparare);
@@ -578,9 +631,13 @@ function saleFromProcentaj(procentaj, pretCumparare, alteCosturi = DEFAULT_ALTE_
   return roundPrice((costs + (pctTarget / 100) * minProfit) / factor);
 }
 
-function calcPretMinimProfit(pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
-  if (inputProcentaj.value === "") return null;
-  const pct = Number(inputProcentaj.value);
+function calcPretMinimProfit(
+  pretCumparare,
+  alteCosturi = DEFAULT_ALTE_COSTURI,
+  pctEmag
+) {
+  if (pctEmag == null || pctEmag === "") return null;
+  const pct = Number(pctEmag);
   if (Number.isNaN(pct) || pct >= 100) return null;
 
   const buy = Number(pretCumparare);
@@ -602,10 +659,10 @@ function pricesEqual(a, b) {
   return Math.abs(na - nb) < 0.00005;
 }
 
-function syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi) {
+function syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi, pctEmag) {
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
   if (!minProfitCell) return;
-  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi);
+  const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi, pctEmag);
   const sale = Number(salePrice);
   const below =
     minProfit != null &&
@@ -634,13 +691,14 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const currency = tr.dataset.currency || "RON";
   const pretCumparare = tr.dataset.pretCumparare ?? "";
   const alteCosturi = getRowAlteCosturi(tr);
+  const pctEmag = getRowProcentajEmag(tr);
   const derived = derivePrices(salePrice);
 
   const profitCell = tr.querySelector("td.col-profit");
   if (profitCell) {
     profitCell.dataset.salePrice = salePrice ?? "";
     profitCell.innerHTML = formatPrice(
-      calcProfit(salePrice, pretCumparare, alteCosturi),
+      calcProfit(salePrice, pretCumparare, alteCosturi, pctEmag),
       currency
     );
   }
@@ -649,7 +707,7 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   if (procentajCell) {
     fillProcentajCell(
       procentajCell,
-      calcProcentajProfit(salePrice, pretCumparare, alteCosturi)
+      calcProcentajProfit(salePrice, pretCumparare, alteCosturi, pctEmag)
     );
   }
 
@@ -676,6 +734,12 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const nameCell = tr.querySelector("td[data-col='name']");
   const descriptionCell = tr.querySelector("td[data-col='description']");
   syncAlteCosturiCell(tr, alteCosturi);
+  syncProcentajEmagCell(
+    tr,
+    pctEmag,
+    tr.dataset.emagCommissionValue ?? null,
+    tr.dataset.emagCommissionFetchedAt ?? null
+  );
   const original = tr.dataset.originalSale ?? "";
   const priceDirty =
     markDirty &&
@@ -716,12 +780,12 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const minProfitCell = tr.querySelector("td[data-col='pret_minim_profit']");
   if (minProfitCell) {
     minProfitCell.innerHTML = formatPrice(
-      calcPretMinimProfit(pretCumparare, alteCosturi),
+      calcPretMinimProfit(pretCumparare, alteCosturi, pctEmag),
       currency
     );
   }
 
-  syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi);
+  syncMinProfitVsEmag(tr, salePrice, pretCumparare, alteCosturi, pctEmag);
   syncPrpVsEmag(tr, salePrice);
   updateSyncButton();
 }
@@ -793,6 +857,20 @@ function rowHtml(product, index) {
     : alteFromProcentaj(getGlobalProcentajAlte() ?? "", pretCumparare);
   const alteInputVal =
     alte == null || !Number.isFinite(Number(alte)) ? "" : Number(alte);
+  const hasEmagPct =
+    product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag));
+  const pctEmag = hasEmagPct ? Number(product.procentaj_emag) : null;
+  const commissionValue =
+    product.commission_value != null && Number.isFinite(Number(product.commission_value))
+      ? Number(product.commission_value)
+      : null;
+  const commissionFetchedAt = product.commission_fetched_at ?? "";
+  const emagPctDisplay = formatProcentajEmagDisplay(
+    pctEmag,
+    commissionValue,
+    commissionFetchedAt
+  );
+  const emagPctTooltip = escapeHtml(procentajEmagTooltip(commissionValue, commissionFetchedAt));
   const hasMinOverrideFlag =
     product.pret_minim_override != null &&
     Number.isFinite(Number(product.pret_minim_override));
@@ -803,7 +881,7 @@ function rowHtml(product, index) {
     minDisplay == null || !Number.isFinite(Number(minDisplay))
       ? ""
       : Number(minDisplay);
-  const minProfit = calcPretMinimProfit(pretCumparare, alte);
+  const minProfit = calcPretMinimProfit(pretCumparare, alte, pctEmag);
   const saleNum = Number(salePrice);
   const minBelowEmag =
     minProfit != null &&
@@ -820,7 +898,8 @@ function rowHtml(product, index) {
   const procentajVal = calcProcentajProfit(
     product.sale_price,
     product.pret_cumparare,
-    alte
+    alte,
+    pctEmag
   );
   const procentajAttr =
     procentajVal == null || !Number.isFinite(Number(procentajVal))
@@ -847,9 +926,10 @@ function rowHtml(product, index) {
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
     alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
+    procentaj_emag: `<td data-col="procentaj_emag"${cellClass("procentaj_emag", hasEmagPct ? "col-procentaj-emag has-emag-commission" : "col-procentaj-emag")}${emagPctTooltip ? ` title="${emagPctTooltip}"` : ""}>${escapeHtml(emagPctDisplay)}</td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
-    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alte), currency)}</td>`,
+    profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alte, pctEmag), currency)}</td>`,
     procentaj_profit: `<td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
@@ -858,7 +938,7 @@ function rowHtml(product, index) {
     status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
     ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasEmagPct ? ` data-emag-pct="${escapeHtml(pctEmag)}" data-emag-commission-value="${escapeHtml(commissionValue ?? "")}" data-emag-commission-fetched-at="${escapeHtml(commissionFetchedAt)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -888,7 +968,8 @@ function getCellSortValue(tr, col) {
     const profit = calcProfit(
       td.dataset.salePrice,
       td.dataset.pretCumparare,
-      getRowAlteCosturi(tr)
+      getRowAlteCosturi(tr),
+      getRowProcentajEmag(tr)
     );
     return profit == null ? null : Number(profit);
   }
@@ -910,7 +991,8 @@ function getCellSortValue(tr, col) {
     col === "index" ||
     col === "id" ||
     col === "pret_cumparare" ||
-    col === "pret_minim_profit"
+    col === "pret_minim_profit" ||
+    col === "procentaj_emag"
   ) {
     return parseSortNumber(td.textContent);
   }
@@ -1438,7 +1520,13 @@ tbody.addEventListener("input", (e) => {
     if (!tr) return;
     const pretCumparare = tr.dataset.pretCumparare ?? "";
     const alteCosturi = getRowAlteCosturi(tr);
-    const sale = saleFromProcentaj(pctInput.value, pretCumparare, alteCosturi);
+    const pctEmag = getRowProcentajEmag(tr);
+    const sale = saleFromProcentaj(
+      pctInput.value,
+      pretCumparare,
+      alteCosturi,
+      pctEmag
+    );
     if (sale == null) return;
     const saleInput = tr.querySelector("input.input-sale-price");
     if (saleInput) saleInput.value = String(sale);
@@ -1604,9 +1692,81 @@ async function persistPretMinim(offerId, value) {
   }
 }
 
+function collectCommissionFetchItems() {
+  return [...tbody.querySelectorAll("tr[data-offer-id]")].map((tr) => {
+    const saleInput = tr.querySelector("input.input-sale-price");
+    const sale =
+      saleInput?.value !== "" && saleInput?.value != null
+        ? saleInput.value
+        : tr.dataset.originalSale ?? "";
+    return {
+      id: Number(tr.dataset.offerId),
+      sale_price: Number(sale),
+    };
+  }).filter((item) => Number.isFinite(item.id));
+}
+
+function applyCommissionResultToRow(tr, result) {
+  tr.dataset.emagPct = String(result.procentaj_emag);
+  tr.dataset.emagCommissionValue = String(result.commission_value);
+  tr.dataset.emagCommissionFetchedAt = result.fetched_at ?? "";
+  syncProcentajEmagCell(
+    tr,
+    result.procentaj_emag,
+    result.commission_value,
+    result.fetched_at
+  );
+  const saleInput = tr.querySelector("input.input-sale-price");
+  applyRowPrices(tr, saleInput?.value ?? tr.dataset.originalSale ?? "");
+}
+
+async function fetchCommissionForLoadedProducts() {
+  if (fetchingCommission) return;
+  const items = collectCommissionFetchItems();
+  if (!items.length) {
+    setStatus("Niciun produs încărcat.", "error");
+    return;
+  }
+
+  fetchingCommission = true;
+  if (btnFetchCommission) btnFetchCommission.disabled = true;
+  setStatus(`Preiau comision eMAG (0/${items.length})…`, "loading");
+
+  try {
+    const res = await fetch("/api/products/fetch-commission", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const byId = new Map((data.results || []).map((r) => [String(r.id), r]));
+    for (const tr of tbody.querySelectorAll("tr[data-offer-id]")) {
+      const result = byId.get(tr.dataset.offerId);
+      if (result) applyCommissionResultToRow(tr, result);
+    }
+
+    updateToolbarTotals();
+    const errCount = data.errorCount || 0;
+    setStatus(
+      errCount
+        ? `Comision preluat: ${data.count}/${items.length} (${errCount} erori).`
+        : `Comision preluat pentru ${data.count} produse.`,
+      errCount ? "error" : "ok"
+    );
+  } catch (err) {
+    setStatus(err.message || "Eroare la preluare comision", "error");
+  } finally {
+    fetchingCommission = false;
+    if (btnFetchCommission) btnFetchCommission.disabled = false;
+  }
+}
+
 btnSaveSettings.addEventListener("click", saveSettings);
 btnLoad.addEventListener("click", () => loadProducts({ append: false }));
 btnMore.addEventListener("click", () => loadProducts({ append: true }));
+btnFetchCommission?.addEventListener("click", fetchCommissionForLoadedProducts);
 btnSync.addEventListener("click", syncPrices);
 
 table.querySelector("thead")?.addEventListener("click", (e) => {
@@ -1637,7 +1797,6 @@ function onSettingsInput() {
   updateSaveDirtyState();
 }
 
-inputProcentaj.addEventListener("input", onSettingsInput);
 inputProcentajAlte.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);
 inputMultMin.addEventListener("input", onSettingsInput);

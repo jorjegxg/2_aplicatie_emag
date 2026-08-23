@@ -59,6 +59,25 @@ function getDb() {
       pret_minim REAL NOT NULL
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_procentaj_emag (
+      offer_id INTEGER PRIMARY KEY,
+      procentaj_emag REAL NOT NULL,
+      commission_value REAL,
+      fetched_at TEXT
+    );
+  `);
+  const pctCols = getDb().prepare("PRAGMA table_info(product_procentaj_emag)").all();
+  const pctColNames = new Set(pctCols.map((c) => c.name));
+  for (const name of ["commission_value", "fetched_at"]) {
+    if (!pctColNames.has(name)) {
+      getDb().exec(
+        `ALTER TABLE product_procentaj_emag ADD COLUMN ${name} ${
+          name === "fetched_at" ? "TEXT" : "REAL"
+        }`
+      );
+    }
+  }
   return db;
 }
 
@@ -117,7 +136,6 @@ function getSettings() {
 }
 
 function saveSettings({
-  procentaj_emag,
   procentaj_alte_costuri,
   mult_prp,
   mult_min,
@@ -126,15 +144,13 @@ function saveSettings({
   getDb()
     .prepare(
       `UPDATE settings
-       SET procentaj_emag = @procentaj_emag,
-           procentaj_alte_costuri = @procentaj_alte_costuri,
+       SET procentaj_alte_costuri = @procentaj_alte_costuri,
            mult_prp = @mult_prp,
            mult_min = @mult_min,
            mult_max = @mult_max
        WHERE id = 1`
     )
     .run({
-      procentaj_emag,
       procentaj_alte_costuri,
       mult_prp,
       mult_min,
@@ -231,6 +247,76 @@ function clearPretMinim(offerId) {
   return null;
 }
 
+function lookupCommission(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) return null;
+  try {
+    const row = getDb()
+      .prepare(
+        `SELECT procentaj_emag, commission_value, fetched_at
+         FROM product_procentaj_emag WHERE offer_id = ? LIMIT 1`
+      )
+      .get(id);
+    if (row == null || row.procentaj_emag == null) return null;
+    const pct = Number(row.procentaj_emag);
+    if (!Number.isFinite(pct)) return null;
+    const commissionValue =
+      row.commission_value == null ? null : Number(row.commission_value);
+    return {
+      procentaj_emag: pct,
+      commission_value: Number.isFinite(commissionValue) ? commissionValue : null,
+      fetched_at: row.fetched_at ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function lookupProcentajEmag(offerId) {
+  return lookupCommission(offerId)?.procentaj_emag ?? null;
+}
+
+function saveCommissionFromEmag(offerId, { commission_value, procentaj_emag }) {
+  const id = Number(offerId);
+  const comm = Number(commission_value);
+  const pct = Number(procentaj_emag);
+  if (!Number.isFinite(id) || !Number.isFinite(comm) || !Number.isFinite(pct)) {
+    throw new Error("id, commission_value și procentaj_emag trebuie să fie numere");
+  }
+  const fetched_at = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO product_procentaj_emag (offer_id, procentaj_emag, commission_value, fetched_at)
+       VALUES (@offer_id, @procentaj_emag, @commission_value, @fetched_at)
+       ON CONFLICT(offer_id) DO UPDATE SET
+         procentaj_emag = excluded.procentaj_emag,
+         commission_value = excluded.commission_value,
+         fetched_at = excluded.fetched_at`
+    )
+    .run({ offer_id: id, procentaj_emag: pct, commission_value: comm, fetched_at });
+  return { procentaj_emag: pct, commission_value: comm, fetched_at };
+}
+
+function saveProcentajEmag(offerId, value) {
+  const id = Number(offerId);
+  const n = Number(value);
+  if (!Number.isFinite(id) || !Number.isFinite(n)) {
+    throw new Error("id și procentaj_emag trebuie să fie numere");
+  }
+  return saveCommissionFromEmag(id, { commission_value: 0, procentaj_emag: n });
+}
+
+function clearProcentajEmag(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) {
+    throw new Error("id invalid");
+  }
+  getDb()
+    .prepare("DELETE FROM product_procentaj_emag WHERE offer_id = ?")
+    .run(id);
+  return null;
+}
+
 module.exports = {
   lookupPretCumparare,
   lookupAlteCosturi,
@@ -239,6 +325,11 @@ module.exports = {
   lookupPretMinim,
   savePretMinim,
   clearPretMinim,
+  lookupProcentajEmag,
+  lookupCommission,
+  saveProcentajEmag,
+  saveCommissionFromEmag,
+  clearProcentajEmag,
   getSettings,
   saveSettings,
   DB_PATH,

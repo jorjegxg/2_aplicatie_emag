@@ -2,7 +2,6 @@ const btnLoad = document.getElementById("btn-load");
 const btnMore = document.getElementById("btn-more");
 const statusEl = document.getElementById("status");
 const ordersBody = document.getElementById("orders-body");
-const inputProcentaj = document.getElementById("procentaj-emag");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputCreatedAfter = document.getElementById("created-after");
 const inputCreatedBefore = document.getElementById("created-before");
@@ -80,13 +79,26 @@ function resolveAlteCosturi(product) {
   return alteFromProcentaj(pct, product.pret_cumparare);
 }
 
-function calcProfit(salePrice, pretCumparare, alteCosturi = DEFAULT_ALTE_COSTURI) {
-  if (salePrice == null || salePrice === "" || inputProcentaj.value === "") {
+function resolveProcentajEmag(product) {
+  if (product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))) {
+    return Number(product.procentaj_emag);
+  }
+  return null;
+}
+
+function calcProfit(
+  salePrice,
+  pretCumparare,
+  alteCosturi = DEFAULT_ALTE_COSTURI,
+  pctEmag
+) {
+  if (pctEmag == null || pctEmag === "") return null;
+  const pct = Number(pctEmag);
+  if (salePrice == null || salePrice === "" || Number.isNaN(pct)) {
     return null;
   }
   const sale = Number(salePrice);
-  const pct = Number(inputProcentaj.value);
-  if (Number.isNaN(sale) || Number.isNaN(pct)) return null;
+  if (Number.isNaN(sale)) return null;
 
   const afterEmag = sale * (1 - pct / 100);
   const buy = Number(pretCumparare);
@@ -214,7 +226,8 @@ function restoreOrdersCache() {
 function productLineProfit(product) {
   if (Number(product.status) === 0) return null;
   const alte = resolveAlteCosturi(product);
-  const perUnit = calcProfit(product.sale_price, product.pret_cumparare, alte);
+  const pctEmag = resolveProcentajEmag(product);
+  const perUnit = calcProfit(product.sale_price, product.pret_cumparare, alte, pctEmag);
   if (perUnit == null || !Number.isFinite(perUnit)) return null;
   const qty = Number(product.quantity);
   const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
@@ -369,8 +382,6 @@ async function loadSettings() {
     const res = await fetch("/api/settings");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Eroare setări");
-    inputProcentaj.value =
-      data.procentaj_emag != null ? data.procentaj_emag : "";
     inputProcentajAlte.value =
       data.procentaj_alte_costuri != null ? data.procentaj_alte_costuri : "";
   } catch (err) {
