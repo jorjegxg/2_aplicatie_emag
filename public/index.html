@@ -23,11 +23,22 @@
       <div class="toolbar">
         <div class="toolbar-fields">
           <label class="field">
-            <span>Procentaj pentru Alte costuri (%)</span>
+            <span>Procentaj pentru Pret transport (%)</span>
             <input
               type="number"
               id="procentaj-alte-costuri"
               name="procentaj-alte-costuri"
+              min="0"
+              step="0.01"
+              placeholder="0"
+            />
+          </label>
+          <label class="field">
+            <span>Procentaj pentru Pret contabil (%)</span>
+            <input
+              type="number"
+              id="procentaj-pret-contabil"
+              name="procentaj-pret-contabil"
               min="0"
               step="0.01"
               placeholder="0"
@@ -67,8 +78,12 @@
             />
           </label>
           <label class="field">
-            <span>Total alte×stoc</span>
+            <span>Total transport×stoc</span>
             <input type="text" id="total-alte-stoc" readonly tabindex="-1" value="—" />
+          </label>
+          <label class="field">
+            <span>Total contabil×stoc</span>
+            <input type="text" id="total-contabil-stoc" readonly tabindex="-1" value="—" />
           </label>
           <label class="field">
             <span>Total profit×stoc</span>
@@ -140,8 +155,9 @@
               <th data-col="id_familie" data-src="emag">ID familie</th>
               <th data-col="familie" data-src="emag">Familie</th>
               <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
-              <th data-col="alte_costuri" data-src="calc">Alte costuri</th>
-              <th data-col="procentaj_emag" data-src="emag">Procentaj emag %</th>
+              <th data-col="alte_costuri" data-src="calc">Pret transport</th>
+              <th data-col="pret_contabil" data-src="calc">Pret contabil</th>
+              <th data-col="procentaj_emag" data-src="emag" class="col-procentaj-emag">Comision emag %</th>
               <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
               <th data-col="pret_emag" data-src="emag" class="col-pret-emag">Pret emag</th>
               <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
@@ -162,8 +178,9 @@
               <th data-col="id_familie"><input type="search" class="col-filter" data-filter-col="id_familie" placeholder="Filtrează…" aria-label="Filtrează ID familie" /></th>
               <th data-col="familie"><input type="search" class="col-filter" data-filter-col="familie" placeholder="Filtrează…" aria-label="Filtrează Familie" /></th>
               <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
-              <th data-col="alte_costuri"><input type="search" class="col-filter" data-filter-col="alte_costuri" placeholder="Filtrează…" aria-label="Filtrează Alte costuri" /></th>
-              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Procentaj emag" /></th>
+              <th data-col="alte_costuri"><input type="search" class="col-filter" data-filter-col="alte_costuri" placeholder="Filtrează…" aria-label="Filtrează Pret transport" /></th>
+              <th data-col="pret_contabil"><input type="search" class="col-filter" data-filter-col="pret_contabil" placeholder="Filtrează…" aria-label="Filtrează Pret contabil" /></th>
+              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision emag" /></th>
               <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
               <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Pret emag" /></th>
               <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
@@ -178,7 +195,7 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="19">Apasă „Reload produse” pentru a afișa ofertele.</td>
+              <td colspan="20">Apasă „Reload produse” pentru a afișa ofertele.</td>
             </tr>
           </tbody>
         </table>

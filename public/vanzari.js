@@ -3,12 +3,14 @@ const btnMore = document.getElementById("btn-more");
 const statusEl = document.getElementById("status");
 const ordersBody = document.getElementById("orders-body");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
+const inputProcentajContabil = document.getElementById("procentaj-pret-contabil");
 const inputCreatedAfter = document.getElementById("created-after");
 const inputCreatedBefore = document.getElementById("created-before");
 const selectStatus = document.getElementById("order-status");
 const inputTotalProfit = document.getElementById("total-profit-page");
 
 const DEFAULT_ALTE_COSTURI = 0;
+const DEFAULT_PRET_CONTABIL = 0;
 const ORDERS_CACHE_KEY = "emag-orders-cache-v1";
 
 const STATUS_LABELS = {
@@ -59,11 +61,26 @@ function parseAlteCosturi(raw) {
   return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
 }
 
+function parsePretContabil(raw) {
+  if (raw == null || raw === "") return DEFAULT_PRET_CONTABIL;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_PRET_CONTABIL;
+}
+
 function alteFromProcentaj(procentaj, pretCumparare) {
   const buy = Number(pretCumparare);
   const pct = Number(procentaj);
   if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(pct)) {
     return DEFAULT_ALTE_COSTURI;
+  }
+  return Math.round(buy * (pct / 100) * 100) / 100;
+}
+
+function contabilFromProcentaj(procentaj, pretCumparare) {
+  const buy = Number(pretCumparare);
+  const pct = Number(procentaj);
+  if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(pct)) {
+    return DEFAULT_PRET_CONTABIL;
   }
   return Math.round(buy * (pct / 100) * 100) / 100;
 }
@@ -79,17 +96,31 @@ function resolveAlteCosturi(product) {
   return alteFromProcentaj(pct, product.pret_cumparare);
 }
 
+function resolvePretContabil(product) {
+  if (product.pret_contabil != null && Number.isFinite(Number(product.pret_contabil))) {
+    return Number(product.pret_contabil);
+  }
+  const pctRaw = inputProcentajContabil?.value;
+  if (pctRaw == null || pctRaw === "") return DEFAULT_PRET_CONTABIL;
+  const pct = Number(pctRaw);
+  if (!Number.isFinite(pct)) return DEFAULT_PRET_CONTABIL;
+  return contabilFromProcentaj(pct, product.pret_cumparare);
+}
+
+const DEFAULT_PROcentaj_EMAG = 25;
+
 function resolveProcentajEmag(product) {
   if (product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))) {
     return Number(product.procentaj_emag);
   }
-  return null;
+  return DEFAULT_PROcentaj_EMAG;
 }
 
 function calcProfit(
   salePrice,
   pretCumparare,
   alteCosturi = DEFAULT_ALTE_COSTURI,
+  pretContabil = DEFAULT_PRET_CONTABIL,
   pctEmag
 ) {
   if (pctEmag == null || pctEmag === "") return null;
@@ -105,8 +136,9 @@ function calcProfit(
   const buyCost =
     pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
   const other = parseAlteCosturi(alteCosturi);
+  const contabil = parsePretContabil(pretContabil);
 
-  return afterEmag - buyCost - other;
+  return afterEmag - buyCost - other - contabil;
 }
 
 function statusLabel(status) {
@@ -226,12 +258,19 @@ function restoreOrdersCache() {
 function productLineProfit(product) {
   if (Number(product.status) === 0) return null;
   const alte = resolveAlteCosturi(product);
+  const contabil = resolvePretContabil(product);
   const pctEmag = resolveProcentajEmag(product);
-  const perUnit = calcProfit(product.sale_price, product.pret_cumparare, alte, pctEmag);
+  const perUnit = calcProfit(
+    product.sale_price,
+    product.pret_cumparare,
+    alte,
+    contabil,
+    pctEmag
+  );
   if (perUnit == null || !Number.isFinite(perUnit)) return null;
   const qty = Number(product.quantity);
   const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
-  return { perUnit, total: perUnit * q, alte, qty: q };
+  return { perUnit, total: perUnit * q, alte, contabil, qty: q };
 }
 
 function orderProfitTotal(order) {
@@ -278,7 +317,8 @@ function renderProductRows(order) {
             <th>Cant.</th>
             <th>Preț vânzare</th>
             <th>Preț cumpărare</th>
-            <th>Alte costuri</th>
+            <th>Pret transport</th>
+            <th>Pret contabil</th>
             <th>Profit / buc</th>
             <th>Profit × cant.</th>
           </tr>
@@ -288,6 +328,7 @@ function renderProductRows(order) {
             .map((p) => {
               const line = productLineProfit(p);
               const alte = line?.alte ?? resolveAlteCosturi(p);
+              const contabil = line?.contabil ?? resolvePretContabil(p);
               const currency = p.currency || "RON";
               const buyMissing =
                 p.pret_cumparare == null || p.pret_cumparare === "";
@@ -299,6 +340,7 @@ function renderProductRows(order) {
                 <td>${formatPrice(p.sale_price, currency)}</td>
                 <td class="${buyMissing ? "is-missing" : ""}">${buyMissing ? "—" : formatPrice(p.pret_cumparare, currency)}</td>
                 <td>${formatPrice(alte, currency)}</td>
+                <td>${formatPrice(contabil, currency)}</td>
                 <td>${line ? formatPrice(line.perUnit, currency) : "—"}</td>
                 <td>${line ? formatPrice(line.total, currency) : "—"}</td>
               </tr>`;
@@ -384,6 +426,10 @@ async function loadSettings() {
     if (!res.ok) throw new Error(data.error || "Eroare setări");
     inputProcentajAlte.value =
       data.procentaj_alte_costuri != null ? data.procentaj_alte_costuri : "";
+    if (inputProcentajContabil) {
+      inputProcentajContabil.value =
+        data.procentaj_pret_contabil != null ? data.procentaj_pret_contabil : "";
+    }
   } catch (err) {
     console.warn("setări:", err.message);
   }

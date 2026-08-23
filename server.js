@@ -7,11 +7,18 @@ const {
   lookupAlteCosturi,
   saveAlteCosturi,
   clearAlteCosturi,
+  lookupPretContabil,
+  clearPretContabil,
+  savePretContabil,
   lookupPretMinim,
   savePretMinim,
   clearPretMinim,
   lookupCommission,
+  lookupCommissionsBulk,
+  lookupCostOverridesBulk,
   saveCommissionFromEmag,
+  saveProcentajEmag,
+  clearProcentajEmag,
   getSettings,
   saveSettings,
 } = require("./db");
@@ -219,6 +226,7 @@ function mapOffer(offer) {
     max_sale_price: offer.max_sale_price ?? null,
     pret_cumparare: lookupPretCumparare(part_number, name),
     alte_costuri: lookupAlteCosturi(offer.id),
+    pret_contabil: lookupPretContabil(offer.id),
     pret_minim_override: lookupPretMinim(offer.id),
     procentaj_emag: commission?.procentaj_emag ?? null,
     commission_value: commission?.commission_value ?? null,
@@ -260,11 +268,23 @@ async function emagProductOfferRead(auth, page) {
   return { response, json, text };
 }
 
-function commissionToPercent(commissionValue, salePrice) {
-  const comm = Number(commissionValue);
+function parseCommissionPercent(json) {
+  const raw =
+    json?.data?.value ??
+    json?.data?.commission ??
+    json?.value ??
+    json?.commission;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function commissionValueFromPercent(percent, salePrice) {
+  const pct = Number(percent);
   const sale = Number(salePrice);
-  if (!Number.isFinite(comm) || !Number.isFinite(sale) || sale <= 0) return null;
-  return Math.round((comm / sale) * 10000) / 100;
+  if (!Number.isFinite(pct) || !Number.isFinite(sale) || sale <= 0) return null;
+  return Math.round(sale * (pct / 100) * 100) / 100;
 }
 
 async function emagCommissionEstimate(auth, offerId) {
@@ -283,17 +303,6 @@ async function emagCommissionEstimate(auth, offerId) {
     json = null;
   }
   return { response, json, text };
-}
-
-function parseCommissionValue(json) {
-  const raw =
-    json?.data?.value ??
-    json?.data?.commission ??
-    json?.value ??
-    json?.commission;
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
 }
 
 async function resolveEmagAuth(probeFn) {
@@ -355,6 +364,7 @@ function mapOrderProduct(product) {
     currency: product.currency || "RON",
     pret_cumparare: lookupPretCumparare(part_number, name),
     alte_costuri: lookupAlteCosturi(product_id),
+    pret_contabil: lookupPretContabil(product_id),
     procentaj_emag: commission?.procentaj_emag ?? null,
     commission_value: commission?.commission_value ?? null,
     commission_fetched_at: commission?.fetched_at ?? null,
@@ -431,6 +441,7 @@ app.post("/api/settings", (req, res) => {
 
     const saved = saveSettings({
       procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
+      procentaj_pret_contabil: toNum(req.body?.procentaj_pret_contabil),
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
       mult_max: toNum(req.body?.mult_max),
@@ -462,7 +473,30 @@ app.post("/api/products/alte-costuri", (req, res) => {
     return res.json({ ok: true, id, alte_costuri: saved });
   } catch (err) {
     console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la salvare alte costuri" });
+    return res.status(500).json({ error: err.message || "Eroare la salvare pret transport" });
+  }
+});
+
+app.post("/api/products/pret-contabil", (req, res) => {
+  try {
+    const id = Number(req.body?.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "id invalid" });
+    }
+    const raw = req.body?.pret_contabil;
+    if (raw === null || raw === undefined || raw === "") {
+      clearPretContabil(id);
+      return res.json({ ok: true, id, pret_contabil: null });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: "pret_contabil invalid" });
+    }
+    const saved = savePretContabil(id, n);
+    return res.json({ ok: true, id, pret_contabil: saved });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare pret contabil" });
   }
 });
 
@@ -486,6 +520,63 @@ app.post("/api/products/pret-minim", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la salvare pret minim" });
+  }
+});
+
+app.get("/api/products/commissions", (req, res) => {
+  try {
+    const raw = req.query.ids;
+    let ids = [];
+    if (typeof raw === "string" && raw.trim()) {
+      ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (Array.isArray(raw)) {
+      ids = raw.flatMap((s) => String(s).split(",")).map((s) => s.trim()).filter(Boolean);
+    }
+    const commissions = lookupCommissionsBulk(ids);
+    return res.json({ ok: true, commissions });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire comisioane" });
+  }
+});
+
+app.get("/api/products/cost-overrides", (req, res) => {
+  try {
+    const raw = req.query.ids;
+    let ids = [];
+    if (typeof raw === "string" && raw.trim()) {
+      ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (Array.isArray(raw)) {
+      ids = raw.flatMap((s) => String(s).split(",")).map((s) => s.trim()).filter(Boolean);
+    }
+    const overrides = lookupCostOverridesBulk(ids);
+    return res.json({ ok: true, overrides });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire cost overrides" });
+  }
+});
+
+app.post("/api/products/procentaj-emag", (req, res) => {
+  try {
+    const id = Number(req.body?.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "id invalid" });
+    }
+    const raw = req.body?.procentaj_emag;
+    if (raw === null || raw === undefined || raw === "") {
+      clearProcentajEmag(id);
+      return res.json({ ok: true, id, procentaj_emag: null });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: "procentaj_emag invalid" });
+    }
+    const saved = saveProcentajEmag(id, n);
+    return res.json({ ok: true, id, procentaj_emag: saved.procentaj_emag });
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare procentaj emag" });
   }
 });
 
@@ -513,10 +604,10 @@ app.post("/api/products/fetch-commission", async (req, res) => {
         authHeaderValue,
         probeId
       );
-      const value = parseCommissionValue(json);
+      const pct = parseCommissionPercent(json);
       return {
         status: response.status,
-        ok: response.ok && value != null,
+        ok: response.ok && pct != null,
         detail: text,
       };
     });
@@ -540,19 +631,22 @@ app.post("/api/products/fetch-commission", async (req, res) => {
             error: `HTTP ${response.status}: ${text.slice(0, 120)}`,
           };
         }
-        const commissionValue = parseCommissionValue(json);
-        if (commissionValue == null) {
+        const procentaj_emag = parseCommissionPercent(json);
+        if (procentaj_emag == null) {
           return {
             id: item.id,
             error: json?.message || "răspuns fără comision",
           };
         }
-        const procentaj_emag = commissionToPercent(commissionValue, item.sale_price);
-        if (procentaj_emag == null) {
-          return { id: item.id, error: "procent invalid" };
+        const commission_value = commissionValueFromPercent(
+          procentaj_emag,
+          item.sale_price
+        );
+        if (commission_value == null) {
+          return { id: item.id, error: "comision RON invalid" };
         }
         const saved = saveCommissionFromEmag(item.id, {
-          commission_value: commissionValue,
+          commission_value,
           procentaj_emag,
         });
         return {

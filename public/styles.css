@@ -552,6 +552,55 @@ td.col-alte-costuri.is-alte-override .input-alte-costuri {
   border-color: #fdba74;
 }
 
+td.col-pret-contabil .pret-contabil-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+td.col-pret-contabil .input-pret-contabil {
+  width: 5.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+td.col-pret-contabil .input-pret-contabil:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
+td.col-pret-contabil .btn-reset-contabil {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+td.col-pret-contabil .btn-reset-contabil:hover {
+  background: #fee2e2;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+td.col-pret-contabil.is-contabil-override {
+  background: #fff7ed;
+}
+
+td.col-pret-contabil.is-contabil-override .input-pret-contabil {
+  border-color: #fdba74;
+}
+
 td.col-pret-minim .pret-minim-wrap {
   display: flex;
   align-items: center;
@@ -601,6 +650,16 @@ td.col-pret-minim.is-min-override .input-pret-minim {
   border-color: #fdba74;
 }
 
+thead tr:not(.filter-row) th.col-procentaj-emag {
+  color: var(--ok);
+  background: #bbf7d0;
+  font-weight: 700;
+}
+
+thead tr:not(.filter-row) th.col-procentaj-emag:hover {
+  background: #86efac;
+}
+
 td.col-procentaj-emag {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -608,6 +667,65 @@ td.col-procentaj-emag {
 
 td.col-procentaj-emag.has-emag-commission {
   background: #f0fdf4;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+td.col-procentaj-emag .procentaj-emag-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+td.col-procentaj-emag .input-procentaj-emag {
+  width: 4rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+td.col-procentaj-emag .input-procentaj-emag:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
+td.col-procentaj-emag .procentaj-emag-suffix {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+td.col-procentaj-emag .btn-reset-emag-pct {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+td.col-procentaj-emag .btn-reset-emag-pct:hover {
+  background: #fee2e2;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+td.col-procentaj-emag.is-emag-pct-override {
+  background: #fff7ed;
+}
+
+td.col-procentaj-emag.is-emag-pct-override .input-procentaj-emag {
+  border-color: #fdba74;
 }
 
 tr.is-price-dirty td.col-pret-emag,
