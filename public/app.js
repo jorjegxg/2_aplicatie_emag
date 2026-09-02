@@ -4,6 +4,9 @@ const btnSaveSettings = document.getElementById("btn-save-settings");
 const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const btnSync = document.getElementById("btn-sync");
 const btnColumns = document.getElementById("btn-columns");
+const btnExport = document.getElementById("btn-export");
+const btnExportMenu = document.getElementById("btn-export-menu");
+const exportMenu = document.getElementById("export-menu");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
@@ -53,6 +56,7 @@ let loading = false;
 let savingSettings = false;
 let syncing = false;
 let fetchingCommission = false;
+let exporting = false;
 let hiddenCols = loadHiddenCols();
 let columnOrder = loadColumnOrder();
 let dragCol = null;
@@ -282,6 +286,39 @@ function formatPercent(value) {
   const num = Number(value);
   if (Number.isNaN(num)) return "—";
   return `${num.toFixed(2)}%`;
+}
+
+function daysSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return (Date.now() - t) / (24 * 60 * 60 * 1000);
+}
+
+function relativeTimeRo(iso) {
+  const d = daysSince(iso);
+  if (d == null) return "—";
+  const days = Math.floor(d);
+  if (days <= 0) {
+    const hours = Math.floor(d * 24);
+    if (hours <= 0) return "acum";
+    return `acum ${hours} h`;
+  }
+  if (days === 1) return "acum 1 zi";
+  if (days < 30) return `acum ${days} zile`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "acum ~1 lună";
+  if (months < 12) return `acum ~${months} luni`;
+  const years = Math.floor(days / 365);
+  return years === 1 ? "acum ~1 an" : `acum ~${years} ani`;
+}
+
+function stalenessClass(iso) {
+  const d = daysSince(iso);
+  if (d == null) return "";
+  if (d < 30) return "is-stale-fresh";
+  if (d < 90) return "is-stale-warn";
+  return "is-stale-old";
 }
 
 const PCT_LEVEL_CLASSES = ["pct-1", "pct-2", "pct-3"];
@@ -1129,6 +1166,8 @@ function rowHtml(product, index) {
       : `<td data-col="procentaj_emag"${cellClass("procentaj_emag", hasEmagPctOverride ? "col-procentaj-emag is-emag-pct-override" : "col-procentaj-emag")}>${procentajEmagInputHtml(emagInputVal, hasEmagPctOverride)}</td>`,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass("pret_minim_profit", minProfitExtra)}>${formatPrice(minProfit, currency)}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
+    pret_emag_schimbat: `<td data-col="pret_emag_schimbat"${cellClass("pret_emag_schimbat", ["col-pret-schimbat", stalenessClass(product.pret_emag_last_change)].filter(Boolean).join(" "))}${product.pret_emag_last_change ? ` title="${escapeHtml(new Date(product.pret_emag_last_change).toLocaleString("ro-RO"))}"` : ""}>${escapeHtml(relativeTimeRo(product.pret_emag_last_change))}</td>`,
+    istoric: `<td data-col="istoric"${cellClass("istoric", "col-istoric")}><button type="button" class="btn-history" data-offer-id="${escapeHtml(product.id)}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
     profit: `<td data-col="profit"${cellClass("profit", "col-profit")} data-sale-price="${escapeHtml(salePrice)}" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}">${formatPrice(calcProfit(product.sale_price, product.pret_cumparare, alte, contabil, pctEmag), currency)}</td>`,
     procentaj_profit: `<td data-col="procentaj_profit"${cellClass("procentaj_profit", procentajExtra)}><input type="number" class="input-procentaj-profit" step="0.01" value="${escapeHtml(procentajAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
@@ -1312,7 +1351,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="20">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="25">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -1536,7 +1575,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="20">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="25">Niciun produs găsit.</td></tr>';
     updateSyncButton();
     updateToolbarTotals();
     return;
@@ -1611,7 +1650,7 @@ async function loadProducts({ append = false } = {}) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="20">${escapeHtml(
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="25">${escapeHtml(
         err.message || "Eroare"
       )}</td></tr>`;
       if (loadedProducts.length === 0) {
@@ -1948,6 +1987,15 @@ tbody.addEventListener("input", (e) => {
 });
 
 tbody.addEventListener("click", (e) => {
+  const historyBtn = e.target.closest("button.btn-history");
+  if (historyBtn) {
+    const offerId = historyBtn.dataset.offerId;
+    const tr = historyBtn.closest("tr[data-offer-id]");
+    const name = tr ? getRowName(tr) : "";
+    openHistoryModal(offerId, name);
+    return;
+  }
+
   const resetEmagPctBtn = e.target.closest("button.btn-reset-emag-pct");
   if (resetEmagPctBtn) {
     const tr = resetEmagPctBtn.closest("tr[data-offer-id]");
@@ -2257,6 +2305,131 @@ async function fetchCommissionForLoadedProducts() {
   }
 }
 
+/* ---------- Export Excel ---------- */
+
+const EXPORT_NUMERIC_COLS = new Set([
+  "index",
+  "id",
+  "id_familie",
+  "pret_cumparare",
+  "alte_costuri",
+  "pret_contabil",
+  "procentaj_emag",
+  "pret_minim_profit",
+  "pret_emag",
+  "profit",
+  "procentaj_profit",
+  "prp",
+  "pret_minim",
+  "pret_maxim",
+  "stoc",
+]);
+
+function toExportValue(col, text) {
+  const raw = String(text ?? "").trim();
+  if (!raw || raw === "—") return null;
+  if (!EXPORT_NUMERIC_COLS.has(col)) return raw;
+
+  const cleaned = raw
+    .replace(/[^\d,.\-]/g, "")
+    .replace(/\.(?=\d{3}\b)/g, "")
+    .replace(",", ".");
+  const num = Number(cleaned);
+  return Number.isFinite(num) && cleaned !== "" ? num : raw;
+}
+
+function collectExportRows(mode) {
+  const cols =
+    mode === "all" ? [...columnOrder] : columnOrder.filter((c) => !hiddenCols.includes(c));
+  const allRows = [...tbody.querySelectorAll("tr[data-offer-id]")];
+  const rows = mode === "all" ? allRows : allRows.filter((tr) => !tr.classList.contains("is-row-filtered"));
+
+  return {
+    cols,
+    headers: cols.map((col) => COLUMN_LABELS[col] || col),
+    rows: rows.map((tr) => cols.map((col) => toExportValue(col, getCellFilterText(tr, col)))),
+  };
+}
+
+function filenameFromDisposition(disposition, fallback) {
+  const match = /filename="?([^";]+)"?/i.exec(disposition || "");
+  return match ? match[1] : fallback;
+}
+
+async function exportProducts(mode) {
+  if (exporting) return;
+  const { headers, rows } = collectExportRows(mode);
+  if (!headers.length || rows.length === 0) {
+    setStatus("Nimic de exportat.", "error");
+    return;
+  }
+
+  exporting = true;
+  if (btnExport) btnExport.disabled = true;
+  if (btnExportMenu) btnExportMenu.disabled = true;
+  setStatus("Se generează Excel...", "loading");
+
+  try {
+    const res = await fetch("/api/products/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ headers, rows, mode }),
+    });
+    if (!res.ok) {
+      let message = `Eroare export (${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.error) message = data.error;
+      } catch {}
+      throw new Error(message);
+    }
+
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    const name = filenameFromDisposition(
+      res.headers.get("Content-Disposition"),
+      `produse-emag-${stamp}.xlsx`
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setStatus(`Export finalizat (${rows.length} produse).`, "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la export", "error");
+  } finally {
+    exporting = false;
+    if (btnExport) btnExport.disabled = false;
+    if (btnExportMenu) btnExportMenu.disabled = false;
+  }
+}
+
+function setExportMenuOpen(open) {
+  if (!exportMenu || !btnExportMenu) return;
+  exportMenu.hidden = !open;
+  btnExportMenu.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+btnExport?.addEventListener("click", () => exportProducts("visible"));
+
+btnExportMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setExportMenuOpen(exportMenu.hidden);
+});
+
+exportMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const item = e.target.closest("[data-export-mode]");
+  if (!item) return;
+  setExportMenuOpen(false);
+  exportProducts(item.dataset.exportMode);
+});
+
 btnSaveSettings.addEventListener("click", saveSettings);
 btnLoad.addEventListener("click", () => loadProducts({ append: false }));
 btnMore.addEventListener("click", () => loadProducts({ append: true }));
@@ -2413,6 +2586,7 @@ colMenu.addEventListener("click", (e) => e.stopPropagation());
 
 document.addEventListener("click", () => {
   if (!colMenu.hidden) setColumnMenuOpen(false);
+  if (exportMenu && !exportMenu.hidden) setExportMenuOpen(false);
 });
 
 applyColumnOrder();
@@ -2424,4 +2598,255 @@ loadSettings().then(async () => {
   if (!restored) {
     setStatus("Apasă Reload produse — sau rămâi pe cache după încărcare.", "");
   }
+});
+
+/* ---------- Istoric preț + comenzi (modal) ---------- */
+
+const ORDER_STATUS_LABELS = {
+  0: "Anulat",
+  1: "Nou",
+  2: "În progres",
+  3: "Preparat",
+  4: "Finalizat",
+  5: "Returnat",
+};
+
+const historyModal = document.getElementById("history-modal");
+const historyModalTitle = document.getElementById("history-modal-title");
+const historyModalSub = document.getElementById("history-modal-sub");
+const historyChart = document.getElementById("history-chart");
+const historyChartTooltip = document.getElementById("history-chart-tooltip");
+const historyOrdersBody = document.getElementById("history-orders-body");
+
+function orderStatusLabel(status) {
+  const n = Number(status);
+  return ORDER_STATUS_LABELS[n] ?? (status == null ? "—" : String(status));
+}
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    el.setAttribute(k, String(v));
+  }
+  return el;
+}
+
+// Step-chart: pretul se mentine constant intre schimbari.
+function renderPriceChart(svg, points) {
+  svg.innerHTML = "";
+  const W = 720;
+  const H = 260;
+  const pad = { top: 20, right: 20, bottom: 34, left: 56 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const pts = (points || [])
+    .map((p) => ({ t: Date.parse(p.recorded_at), y: Number(p.sale_price) }))
+    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.y))
+    .sort((a, b) => a.t - b.t);
+
+  if (pts.length === 0) {
+    svg.appendChild(
+      svgEl("text", {
+        x: W / 2,
+        y: H / 2,
+        "text-anchor": "middle",
+        class: "chart-empty-text",
+      })
+    ).textContent = "Fără istoric de preț încă.";
+    return;
+  }
+
+  // Extinde ultimul punct pana la "acum" ca sa vedem cat timp a stat pretul.
+  const now = Date.now();
+  const tMin = pts[0].t;
+  const tMax = Math.max(pts[pts.length - 1].t, now);
+  const tSpan = tMax - tMin || 1;
+  const yVals = pts.map((p) => p.y);
+  let yMin = Math.min(...yVals);
+  let yMax = Math.max(...yVals);
+  if (yMin === yMax) {
+    yMin -= 1;
+    yMax += 1;
+  }
+  const yPad = (yMax - yMin) * 0.12;
+  yMin -= yPad;
+  yMax += yPad;
+  const ySpan = yMax - yMin || 1;
+
+  const sx = (t) => pad.left + ((t - tMin) / tSpan) * plotW;
+  const sy = (y) => pad.top + (1 - (y - yMin) / ySpan) * plotH;
+
+  // Axe.
+  svg.appendChild(
+    svgEl("line", {
+      x1: pad.left,
+      y1: pad.top + plotH,
+      x2: pad.left + plotW,
+      y2: pad.top + plotH,
+      class: "chart-axis",
+    })
+  );
+  svg.appendChild(
+    svgEl("line", {
+      x1: pad.left,
+      y1: pad.top,
+      x2: pad.left,
+      y2: pad.top + plotH,
+      class: "chart-axis",
+    })
+  );
+
+  // Grilaj + etichete Y (3 nivele).
+  for (let i = 0; i <= 2; i++) {
+    const y = yMin + (ySpan * i) / 2;
+    const py = sy(y);
+    svg.appendChild(
+      svgEl("line", {
+        x1: pad.left,
+        y1: py,
+        x2: pad.left + plotW,
+        y2: py,
+        class: "chart-grid",
+      })
+    );
+    const label = svgEl("text", {
+      x: pad.left - 8,
+      y: py + 4,
+      "text-anchor": "end",
+      class: "chart-tick",
+    });
+    label.textContent = y.toFixed(2);
+    svg.appendChild(label);
+  }
+
+  // Etichete X (prima + ultima data).
+  const fmtDate = (t) => new Date(t).toLocaleDateString("ro-RO");
+  const xFirst = svgEl("text", {
+    x: pad.left,
+    y: H - 12,
+    "text-anchor": "start",
+    class: "chart-tick",
+  });
+  xFirst.textContent = fmtDate(tMin);
+  svg.appendChild(xFirst);
+  const xLast = svgEl("text", {
+    x: pad.left + plotW,
+    y: H - 12,
+    "text-anchor": "end",
+    class: "chart-tick",
+  });
+  xLast.textContent = fmtDate(tMax);
+  svg.appendChild(xLast);
+
+  // Linie in trepte.
+  let d = "";
+  pts.forEach((p, i) => {
+    const x = sx(p.t);
+    const y = sy(p.y);
+    if (i === 0) {
+      d += `M ${x} ${y}`;
+    } else {
+      const prevY = sy(pts[i - 1].y);
+      d += ` L ${x} ${prevY} L ${x} ${y}`;
+    }
+  });
+  // Prelungeste orizontal pana la tMax (acum).
+  d += ` L ${sx(tMax)} ${sy(pts[pts.length - 1].y)}`;
+  svg.appendChild(svgEl("path", { d, class: "chart-line", fill: "none" }));
+
+  // Markeri la fiecare schimbare + hover.
+  pts.forEach((p) => {
+    const cx = sx(p.t);
+    const cy = sy(p.y);
+    const dot = svgEl("circle", { cx, cy, r: 4, class: "chart-dot" });
+    dot.addEventListener("mouseenter", () => {
+      historyChartTooltip.hidden = false;
+      historyChartTooltip.textContent = `${p.y.toFixed(2)} RON · ${new Date(
+        p.t
+      ).toLocaleString("ro-RO")}`;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = rect.width / W;
+      const scaleY = rect.height / H;
+      historyChartTooltip.style.left = `${cx * scaleX}px`;
+      historyChartTooltip.style.top = `${cy * scaleY - 12}px`;
+    });
+    dot.addEventListener("mouseleave", () => {
+      historyChartTooltip.hidden = true;
+    });
+    svg.appendChild(dot);
+  });
+}
+
+function renderHistoryOrders(orders) {
+  const list = Array.isArray(orders) ? orders : [];
+  if (list.length === 0) {
+    historyOrdersBody.innerHTML =
+      '<tr><td colspan="5" class="history-orders-empty">Nicio comandă înregistrată pentru acest produs.</td></tr>';
+    return;
+  }
+  historyOrdersBody.innerHTML = list
+    .map((o) => {
+      const date = o.order_date
+        ? escapeHtml(new Date(o.order_date).toLocaleString("ro-RO"))
+        : "—";
+      return `<tr>
+        <td>${date}</td>
+        <td>${escapeHtml(o.order_id ?? "—")}</td>
+        <td>${escapeHtml(o.quantity ?? "—")}</td>
+        <td>${formatPrice(o.sale_price, o.currency || "RON")}</td>
+        <td>${escapeHtml(orderStatusLabel(o.status))}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+function priceHistorySummary(history) {
+  const list = Array.isArray(history) ? history : [];
+  if (list.length === 0) return "Fără schimbări de preț înregistrate încă.";
+  const last = list[list.length - 1];
+  const rel = relativeTimeRo(last.recorded_at);
+  const count = list.length;
+  return `${count} ${count === 1 ? "înregistrare" : "înregistrări"} · ultima schimbare ${rel} (${formatPrice(
+    last.sale_price,
+    last.currency || "RON"
+  )})`;
+}
+
+function openHistoryModal(offerId, name) {
+  historyModalTitle.textContent = name
+    ? `Istoric — ${name}`
+    : `Istoric preț — #${offerId}`;
+  historyModalSub.textContent = "Se încarcă…";
+  historyChart.innerHTML = "";
+  historyOrdersBody.innerHTML = "";
+  historyChartTooltip.hidden = true;
+  historyModal.hidden = false;
+  document.body.classList.add("modal-open");
+
+  fetch(`/api/products/${encodeURIComponent(offerId)}/history`)
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) throw new Error(data.error || "Eroare istoric");
+      historyModalSub.textContent = priceHistorySummary(data.price_history);
+      renderPriceChart(historyChart, data.price_history);
+      renderHistoryOrders(data.orders);
+    })
+    .catch((err) => {
+      historyModalSub.textContent = err.message || "Eroare la încărcare istoric";
+    });
+}
+
+function closeHistoryModal() {
+  historyModal.hidden = true;
+  historyChartTooltip.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+historyModal.addEventListener("click", (e) => {
+  if (e.target.closest("[data-close]")) closeHistoryModal();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !historyModal.hidden) closeHistoryModal();
 });

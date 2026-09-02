@@ -136,6 +136,36 @@
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
             Preia comision eMAG
           </button>
+          <div class="col-menu-wrap export-wrap">
+            <button type="button" id="btn-export" class="btn btn-secondary btn-with-icon" title="Exportă ce se vede în tabel">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M5 20h14v-2H5v2zm7-16v9.17l3.59-3.58L17 11l-5 5-5-5 1.41-1.41L12 13.17V4h0z"
+                />
+              </svg>
+              Export Excel
+            </button>
+            <button
+              type="button"
+              id="btn-export-menu"
+              class="btn btn-secondary btn-caret"
+              aria-expanded="false"
+              aria-controls="export-menu"
+              aria-label="Opțiuni export"
+              title="Opțiuni export"
+            >
+              ▾
+            </button>
+            <div id="export-menu" class="col-menu export-menu" hidden role="menu">
+              <button type="button" class="export-menu-item" data-export-mode="visible" role="menuitem">
+                Ce se vede în tabel
+              </button>
+              <button type="button" class="export-menu-item" data-export-mode="all" role="menuitem">
+                Toate produsele încărcate
+              </button>
+            </div>
+          </div>
           <span id="status" class="status" aria-live="polite"></span>
           <button type="button" id="btn-sync" class="btn" disabled>
             Sincronizează cu eMAG
@@ -160,6 +190,8 @@
               <th data-col="procentaj_emag" data-src="emag" class="col-procentaj-emag">Comision emag %</th>
               <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
               <th data-col="pret_emag" data-src="emag" class="col-pret-emag">Pret emag</th>
+              <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
+              <th data-col="istoric" data-src="calc">Istoric</th>
               <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
               <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
               <th data-col="prp" data-src="emag">PRP</th>
@@ -183,6 +215,8 @@
               <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision emag" /></th>
               <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
               <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Pret emag" /></th>
+              <th data-col="pret_emag_schimbat"></th>
+              <th data-col="istoric"></th>
               <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
               <th data-col="procentaj_profit"><input type="search" class="col-filter" data-filter-col="procentaj_profit" placeholder="Filtrează…" aria-label="Filtrează Procentaj profit" /></th>
               <th data-col="prp"><input type="search" class="col-filter" data-filter-col="prp" placeholder="Filtrează…" aria-label="Filtrează PRP" /></th>
@@ -195,10 +229,39 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="20">Apasă „Reload produse” pentru a afișa ofertele.</td>
+              <td colspan="25">Apasă „Reload produse” pentru a afișa ofertele.</td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    <div id="history-modal" class="history-modal" hidden>
+      <div class="history-modal-overlay" data-close></div>
+      <div class="history-modal-card" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+        <div class="history-modal-header">
+          <h2 id="history-modal-title">Istoric preț eMAG</h2>
+          <button type="button" class="history-modal-close" data-close aria-label="Închide">×</button>
+        </div>
+        <p class="history-modal-sub" id="history-modal-sub"></p>
+        <div class="history-chart-wrap">
+          <svg id="history-chart" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Grafic preț în timp"></svg>
+        </div>
+        <div class="history-chart-tooltip" id="history-chart-tooltip" hidden></div>
+        <h3 class="history-section-title">Comenzi</h3>
+        <div class="history-orders-wrap">
+          <table class="history-orders-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Comandă</th>
+                <th>Cant.</th>
+                <th>Preț vânzare</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-orders-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
     <script src="app.js"></script>

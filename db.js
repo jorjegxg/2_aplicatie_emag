@@ -85,6 +85,38 @@ function getDb() {
       );
     }
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_pret_emag_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      offer_id INTEGER NOT NULL,
+      sale_price REAL NOT NULL,
+      currency TEXT,
+      recorded_at TEXT NOT NULL,
+      source TEXT
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_pret_emag_hist_offer
+      ON product_pret_emag_history(offer_id, recorded_at);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_line_history (
+      line_id INTEGER PRIMARY KEY,
+      order_id INTEGER NOT NULL,
+      product_id INTEGER,
+      part_number TEXT,
+      name TEXT,
+      quantity REAL,
+      sale_price REAL,
+      status INTEGER,
+      currency TEXT,
+      order_date TEXT
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_order_line_product
+      ON order_line_history(product_id, order_date);
+  `);
   return db;
 }
 
@@ -497,8 +529,176 @@ function clearProcentajEmag(offerId) {
   return null;
 }
 
+const PRICE_EPSILON = 0.00005;
+
+function recordPretEmagIfChanged(offerId, salePrice, currency, source) {
+  const id = Number(offerId);
+  const price = Number(salePrice);
+  if (!Number.isFinite(id) || !Number.isFinite(price)) return null;
+
+  const last = getDb()
+    .prepare(
+      `SELECT sale_price FROM product_pret_emag_history
+       WHERE offer_id = ?
+       ORDER BY recorded_at DESC, id DESC LIMIT 1`
+    )
+    .get(id);
+
+  if (last != null && Math.abs(Number(last.sale_price) - price) <= PRICE_EPSILON) {
+    return null;
+  }
+
+  const recorded_at = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO product_pret_emag_history (offer_id, sale_price, currency, recorded_at, source)
+       VALUES (@offer_id, @sale_price, @currency, @recorded_at, @source)`
+    )
+    .run({
+      offer_id: id,
+      sale_price: price,
+      currency: currency || null,
+      recorded_at,
+      source: source || null,
+    });
+  return { offer_id: id, sale_price: price, recorded_at, source: source || null };
+}
+
+function getPretEmagHistory(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) return [];
+  try {
+    return getDb()
+      .prepare(
+        `SELECT sale_price, currency, recorded_at, source
+         FROM product_pret_emag_history
+         WHERE offer_id = ?
+         ORDER BY recorded_at ASC, id ASC`
+      )
+      .all(id);
+  } catch {
+    return [];
+  }
+}
+
+function getLastPriceChangeBulk(offerIds) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(offerIds) ? offerIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id))
+    ),
+  ];
+  if (ids.length === 0) return {};
+
+  try {
+    const placeholders = ids.map(() => "?").join(", ");
+    // Latest row per offer_id by recorded_at (tie-broken by id).
+    const rows = getDb()
+      .prepare(
+        `SELECT h.offer_id, h.sale_price, h.recorded_at
+         FROM product_pret_emag_history h
+         JOIN (
+           SELECT offer_id, MAX(id) AS max_id
+           FROM product_pret_emag_history
+           WHERE offer_id IN (${placeholders})
+           GROUP BY offer_id
+         ) last ON last.offer_id = h.offer_id AND last.max_id = h.id`
+      )
+      .all(...ids);
+
+    const out = {};
+    for (const row of rows) {
+      out[row.offer_id] = {
+        sale_price: Number(row.sale_price),
+        recorded_at: row.recorded_at,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function upsertOrderLines(lines) {
+  const list = Array.isArray(lines) ? lines : [];
+  const stmt = getDb().prepare(
+    `INSERT INTO order_line_history
+       (line_id, order_id, product_id, part_number, name, quantity, sale_price, status, currency, order_date)
+     VALUES (@line_id, @order_id, @product_id, @part_number, @name, @quantity, @sale_price, @status, @currency, @order_date)
+     ON CONFLICT(line_id) DO UPDATE SET
+       order_id = excluded.order_id,
+       product_id = excluded.product_id,
+       part_number = excluded.part_number,
+       name = excluded.name,
+       quantity = excluded.quantity,
+       sale_price = excluded.sale_price,
+       status = excluded.status,
+       currency = excluded.currency,
+       order_date = excluded.order_date`
+  );
+
+  const toNum = (v) => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const run = getDb().transaction((rows) => {
+    let count = 0;
+    for (const r of rows) {
+      const line_id = toNum(r?.line_id);
+      const order_id = toNum(r?.order_id);
+      if (line_id == null || order_id == null) continue;
+      stmt.run({
+        line_id,
+        order_id,
+        product_id: toNum(r?.product_id),
+        part_number: r?.part_number ?? null,
+        name: r?.name ?? null,
+        quantity: toNum(r?.quantity),
+        sale_price: toNum(r?.sale_price),
+        status: toNum(r?.status),
+        currency: r?.currency ?? null,
+        order_date: r?.order_date ?? null,
+      });
+      count += 1;
+    }
+    return count;
+  });
+
+  try {
+    return run(list);
+  } catch {
+    return 0;
+  }
+}
+
+function getOrderLinesForProduct(offerId) {
+  const id = Number(offerId);
+  if (!Number.isFinite(id)) return [];
+  try {
+    return getDb()
+      .prepare(
+        `SELECT line_id, order_id, product_id, part_number, name, quantity,
+                sale_price, status, currency, order_date
+         FROM order_line_history
+         WHERE product_id = ?
+         ORDER BY order_date DESC, order_id DESC`
+      )
+      .all(id);
+  } catch {
+    return [];
+  }
+}
+
 module.exports = {
   lookupPretCumparare,
+  recordPretEmagIfChanged,
+  getPretEmagHistory,
+  getLastPriceChangeBulk,
+  upsertOrderLines,
+  getOrderLinesForProduct,
   lookupAlteCosturi,
   lookupAlteCosturiBulk,
   saveAlteCosturi,

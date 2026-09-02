@@ -4,14 +4,22 @@ const statusEl = document.getElementById("status");
 const ordersBody = document.getElementById("orders-body");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputProcentajContabil = document.getElementById("procentaj-pret-contabil");
+const displayProcentajAlte = document.getElementById("procentaj-alte-costuri-display");
+const displayProcentajContabil = document.getElementById(
+  "procentaj-pret-contabil-display"
+);
 const inputCreatedAfter = document.getElementById("created-after");
 const inputCreatedBefore = document.getElementById("created-before");
 const selectStatus = document.getElementById("order-status");
 const inputTotalProfit = document.getElementById("total-profit-page");
+const totalProfitLabel = document.getElementById("total-profit-label");
 
 const DEFAULT_ALTE_COSTURI = 0;
 const DEFAULT_PRET_CONTABIL = 0;
-const ORDERS_CACHE_KEY = "emag-orders-cache-v1";
+const DEFAULT_PROcentaj_EMAG = 25;
+const ORDERS_CACHE_KEY = "emag-orders-cache-v2";
+const MAX_DATE_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
+const DEFAULT_RANGE_DAYS = 7;
 
 const STATUS_LABELS = {
   0: "Anulat",
@@ -31,6 +39,8 @@ const PAYMENT_LABELS = {
 let currentPage = 0;
 let hasMore = false;
 let loading = false;
+/** Filters used for the last successful load / restored cache */
+let appliedFilters = null;
 /** @type {Array<object>} */
 let loadedOrders = [];
 
@@ -53,6 +63,13 @@ function formatPrice(price, currency) {
   const num = Number(price);
   if (Number.isNaN(num)) return escapeHtml(price);
   return `${num.toFixed(2)} ${escapeHtml(currency || "RON")}`;
+}
+
+function formatPctDisplay(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return String(n);
 }
 
 function parseAlteCosturi(raw) {
@@ -107,13 +124,23 @@ function resolvePretContabil(product) {
   return contabilFromProcentaj(pct, product.pret_cumparare);
 }
 
-const DEFAULT_PROcentaj_EMAG = 25;
+function hasStoredProcentajEmag(product) {
+  return (
+    product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))
+  );
+}
 
 function resolveProcentajEmag(product) {
-  if (product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))) {
+  if (hasStoredProcentajEmag(product)) {
     return Number(product.procentaj_emag);
   }
   return DEFAULT_PROcentaj_EMAG;
+}
+
+function isBuyPriceMissing(pretCumparare) {
+  if (pretCumparare == null || pretCumparare === "") return true;
+  const buy = Number(pretCumparare);
+  return Number.isNaN(buy);
 }
 
 function calcProfit(
@@ -128,13 +155,13 @@ function calcProfit(
   if (salePrice == null || salePrice === "" || Number.isNaN(pct)) {
     return null;
   }
+  if (isBuyPriceMissing(pretCumparare)) return null;
+
   const sale = Number(salePrice);
   if (Number.isNaN(sale)) return null;
 
   const afterEmag = sale * (1 - pct / 100);
-  const buy = Number(pretCumparare);
-  const buyCost =
-    pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
+  const buyCost = Number(pretCumparare);
   const other = parseAlteCosturi(alteCosturi);
   const contabil = parsePretContabil(pretContabil);
 
@@ -162,6 +189,26 @@ function paymentLabel(id) {
   return PAYMENT_LABELS[n] ?? (id == null ? "—" : String(id));
 }
 
+function isOrderExcludedFromProfit(order) {
+  const n = Number(order.status);
+  return n === 0 || n === 5;
+}
+
+function toDatetimeLocalValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+function setDefaultDateRange() {
+  const before = new Date();
+  const after = new Date(before.getTime() - DEFAULT_RANGE_DAYS * 24 * 60 * 60 * 1000);
+  inputCreatedAfter.value = toDatetimeLocalValue(after);
+  inputCreatedBefore.value = toDatetimeLocalValue(before);
+}
+
 function datetimeLocalToEmag(value) {
   if (!value) return null;
   // datetime-local: YYYY-MM-DDTHH:mm → eMAG YYYY-mm-dd HH:ii:ss
@@ -169,6 +216,29 @@ function datetimeLocalToEmag(value) {
   if (!date) return null;
   const hhmm = time && time.length >= 5 ? time.slice(0, 5) : "00:00";
   return `${date} ${hhmm}:00`;
+}
+
+function parseDatetimeLocalMs(value) {
+  if (!value) return NaN;
+  return Date.parse(value);
+}
+
+function validateDateRange() {
+  const afterVal = inputCreatedAfter.value;
+  const beforeVal = inputCreatedBefore.value;
+  if (!afterVal || !beforeVal) return null;
+
+  const after = parseDatetimeLocalMs(afterVal);
+  const before = parseDatetimeLocalMs(beforeVal);
+  if (!Number.isFinite(after) || !Number.isFinite(before)) return null;
+
+  if (before < after) {
+    return "„Până la” trebuie să fie după „De la”.";
+  }
+  if (before - after > MAX_DATE_RANGE_MS) {
+    return "Intervalul de dată eMAG e max 31 zile.";
+  }
+  return null;
 }
 
 function buildQuery(page) {
@@ -188,6 +258,15 @@ function currentFiltersSnapshot() {
     createdBefore: inputCreatedBefore.value || "",
     status: selectStatus.value || "",
   };
+}
+
+function filtersEqual(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.createdAfter === b.createdAfter &&
+    a.createdBefore === b.createdBefore &&
+    a.status === b.status
+  );
 }
 
 function saveOrdersCache() {
@@ -238,6 +317,7 @@ function restoreOrdersCache() {
   loadedOrders = data.orders;
   currentPage = Number(data.page) || 1;
   hasMore = Boolean(data.hasMore);
+  appliedFilters = currentFiltersSnapshot();
 
   renderOrders(loadedOrders, { append: false });
   updatePageProfitTotal();
@@ -257,6 +337,7 @@ function restoreOrdersCache() {
 
 function productLineProfit(product) {
   if (Number(product.status) === 0) return null;
+  if (isBuyPriceMissing(product.pret_cumparare)) return null;
   const alte = resolveAlteCosturi(product);
   const contabil = resolvePretContabil(product);
   const pctEmag = resolveProcentajEmag(product);
@@ -270,10 +351,11 @@ function productLineProfit(product) {
   if (perUnit == null || !Number.isFinite(perUnit)) return null;
   const qty = Number(product.quantity);
   const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
-  return { perUnit, total: perUnit * q, alte, contabil, qty: q };
+  return { perUnit, total: perUnit * q, alte, contabil, qty: q, pctEmag };
 }
 
 function orderProfitTotal(order) {
+  if (isOrderExcludedFromProfit(order)) return null;
   let sum = 0;
   let any = false;
   for (const p of order.products || []) {
@@ -288,13 +370,22 @@ function orderProfitTotal(order) {
 function updatePageProfitTotal() {
   let sum = 0;
   let any = false;
+  let counted = 0;
   for (const order of loadedOrders) {
+    if (isOrderExcludedFromProfit(order)) continue;
     const t = orderProfitTotal(order);
     if (t == null || !Number.isFinite(t)) continue;
     sum += t;
     any = true;
+    counted += 1;
   }
   inputTotalProfit.value = any ? `${sum.toFixed(2)} RON` : "—";
+  if (totalProfitLabel) {
+    totalProfitLabel.textContent =
+      counted > 0
+        ? `Total profit încărcat (${counted} comenzi)`
+        : "Total profit încărcat";
+  }
 }
 
 function renderProductRows(order) {
@@ -319,6 +410,7 @@ function renderProductRows(order) {
             <th>Preț cumpărare</th>
             <th>Pret transport</th>
             <th>Pret contabil</th>
+            <th>Comision eMAG %</th>
             <th>Profit / buc</th>
             <th>Profit × cant.</th>
           </tr>
@@ -329,9 +421,10 @@ function renderProductRows(order) {
               const line = productLineProfit(p);
               const alte = line?.alte ?? resolveAlteCosturi(p);
               const contabil = line?.contabil ?? resolvePretContabil(p);
+              const pctEmag = resolveProcentajEmag(p);
+              const pctStored = hasStoredProcentajEmag(p);
               const currency = p.currency || "RON";
-              const buyMissing =
-                p.pret_cumparare == null || p.pret_cumparare === "";
+              const buyMissing = isBuyPriceMissing(p.pret_cumparare);
               const cancelled = Number(p.status) === 0;
               return `<tr class="${cancelled ? "product-cancelled" : ""}">
                 <td>${escapeHtml(p.name || "—")}${cancelled ? ' <span class="muted">(anulat)</span>' : ""}</td>
@@ -341,6 +434,7 @@ function renderProductRows(order) {
                 <td class="${buyMissing ? "is-missing" : ""}">${buyMissing ? "—" : formatPrice(p.pret_cumparare, currency)}</td>
                 <td>${formatPrice(alte, currency)}</td>
                 <td>${formatPrice(contabil, currency)}</td>
+                <td class="${pctStored ? "" : "is-missing"}" title="${pctStored ? "Comision din DB" : `Fallback ${DEFAULT_PROcentaj_EMAG}%`}">${escapeHtml(pctEmag.toFixed(2))}${pctStored ? "" : ' <span class="muted">(default)</span>'}</td>
                 <td>${line ? formatPrice(line.perUnit, currency) : "—"}</td>
                 <td>${line ? formatPrice(line.total, currency) : "—"}</td>
               </tr>`;
@@ -369,11 +463,11 @@ function renderOrders(orders, { append }) {
   const frag = document.createDocumentFragment();
   for (const order of orders) {
     const profit = orderProfitTotal(order);
-    const currency =
-      order.products?.[0]?.currency || "RON";
+    const currency = order.products?.[0]?.currency || "RON";
     const tr = document.createElement("tr");
     tr.className = "order-row";
     tr.dataset.orderId = String(order.id);
+    tr.title = "Click pentru detalii";
     tr.innerHTML = `
       <td class="col-expand">
         <button type="button" class="btn-expand" aria-expanded="false" aria-label="Detalii comandă ${escapeHtml(order.id)}">▸</button>
@@ -402,8 +496,10 @@ function toggleOrderExpand(orderRow) {
   existing.forEach((r) => r.remove());
 
   if (expanded) {
-    btn.setAttribute("aria-expanded", "false");
-    btn.textContent = "▸";
+    if (btn) {
+      btn.setAttribute("aria-expanded", "false");
+      btn.textContent = "▸";
+    }
     orderRow.classList.remove("is-expanded");
     return;
   }
@@ -411,8 +507,10 @@ function toggleOrderExpand(orderRow) {
   const order = loadedOrders.find((o) => String(o.id) === String(orderId));
   if (!order) return;
 
-  btn.setAttribute("aria-expanded", "true");
-  btn.textContent = "▾";
+  if (btn) {
+    btn.setAttribute("aria-expanded", "true");
+    btn.textContent = "▾";
+  }
   orderRow.classList.add("is-expanded");
 
   const html = renderProductRows(order);
@@ -424,11 +522,17 @@ async function loadSettings() {
     const res = await fetch("/api/settings");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Eroare setări");
-    inputProcentajAlte.value =
+    const alte =
       data.procentaj_alte_costuri != null ? data.procentaj_alte_costuri : "";
-    if (inputProcentajContabil) {
-      inputProcentajContabil.value =
-        data.procentaj_pret_contabil != null ? data.procentaj_pret_contabil : "";
+    const contabil =
+      data.procentaj_pret_contabil != null ? data.procentaj_pret_contabil : "";
+    inputProcentajAlte.value = alte;
+    if (inputProcentajContabil) inputProcentajContabil.value = contabil;
+    if (displayProcentajAlte) {
+      displayProcentajAlte.textContent = formatPctDisplay(alte);
+    }
+    if (displayProcentajContabil) {
+      displayProcentajContabil.textContent = formatPctDisplay(contabil);
     }
   } catch (err) {
     console.warn("setări:", err.message);
@@ -437,6 +541,13 @@ async function loadSettings() {
 
 async function loadOrders({ append }) {
   if (loading) return;
+
+  const rangeError = validateDateRange();
+  if (rangeError) {
+    setStatus(rangeError, "error");
+    return;
+  }
+
   loading = true;
   btnLoad.disabled = true;
   btnMore.disabled = true;
@@ -466,6 +577,7 @@ async function loadOrders({ append }) {
       loadedOrders = orders;
     }
 
+    appliedFilters = currentFiltersSnapshot();
     saveOrdersCache();
     renderOrders(orders, { append });
     updatePageProfitTotal();
@@ -489,20 +601,44 @@ async function loadOrders({ append }) {
   }
 }
 
+function onFiltersChanged() {
+  const snapshot = currentFiltersSnapshot();
+  const rangeError = validateDateRange();
+  if (rangeError) {
+    setStatus(rangeError, "error");
+    return;
+  }
+
+  if (appliedFilters && !filtersEqual(snapshot, appliedFilters)) {
+    setStatus("Filtre schimbate — se reîncarcă…", "loading");
+    loadOrders({ append: false });
+    return;
+  }
+
+  if (!appliedFilters && (snapshot.createdAfter || snapshot.createdBefore || snapshot.status)) {
+    loadOrders({ append: false });
+  }
+}
+
 btnLoad.addEventListener("click", () => loadOrders({ append: false }));
 btnMore.addEventListener("click", () => loadOrders({ append: true }));
 
+inputCreatedAfter.addEventListener("change", onFiltersChanged);
+inputCreatedBefore.addEventListener("change", onFiltersChanged);
+selectStatus.addEventListener("change", onFiltersChanged);
+
 ordersBody.addEventListener("click", (e) => {
-  const btn = e.target.closest(".btn-expand");
-  if (!btn) return;
-  const row = btn.closest("tr.order-row");
-  if (row) toggleOrderExpand(row);
+  const row = e.target.closest("tr.order-row");
+  if (!row || !ordersBody.contains(row)) return;
+  toggleOrderExpand(row);
 });
 
 (async () => {
   await loadSettings();
   if (!restoreOrdersCache()) {
-    setStatus("Apasă Reload comenzi — sau rămâi pe cache după încărcare.", "");
+    setDefaultDateRange();
+    setStatus("Se încarcă ultimele 7 zile…", "loading");
+    await loadOrders({ append: false });
   } else {
     updatePageProfitTotal();
   }

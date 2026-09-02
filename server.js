@@ -1,7 +1,6 @@
 const express = require("express");
-const fs = require("fs");
-const https = require("https");
 const path = require("path");
+const XLSX = require("xlsx");
 const {
   lookupPretCumparare,
   lookupAlteCosturi,
@@ -21,155 +20,34 @@ const {
   clearProcentajEmag,
   getSettings,
   saveSettings,
+  recordPretEmagIfChanged,
+  getPretEmagHistory,
+  getLastPriceChangeBulk,
+  upsertOrderLines,
+  getOrderLinesForProduct,
 } = require("./db");
+const {
+  EMAG_API,
+  ITEMS_PER_PAGE,
+  emagFetch,
+  loadCredentials,
+  authHeader,
+  authCandidates,
+  savePreferredAuthLabel,
+  logAuthAttempt,
+  logAuthResult,
+  emagOrderRead,
+} = require("./emag-client");
 
 const PORT = process.env.PORT || 3000;
-const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const EMAG_API_V1 = "https://marketplace-api.emag.ro/api/v1";
 const COMMISSION_FETCH_CONCURRENCY = 5;
-const ITEMS_PER_PAGE = 100;
-const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
-// eMAG marketplace cert currently expired (CERT_HAS_EXPIRED) — scoped bypass only for this host
-const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
-
-function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const payload = body == null ? null : Buffer.from(String(body), "utf8");
-    const reqHeaders = { ...headers };
-    if (payload) reqHeaders["Content-Length"] = payload.length;
-
-    const req = https.request(
-      {
-        protocol: parsed.protocol,
-        hostname: parsed.hostname,
-        port: parsed.port || 443,
-        path: parsed.pathname + parsed.search,
-        method,
-        headers: reqHeaders,
-        agent: EMAG_HTTPS_AGENT,
-      },
-      (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          resolve({
-            status: res.statusCode,
-            ok: res.statusCode >= 200 && res.statusCode < 300,
-            text: async () => text,
-          });
-        });
-      }
-    );
-    req.on("error", reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
 
 const app = express();
+// Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
+app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
-
-function loadCredentials() {
-  const filePath = path.join(__dirname, "credentials.json");
-  if (!fs.existsSync(filePath)) {
-    throw new Error("Lipsește credentials.json");
-  }
-  const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!raw.USER_EMAIL || !raw.ACCOUNT_PASSWORD) {
-    throw new Error("credentials.json trebuie să conțină USER_EMAIL și ACCOUNT_PASSWORD");
-  }
-  return raw;
-}
-
-function authHeader(username, password) {
-  const token = Buffer.from(`${username}:${password}`, "utf8").toString("base64");
-  return `Basic ${token}`;
-}
-
-function loadPreferredAuthLabel() {
-  try {
-    if (!fs.existsSync(AUTH_CACHE_PATH)) return null;
-    const raw = JSON.parse(fs.readFileSync(AUTH_CACHE_PATH, "utf8"));
-    return typeof raw?.label === "string" ? raw.label : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePreferredAuthLabel(label) {
-  try {
-    fs.mkdirSync(path.dirname(AUTH_CACHE_PATH), { recursive: true });
-    fs.writeFileSync(
-      AUTH_CACHE_PATH,
-      JSON.stringify({ label, savedAt: new Date().toISOString() }, null, 2),
-      "utf8"
-    );
-  } catch (err) {
-    console.warn("[auth] nu am putut salva preferred auth:", err.message);
-  }
-}
-
-function authCandidates(creds) {
-  const list = [
-    {
-      label: "email+password",
-      user: creds.USER_EMAIL,
-      pass: creds.ACCOUNT_PASSWORD,
-      userHint: "email",
-      passHint: "ACCOUNT_PASSWORD",
-    },
-    {
-      label: "email+api_code",
-      user: creds.USER_EMAIL,
-      pass: creds.API_CODE,
-      userHint: "email",
-      passHint: "API_CODE",
-    },
-    {
-      label: "api_code+password",
-      user: creds.API_CODE,
-      pass: creds.ACCOUNT_PASSWORD,
-      userHint: "API_CODE",
-      passHint: "ACCOUNT_PASSWORD",
-    },
-  ].filter((c) => c.user && c.pass);
-
-  const preferred = loadPreferredAuthLabel();
-  if (!preferred) return list;
-
-  const idx = list.findIndex((c) => c.label === preferred);
-  if (idx <= 0) return list;
-
-  const ordered = [list[idx], ...list.filter((_, i) => i !== idx)];
-  console.log(`[auth] preferred "${preferred}" mutat primul în listă`);
-  return ordered;
-}
-
-function logAuthAttempt(context, candidate, index, total) {
-  console.log(
-    `[auth:${context}] încerc ${index + 1}/${total} label=${candidate.label} ` +
-      `user=${candidate.userHint} pass=${candidate.passHint}`
-  );
-}
-
-function logAuthResult(context, candidate, status, ok) {
-  if (ok) {
-    console.log(
-      `[auth:${context}] SUCCES label=${candidate.label} HTTP ${status} — salvat ca preferred`
-    );
-  } else if (status === 401 || status === 403) {
-    console.warn(
-      `[auth:${context}] EȘUAT label=${candidate.label} HTTP ${status}`
-    );
-  } else {
-    console.log(
-      `[auth:${context}] răspuns non-auth label=${candidate.label} HTTP ${status}`
-    );
-  }
-}
 
 function formatCharacteristics(characteristics) {
   if (!Array.isArray(characteristics) || characteristics.length === 0) {
@@ -386,40 +264,6 @@ function mapOrder(order) {
     customer_name: customerRaw?.name || customerRaw?.billing_name || "",
     products,
   };
-}
-
-async function emagOrderRead(auth, { page, status, createdAfter, createdBefore }) {
-  const body = new URLSearchParams();
-  body.set("currentPage", String(page));
-  body.set("itemsPerPage", String(ITEMS_PER_PAGE));
-
-  if (status != null && status !== "") {
-    const statuses = Array.isArray(status) ? status : [status];
-    statuses.forEach((s, i) => {
-      body.set(`status[${i}]`, String(s));
-    });
-  }
-  if (createdAfter) body.set("createdAfter", String(createdAfter));
-  if (createdBefore) body.set("createdBefore", String(createdBefore));
-
-  const response = await emagFetch(`${EMAG_API}/order/read`, {
-    method: "POST",
-    headers: {
-      Authorization: auth,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-
-  const text = await response.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-
-  return { response, json, text };
 }
 
 app.get("/api/settings", (_req, res) => {
@@ -835,6 +679,13 @@ app.post("/api/products/sync-prices", async (req, res) => {
         `[sync-prices] OK — updatate ${offers.length} oferte pe eMAG (auth=${candidate.label})`,
         offers.map((o) => ({ id: o.id, sale_price: o.sale_price }))
       );
+      for (const o of offers) {
+        try {
+          recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
+        } catch (histErr) {
+          console.warn("[sync-prices] istoric pret:", histErr.message);
+        }
+      }
       return res.json({
         ok: true,
         count: offers.length,
@@ -903,6 +754,20 @@ app.get("/api/products", async (req, res) => {
 
       const results = Array.isArray(json.results) ? json.results : [];
       const products = results.map(mapOffer);
+
+      // Snapshot pretul eMAG curent — insereaza rand nou doar daca s-a schimbat.
+      for (const p of products) {
+        try {
+          recordPretEmagIfChanged(p.id, p.sale_price, p.currency, "products-read");
+        } catch (histErr) {
+          console.warn("[products] istoric pret:", histErr.message);
+        }
+      }
+      const lastChanges = getLastPriceChangeBulk(products.map((p) => p.id));
+      for (const p of products) {
+        const lc = lastChanges[p.id];
+        p.pret_emag_last_change = lc ? lc.recorded_at : null;
+      }
 
       console.log(
         `[auth:products] OK page=${page} count=${products.length} auth=${candidate.label}`
@@ -1021,6 +886,30 @@ app.get("/api/orders", async (req, res) => {
       const results = Array.isArray(json.results) ? json.results : [];
       const orders = results.map(mapOrder);
 
+      // Acumuleaza liniile de comanda local (istoric vanzari per produs).
+      try {
+        const lines = [];
+        for (const order of orders) {
+          for (const p of order.products || []) {
+            lines.push({
+              line_id: p.id,
+              order_id: order.id,
+              product_id: p.product_id,
+              part_number: p.part_number,
+              name: p.name,
+              quantity: p.quantity,
+              sale_price: p.sale_price,
+              status: p.status,
+              currency: p.currency,
+              order_date: order.date,
+            });
+          }
+        }
+        upsertOrderLines(lines);
+      } catch (histErr) {
+        console.warn("[orders] istoric comenzi:", histErr.message);
+      }
+
       console.log(
         `[auth:orders] OK page=${page} count=${orders.length} auth=${candidate.label}`
       );
@@ -1043,6 +932,66 @@ app.get("/api/orders", async (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
+app.get("/api/products/:offerId/history", (req, res) => {
+  try {
+    const offerId = Number(req.params.offerId);
+    if (!Number.isFinite(offerId)) {
+      return res.status(400).json({ error: "offerId invalid" });
+    }
+    return res.json({
+      offer_id: offerId,
+      price_history: getPretEmagHistory(offerId),
+      orders: getOrderLinesForProduct(offerId),
+    });
+  } catch (err) {
+    console.error("[history] exception:", err.message);
+    return res.status(500).json({ error: err.message || "Eroare istoric" });
+  }
+});
+
+app.post("/api/products/export", (req, res) => {
+  try {
+    const headers = Array.isArray(req.body?.headers) ? req.body.headers : null;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!headers || headers.length === 0 || !rows) {
+      return res.status(400).json({ error: "Date invalide pentru export" });
+    }
+    if (rows.length > 20000) {
+      return res.status(400).json({ error: "Prea multe randuri pentru export" });
+    }
+
+    const aoa = [headers, ...rows.map((r) => (Array.isArray(r) ? r : []))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = headers.map((h) => ({
+      wch: Math.min(Math.max(String(h).length + 4, 12), 45),
+    }));
+    ws["!autofilter"] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: aoa.length - 1, c: headers.length - 1 },
+      }),
+    };
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Produse");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="produse-emag-${stamp}.xlsx"`
+    );
+    return res.send(buf);
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la generare Excel" });
   }
 });
 
