@@ -742,7 +742,6 @@ function upsertCatalogProducts(items) {
 /* ---------------- diff local vs canal ---------------- */
 
 const DIFF_FIELDS = [
-  { key: "name", label: "Nume", type: "text" },
   { key: "sale_price", label: "Preț vânzare", type: "number" },
   { key: "recommended_price", label: "PRP", type: "number" },
   { key: "min_sale_price", label: "Preț minim", type: "number" },
@@ -750,6 +749,7 @@ const DIFF_FIELDS = [
   { key: "general_stock", label: "Stoc", type: "number" },
   // status/vat_id/currency sunt in CHANNEL_OWNED_FIELDS: pull-ul le rescrie mereu,
   // deci nu pot diferi niciodata. Nu au ce cauta in comparatie.
+  // name nu e aici: push trimite doar pret/stoc; pull nu rescrie numele (LOCAL_SEED).
 ];
 
 function valuesDiffer(type, mine, theirs) {
@@ -799,13 +799,21 @@ function getChannelDiff(channel) {
       continue;
     }
     snapByExt.delete(String(l.external_id));
-    const fields = DIFF_FIELDS.map((f) => ({
-      key: f.key,
-      label: f.label,
-      mine: l[f.key] ?? null,
-      theirs: snap[f.key] ?? null,
-      differs: valuesDiffer(f.type, l[f.key] ?? null, snap[f.key] ?? null),
-    }));
+    const fields = DIFF_FIELDS.map((f) => {
+      // UI + push folosesc override ?? min_sale_price — comparatia la fel.
+      const mine =
+        f.key === "min_sale_price"
+          ? (l.pret_minim_override ?? l.min_sale_price ?? null)
+          : (l[f.key] ?? null);
+      const theirs = snap[f.key] ?? null;
+      return {
+        key: f.key,
+        label: f.label,
+        mine,
+        theirs,
+        differs: valuesDiffer(f.type, mine, theirs),
+      };
+    });
     matched.push({
       external_id: l.external_id,
       part_number: l.part_number || snap.part_number || "",

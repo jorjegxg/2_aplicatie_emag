@@ -1,12 +1,12 @@
 /* Comparatie: valorile mele din DB vs ultimul snapshot al marketplace-ului. Doar citire. */
 
 const CHANNEL_KEY = "marketplace-channel";
+const PRICING_CACHE_KEY = "sync-pricing-cache-v1";
+const DIFF_CACHE_KEY = "sync-diff-cache-v1";
 
 const channelSelect = document.getElementById("channel-select");
-const btnReload = document.getElementById("btn-reload");
 const btnPull = document.getElementById("btn-pull");
 const btnFetchCommission = document.getElementById("btn-fetch-commission");
-const onlyDiffToggle = document.getElementById("only-diff");
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("sync-summary");
 const diffHead = document.getElementById("diff-head");
@@ -90,14 +90,11 @@ function renderHead(fields) {
 }
 
 function renderDiffRows(data) {
-  const onlyDiff = onlyDiffToggle.checked;
-  const rows = data.matched.filter((m) => !onlyDiff || m.diff_count > 0);
+  const rows = data.matched;
   const cols = data.fields.length * 2 + 2;
 
   if (rows.length === 0) {
-    diffBody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">${
-      onlyDiff ? "Nicio diferență — DB-ul local e identic cu marketplace-ul." : "Niciun produs comun."
-    }</td></tr>`;
+    diffBody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">Niciun produs comun.</td></tr>`;
     return;
   }
 
@@ -149,16 +146,47 @@ function render(data) {
   renderSimpleRows(unlinkedBody, data.unlinked, 3);
 }
 
+function saveDiffCache(data) {
+  try {
+    sessionStorage.setItem(
+      DIFF_CACHE_KEY,
+      JSON.stringify({ channel: currentChannel, data, savedAt: new Date().toISOString() })
+    );
+  } catch (err) {
+    console.warn("cache diff:", err.message);
+  }
+}
+
+function readDiffCache() {
+  try {
+    const raw = sessionStorage.getItem(DIFF_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.data || parsed.channel !== currentChannel) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function restoreDiffCache() {
+  const cached = readDiffCache();
+  if (!cached) return false;
+  currentData = cached.data;
+  render(cached.data);
+  return true;
+}
+
 async function loadDiff() {
   if (loading) return;
   loading = true;
-  btnReload.disabled = true;
   setStatus("Se compară…", "loading");
   try {
     const res = await fetch(`/api/sync/diff?channel=${encodeURIComponent(currentChannel)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     currentData = data;
+    saveDiffCache(data);
     render(data);
     const diffRows = data.matched.filter((m) => m.diff_count > 0).length;
     if (!data.last_sync) {
@@ -181,7 +209,6 @@ async function loadDiff() {
     )}</td></tr>`;
   } finally {
     loading = false;
-    btnReload.disabled = false;
   }
 }
 
@@ -288,7 +315,6 @@ const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
-const pushContentToggle = document.getElementById("push-content");
 const syncInfoBanner = document.getElementById("sync-info-banner");
 
 /** pret_transport (vechi) → alte_costuri; evita drop din sync-column-order. */
@@ -554,6 +580,7 @@ async function loadPricing() {
     if (!catalogRes.ok) throw new Error(catalog.error || `HTTP ${catalogRes.status}`);
     settings = settingsRes.ok ? settingsData : {};
     pricingProducts = Array.isArray(catalog.products) ? catalog.products : [];
+    savePricingCache();
     renderPricing();
   } catch (err) {
     setStatus(err.message || "Eroare la încărcarea prețurilor", "error");
@@ -561,6 +588,48 @@ async function loadPricing() {
       err.message || "Eroare"
     )}</td></tr>`;
   }
+}
+
+function savePricingCache() {
+  try {
+    sessionStorage.setItem(
+      PRICING_CACHE_KEY,
+      JSON.stringify({
+        channel: currentChannel,
+        products: pricingProducts,
+        settings,
+        savedAt: new Date().toISOString(),
+      })
+    );
+  } catch (err) {
+    console.warn("cache pricing:", err.message);
+  }
+}
+
+function readPricingCache() {
+  try {
+    const raw = sessionStorage.getItem(PRICING_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.products) || data.channel !== currentChannel) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function restorePricingCache() {
+  const data = readPricingCache();
+  if (!data || data.products.length === 0) return false;
+  pricingProducts = data.products;
+  settings = data.settings && typeof data.settings === "object" ? data.settings : {};
+  renderPricing();
+  const when = data.savedAt ? new Date(data.savedAt).toLocaleString("ro-RO") : "";
+  setStatus(
+    `Cache: ${pricingProducts.length} produse` + (when ? ` (din ${when})` : ""),
+    "ok"
+  );
+  return true;
 }
 
 /* ---------- editare comision ---------- */
@@ -723,7 +792,7 @@ pricingTable.querySelector("thead tr.filter-row")?.addEventListener("input", (e)
 
 /* ---------- publicare pe canal ---------- */
 
-/* Butonul publica doar pret + stoc. Numele merge doar cu bifa "Include nume si descriere". */
+/* Push doar pret + stoc + PRP/min/max — fara nume/descriere. */
 const PUSH_PRICE_KEYS = new Set([
   "sale_price",
   "recommended_price",
@@ -739,21 +808,11 @@ async function pushToChannel() {
     setStatus("Încarcă întâi comparația.", "error");
     return;
   }
-  const includeContent = pushContentToggle?.checked === true;
   const ids = currentData.matched
-    .filter((m) =>
-      m.fields.some(
-        (f) => f.differs && (PUSH_PRICE_KEYS.has(f.key) || (includeContent && f.key === "name"))
-      )
-    )
+    .filter((m) => m.fields.some((f) => f.differs && PUSH_PRICE_KEYS.has(f.key)))
     .map((m) => m.external_id);
   if (ids.length === 0) {
-    setStatus(
-      includeContent
-        ? "Nimic de publicat — nicio diferență față de marketplace."
-        : "Nimic de publicat — nicio diferență de preț sau stoc (bifează „Include nume și descriere” pentru nume).",
-      "ok"
-    );
+    setStatus("Nimic de publicat — nicio diferență de preț sau stoc.", "ok");
     return;
   }
 
@@ -766,7 +825,10 @@ async function pushToChannel() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offers: ids.map((id) => ({ id })), includeContent }),
+        body: JSON.stringify({
+          offers: ids.map((id) => ({ id })),
+          includeContent: false,
+        }),
       }
     );
     const data = await res.json();
@@ -796,23 +858,20 @@ channelSelect.addEventListener("change", () => {
   } catch {
     /* ignore */
   }
-  loadDiff();
-  loadPricing();
-});
-btnReload.addEventListener("click", () => {
+  restorePricingCache();
+  restoreDiffCache();
   loadDiff();
   loadPricing();
 });
 btnPull.addEventListener("click", pullFromChannel);
 btnPush.addEventListener("click", pushToChannel);
 btnFetchCommission.addEventListener("click", fetchCommission);
-onlyDiffToggle.addEventListener("change", () => {
-  if (currentData) renderDiffRows(currentData);
-});
 
 columns.applyOrder();
 columns.buildMenu();
 columns.applyVisibility();
 
+restorePricingCache();
+restoreDiffCache();
 loadDiff();
 loadPricing();

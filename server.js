@@ -386,6 +386,10 @@ app.post("/api/products/sync-prices", async (req, res) => {
 
     const offers = [];
     for (const l of listings) {
+      const effectiveMin =
+        l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
+          ? Number(l.pret_minim_override)
+          : l.min_sale_price;
       offers.push(
         channel.buildPushPayload({
           id: l.external_id,
@@ -393,7 +397,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
           description: l.description,
           sale_price: l.sale_price,
           recommended_price: l.recommended_price,
-          min_sale_price: l.min_sale_price,
+          min_sale_price: effectiveMin,
           max_sale_price: l.max_sale_price,
           general_stock: l.general_stock,
           stock: l.stock_json ? JSON.parse(l.stock_json) : null,

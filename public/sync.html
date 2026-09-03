@@ -59,17 +59,12 @@
               <option value="trendyol">Trendyol</option>
             </select>
           </label>
-          <button type="button" id="btn-reload" class="btn">Reîncarcă comparația</button>
           <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în baza de date locală">
             Preia de la marketplace
           </button>
           <button type="button" id="btn-push" class="btn" title="Trimite pe canal prețurile și stocul produselor care diferă de ultima preluare">
             Publică prețurile pe canal
           </button>
-          <label class="field field-inline field-checkbox" title="Trimite și numele și descrierea — eMAG retrimite produsul în moderare">
-            <input type="checkbox" id="push-content" />
-            <span>Include nume și descriere</span>
-          </label>
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
             Preia comision eMAG
           </button>
@@ -85,10 +80,6 @@
             </button>
             <div id="col-menu" class="col-menu" hidden role="menu"></div>
           </div>
-          <label class="field field-inline field-checkbox">
-            <input type="checkbox" id="only-diff" />
-            <span>Doar diferențe</span>
-          </label>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
       </div>
