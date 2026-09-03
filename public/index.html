@@ -6,10 +6,18 @@
     <title>Produse</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="theme.js"></script>
+    <script src="logger.js"></script>
   </head>
   <body>
     <div class="page">
-      <button
+      <div class="top-actions">
+        <a href="/logs.html" class="top-action-btn" title="Logs" aria-label="Logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6M8 13h8M8 17h5" />
+          </svg>
+        </a>
+        <button
         type="button"
         id="btn-theme"
         class="theme-toggle"
@@ -24,12 +32,14 @@
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
         </svg>
         <span class="theme-toggle-label">Light</span>
-      </button>
+        </button>
+      </div>
       <header class="header">
         <nav class="site-nav" aria-label="Navigare">
           <a href="/" aria-current="page">Produse</a>
           <a href="/vanzari.html">Comenzi</a>
           <a href="/sync.html">Sincronizare</a>
+          <a href="/logs.html">Logs</a>
         </nav>
       </header>
 

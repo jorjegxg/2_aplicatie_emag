@@ -1,6 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 const path = require("path");
+const { log, truncate } = require("./logs-db");
 
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const ITEMS_PER_PAGE = 100;
@@ -9,6 +10,7 @@ const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
 
 function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
+  const startedAt = Date.now();
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const payload = body == null ? null : Buffer.from(String(body), "utf8");
@@ -30,15 +32,41 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
+          const ok = res.statusCode >= 200 && res.statusCode < 300;
+          log({
+            level: ok ? "debug" : "error",
+            source: "emag",
+            category: "http",
+            message: `${method} ${parsed.pathname} → HTTP ${res.statusCode}`,
+            status: res.statusCode,
+            durationMs: Date.now() - startedAt,
+            detail: {
+              url,
+              method,
+              requestHeaders: headers,
+              requestBody: body == null ? null : truncate(String(body), 3000),
+              responseBody: truncate(text, 4000),
+            },
+          });
           resolve({
             status: res.statusCode,
-            ok: res.statusCode >= 200 && res.statusCode < 300,
+            ok,
             text: async () => text,
           });
         });
       }
     );
-    req.on("error", reject);
+    req.on("error", (err) => {
+      log({
+        level: "error",
+        source: "emag",
+        category: "http",
+        message: `${method} ${parsed.pathname} — eroare retea: ${err.message}`,
+        durationMs: Date.now() - startedAt,
+        detail: { url, method, stack: err.stack },
+      });
+      reject(err);
+    });
     if (payload) req.write(payload);
     req.end();
   });
@@ -125,9 +153,26 @@ function logAuthAttempt(context, candidate, index, total) {
     `[auth:${context}] încerc ${index + 1}/${total} label=${candidate.label} ` +
       `user=${candidate.userHint} pass=${candidate.passHint}`
   );
+  log({
+    level: "debug",
+    source: "emag",
+    category: "auth",
+    message: `[${context}] incerc ${index + 1}/${total} label=${candidate.label}`,
+    detail: { context, label: candidate.label, userHint: candidate.userHint, passHint: candidate.passHint },
+  });
 }
 
 function logAuthResult(context, candidate, status, ok) {
+  log({
+    level: ok ? "info" : status === 401 || status === 403 ? "error" : "warn",
+    source: "emag",
+    category: "auth",
+    message: ok
+      ? `[${context}] SUCCES label=${candidate.label}`
+      : `[${context}] ${status === 401 || status === 403 ? "ESUAT" : "raspuns non-auth"} label=${candidate.label}`,
+    status,
+    detail: { context, label: candidate.label },
+  });
   if (ok) {
     console.log(
       `[auth:${context}] SUCCES label=${candidate.label} HTTP ${status} — salvat ca preferred`

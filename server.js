@@ -25,6 +25,13 @@ const {
   ensureSchema,
 } = require("./marketplace-db");
 const { getChannel, listChannels } = require("./channels");
+const {
+  log,
+  queryLogs,
+  getLogFacets,
+  clearLogs,
+  pruneLogs,
+} = require("./logs-db");
 const { ITEMS_PER_PAGE, loadCredentials, authCandidates, authHeader, logAuthAttempt, logAuthResult, savePreferredAuthLabel, emagOrderRead } = require("./emag-client");
 
 const PORT = process.env.PORT || 3000;
@@ -35,10 +42,51 @@ const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
 app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
+
+/** Categoria de log derivata din calea API, pentru filtrarea din /logs.html. */
+function categoryForPath(urlPath) {
+  const p = urlPath.split("?")[0];
+  if (p.startsWith("/api/sync/pull")) return "sync-pull";
+  if (p.startsWith("/api/sync/diff")) return "sync-diff";
+  if (p.startsWith("/api/products/sync-prices")) return "sync-prices";
+  if (p.startsWith("/api/products/fetch-commission")) return "commission";
+  if (p.startsWith("/api/products/export")) return "export";
+  if (p.includes("/history")) return "history";
+  if (p.startsWith("/api/catalog/listing")) return "listing-patch";
+  if (p.startsWith("/api/catalog/product")) return "product-patch";
+  if (p.startsWith("/api/orders")) return "orders";
+  if (p.startsWith("/api/settings")) return "settings";
+  return "http";
+}
+
+// Logheaza fiecare apel /api/*, mai putin rutele paginii de logs (altfel se auto-logheaza in bucla).
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/") || req.path.startsWith("/api/logs")) return next();
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    log({
+      level: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
+      source: "server",
+      category: categoryForPath(req.path),
+      message: `${req.method} ${req.originalUrl} → ${res.statusCode}`,
+      status: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      detail: {
+        method: req.method,
+        path: req.path,
+        query: req.query,
+        bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body) : [],
+      },
+    });
+  });
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // Creeaza/migreaza schema multi-canal la pornire, ca prima cerere sa fie rapida.
 ensureSchema();
+pruneLogs(14);
 
 function httpStatusFor(err) {
   const s = Number(err?.status);
@@ -46,8 +94,27 @@ function httpStatusFor(err) {
   return 502;
 }
 
+/** Log de eroare cu stack, pentru catch-urile care nu trec prin sendChannelError. */
+function logCaught(category, err, extra) {
+  log({
+    level: "error",
+    source: "server",
+    category,
+    message: err?.message || "Eroare necunoscuta",
+    detail: { stack: err?.stack, ...extra },
+  });
+}
+
 function sendChannelError(res, err, fallback) {
   const status = httpStatusFor(err);
+  log({
+    level: "error",
+    source: "server",
+    category: "channel-error",
+    message: err?.message || fallback,
+    status,
+    detail: { stack: err?.stack, messages: err?.messages, detail: err?.detail },
+  });
   return res.status(status).json({
     error: err?.message || fallback,
     messages: err?.messages || [],
@@ -167,6 +234,7 @@ app.get("/api/catalog", (req, res) => {
     });
   } catch (err) {
     console.error("[catalog]", err.message);
+    logCaught("catalog", err);
     return res.status(500).json({ error: err.message || "Eroare la citire catalog" });
   }
 });
@@ -187,6 +255,7 @@ app.get("/api/products", (req, res) => {
     });
   } catch (err) {
     console.error("[products]", err.message);
+    logCaught("products", err);
     return res.status(500).json({ error: err.message || "Eroare la citire produse" });
   }
 });
@@ -205,6 +274,7 @@ app.patch("/api/catalog/listing/:externalId", (req, res) => {
     return res.json({ ok: true, channel, listing: saved });
   } catch (err) {
     console.error("[listing:patch]", err.message);
+    logCaught("listing-patch", err);
     return res.status(400).json({ error: err.message || "Eroare la salvare listing" });
   }
 });
@@ -219,6 +289,7 @@ app.patch("/api/catalog/product/:productId", (req, res) => {
     return res.json({ ok: true, product: saved });
   } catch (err) {
     console.error("[product:patch]", err.message);
+    logCaught("product-patch", err);
     return res.status(400).json({ error: err.message || "Eroare la salvare produs" });
   }
 });
@@ -231,6 +302,7 @@ app.get("/api/sync/diff", (req, res) => {
     return res.json(getChannelDiff(channel));
   } catch (err) {
     console.error("[diff]", err.message);
+    logCaught("sync-diff", err);
     return res.status(500).json({ error: err.message || "Eroare la comparare" });
   }
 });
@@ -285,6 +357,7 @@ app.post("/api/sync/pull", async (req, res) => {
     });
   } catch (err) {
     console.error("[sync-pull]", err.message);
+    logCaught("sync-pull", err);
     return sendChannelError(res, err, "Eroare la preluare de la canal");
   }
 });
@@ -367,6 +440,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
     return res.json({ ok: true, channel: channelName, ...result });
   } catch (err) {
     console.error("[sync-prices]", err.message);
+    logCaught("sync-prices", err);
     return sendChannelError(res, err, "Eroare la sync prețuri");
   }
 });
@@ -426,6 +500,7 @@ app.post("/api/products/fetch-commission", async (req, res) => {
     });
   } catch (err) {
     console.error("[fetch-commission]", err.message);
+    logCaught("commission", err);
     return sendChannelError(res, err, "Eroare la preluare comision");
   }
 });
@@ -588,6 +663,7 @@ app.get("/api/products/:offerId/history", (req, res) => {
     });
   } catch (err) {
     console.error("[history] exception:", err.message);
+    logCaught("history", err);
     return res.status(500).json({ error: err.message || "Eroare istoric" });
   }
 });
@@ -633,6 +709,101 @@ app.post("/api/products/export", (req, res) => {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la generare Excel" });
   }
+});
+
+/* ---------------- logs (pagina de debug) ---------------- */
+
+app.get("/api/logs", (req, res) => {
+  try {
+    const levels = String(req.query.level || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return res.json(
+      queryLogs({
+        level: levels,
+        source: req.query.source || undefined,
+        category: req.query.category || undefined,
+        q: req.query.q || undefined,
+        from: req.query.from || undefined,
+        to: req.query.to || undefined,
+        limit: req.query.limit,
+        offset: req.query.offset,
+      })
+    );
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la citire loguri" });
+  }
+});
+
+app.get("/api/logs/facets", (req, res) => {
+  try {
+    return res.json(getLogFacets());
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la citire filtre" });
+  }
+});
+
+app.delete("/api/logs", (req, res) => {
+  try {
+    return res.json({ ok: true, deleted: clearLogs() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la stergere loguri" });
+  }
+});
+
+/** Primeste batch-uri de evenimente din browser (public/logger.js). */
+app.post("/api/logs/client", (req, res) => {
+  const entries = Array.isArray(req.body?.entries) ? req.body.entries.slice(0, 50) : [];
+  for (const entry of entries) {
+    log({
+      level: entry?.level,
+      source: "client",
+      category: entry?.category || "ui",
+      message: entry?.message || "",
+      durationMs: entry?.durationMs,
+      status: entry?.status,
+      detail: entry?.detail,
+      ts: typeof entry?.ts === "string" ? entry.ts : null,
+    });
+  }
+  return res.json({ ok: true, received: entries.length });
+});
+
+// Ultima plasa de siguranta: orice exceptie scapata din rute ajunge in log.
+app.use((err, req, res, next) => {
+  log({
+    level: "error",
+    source: "server",
+    category: "uncaught",
+    message: err?.message || "Eroare necunoscuta",
+    detail: { stack: err?.stack, path: req?.path, method: req?.method },
+  });
+  console.error("[uncaught]", err?.stack || err);
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: err?.message || "Eroare interna" });
+});
+
+process.on("uncaughtException", (err) => {
+  log({
+    level: "error",
+    source: "server",
+    category: "uncaught",
+    message: `uncaughtException: ${err?.message}`,
+    detail: { stack: err?.stack },
+  });
+  console.error("[uncaughtException]", err?.stack || err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  log({
+    level: "error",
+    source: "server",
+    category: "uncaught",
+    message: `unhandledRejection: ${reason?.message || reason}`,
+    detail: { stack: reason?.stack },
+  });
+  console.error("[unhandledRejection]", reason?.stack || reason);
 });
 
 app.listen(PORT, () => {

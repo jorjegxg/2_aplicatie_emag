@@ -307,6 +307,14 @@
             if (onSaved) onSaved(id, fields);
           } catch (err) {
             console.error(`[${label || "listing"}] salvare eșuată:`, err.message);
+            if (global.AppLogger) {
+              global.AppLogger.log({
+                level: "error",
+                category: "listing-patch",
+                message: `Salvare eșuată pentru ${id}: ${err.message}`,
+                detail: { offerId: id, fields, stack: err.stack },
+              });
+            }
             if (onError) onError(err);
           }
         }, 300)

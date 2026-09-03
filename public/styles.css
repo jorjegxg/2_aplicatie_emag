@@ -1503,11 +1503,47 @@ body.modal-open {
 }
 
 /* ---------- Comutator temă (light / dark) ---------- */
-.theme-toggle {
+/* Containerul fix din dreapta sus: iconita de logs + comutatorul de tema. */
+.top-actions {
   position: fixed;
   top: 0.6rem;
   right: 0.75rem;
   z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.top-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 2px 8px var(--shadow-2);
+  text-decoration: none;
+}
+
+.top-action-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.top-action-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.top-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1671,4 +1707,155 @@ td.col-pret-cumparare .input-pret-cumparare {
 td.col-pret-cumparare .input-pret-cumparare:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-color: var(--accent);
+}
+
+/* ---------- Pagina de loguri ---------- */
+.logs-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.logs-filters .field {
+  min-width: 8rem;
+}
+
+.logs-filters .field-search {
+  min-width: 16rem;
+  flex: 1 1 16rem;
+}
+
+.logs-meta {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.logs-table th,
+.logs-table td {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.logs-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.logs-table tbody tr.log-row {
+  cursor: pointer;
+}
+
+.logs-table tbody tr.log-row:hover {
+  background: var(--surface-alt);
+}
+
+.log-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.log-message {
+  word-break: break-word;
+}
+
+.log-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.log-level-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.log-level-badge--debug {
+  color: var(--muted);
+}
+
+.log-level-badge--info {
+  color: var(--accent);
+}
+
+.log-level-badge--warn {
+  color: #b45309;
+}
+
+.log-level-badge--error {
+  color: #dc2626;
+}
+
+[data-theme="dark"] .log-level-badge--warn {
+  color: #fbbf24;
+}
+
+[data-theme="dark"] .log-level-badge--error {
+  color: #f87171;
+}
+
+.log-detail td {
+  background: var(--surface-alt);
+}
+
+.log-detail pre {
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.logs-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.logs-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-bottom: 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.logs-filters select {
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--ink);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.logs-filters .field-search input {
+  width: 100%;
 }
