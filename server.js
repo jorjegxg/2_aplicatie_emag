@@ -83,7 +83,6 @@ function mapOrderProduct(product) {
     currency: product.currency || "RON",
     pret_cumparare: lookupCatalogPretCumparare(part_number, name),
     alte_costuri: costs?.alte_costuri ?? null,
-    pret_contabil: costs?.pret_contabil ?? null,
     procentaj_emag: costs?.procentaj_emag ?? null,
     commission_value: costs?.commission_value ?? null,
     commission_fetched_at: costs?.commission_fetched_at ?? null,
@@ -128,7 +127,6 @@ app.post("/api/settings", (req, res) => {
 
     const saved = saveSettings({
       procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
-      procentaj_pret_contabil: toNum(req.body?.procentaj_pret_contabil),
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
       mult_max: toNum(req.body?.mult_max),

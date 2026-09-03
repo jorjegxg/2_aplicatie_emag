@@ -145,7 +145,6 @@ function ensureSchema(database) {
       vat_id INTEGER,
       currency TEXT,
       alte_costuri REAL,
-      pret_contabil REAL,
       pret_minim_override REAL,
       procentaj_emag REAL,
       commission_value REAL,
@@ -215,7 +214,6 @@ function ensureSchema(database) {
     const ids = database
       .prepare(
         `SELECT offer_id FROM product_alte_costuri
-         UNION SELECT offer_id FROM product_pret_contabil
          UNION SELECT offer_id FROM product_pret_minim
          UNION SELECT offer_id FROM product_procentaj_emag`
       )
@@ -231,7 +229,6 @@ function ensureSchema(database) {
     const update = database.prepare(
       `UPDATE marketplace_listings SET
          alte_costuri = (SELECT alte_costuri FROM product_alte_costuri WHERE offer_id = @id),
-         pret_contabil = (SELECT pret_contabil FROM product_pret_contabil WHERE offer_id = @id),
          pret_minim_override = (SELECT pret_minim FROM product_pret_minim WHERE offer_id = @id),
          procentaj_emag = (SELECT procentaj_emag FROM product_procentaj_emag WHERE offer_id = @id),
          commission_value = (SELECT commission_value FROM product_procentaj_emag WHERE offer_id = @id),
@@ -258,6 +255,24 @@ function ensureSchema(database) {
     };
     rewrite("marketplace_listings", "description");
     rewrite("catalog_products", "descriere");
+  });
+
+  runMigration(database, "drop-pret-contabil", () => {
+    const hasCol = (table, col) =>
+      database
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .some((c) => c.name === col);
+    if (hasCol("marketplace_listings", "pret_contabil")) {
+      database.exec("ALTER TABLE marketplace_listings DROP COLUMN pret_contabil");
+    }
+    if (hasCol("settings", "pret_contabil")) {
+      database.exec("ALTER TABLE settings DROP COLUMN pret_contabil");
+    }
+    if (hasCol("settings", "procentaj_pret_contabil")) {
+      database.exec("ALTER TABLE settings DROP COLUMN procentaj_pret_contabil");
+    }
+    database.exec("DROP TABLE IF EXISTS product_pret_contabil");
   });
 }
 
@@ -495,7 +510,6 @@ function getCatalogRows(channel) {
     max_sale_price: r.max_sale_price ?? null,
     pret_cumparare: r.catalog_pret_cumparare ?? null,
     alte_costuri: r.alte_costuri ?? null,
-    pret_contabil: r.pret_contabil ?? null,
     pret_minim_override: r.pret_minim_override ?? null,
     procentaj_emag: r.procentaj_emag ?? null,
     commission_value: r.commission_value ?? null,
@@ -533,7 +547,6 @@ const LISTING_EDITABLE = {
   max_sale_price: toNumOrNull,
   general_stock: toNumOrNull,
   alte_costuri: toNumOrNull,
-  pret_contabil: toNumOrNull,
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
@@ -841,7 +854,6 @@ function getListingCosts(channel, externalId) {
   if (!row) return null;
   return {
     alte_costuri: row.alte_costuri ?? null,
-    pret_contabil: row.pret_contabil ?? null,
     procentaj_emag: row.procentaj_emag ?? null,
     commission_value: row.commission_value ?? null,
     commission_fetched_at: row.commission_fetched_at ?? null,

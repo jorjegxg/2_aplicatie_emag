@@ -4,7 +4,6 @@
  */
 (function (global) {
   const DEFAULT_ALTE_COSTURI = 0;
-  const DEFAULT_PRET_CONTABIL = 0;
   const DEFAULT_PROcentaj_EMAG = 25;
   const PCT_LEVEL_CLASSES = ["pct-1", "pct-2", "pct-3"];
 
@@ -115,12 +114,6 @@
     return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
   }
 
-  function parsePretContabil(raw) {
-    if (raw == null || raw === "") return DEFAULT_PRET_CONTABIL;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : DEFAULT_PRET_CONTABIL;
-  }
-
   function roundPrice(n) {
     return Math.round(n * 10000) / 10000;
   }
@@ -150,22 +143,12 @@
     return Math.round(buy * (pct / 100) * 100) / 100;
   }
 
-  function contabilFromProcentaj(procentaj, pretCumparare) {
-    const buy = Number(pretCumparare);
-    const pct = Number(procentaj);
-    if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(pct)) {
-      return DEFAULT_PRET_CONTABIL;
-    }
-    return Math.round(buy * (pct / 100) * 100) / 100;
-  }
-
   /* ---------- profit ---------- */
 
   function calcProfit(
     salePrice,
     pretCumparare,
     alteCosturi = DEFAULT_ALTE_COSTURI,
-    pretContabil = DEFAULT_PRET_CONTABIL,
     pctEmag
   ) {
     if (pctEmag == null || pctEmag === "") return null;
@@ -181,15 +164,13 @@
     const buyCost =
       pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
     const other = parseAlteCosturi(alteCosturi);
-    const contabil = parsePretContabil(pretContabil);
 
-    return afterEmag - buyCost - other - contabil;
+    return afterEmag - buyCost - other;
   }
 
   function calcPretMinimProfit(
     pretCumparare,
     alteCosturi = DEFAULT_ALTE_COSTURI,
-    pretContabil = DEFAULT_PRET_CONTABIL,
     pctEmag
   ) {
     if (pctEmag == null || pctEmag === "") return null;
@@ -199,8 +180,7 @@
     const buy = Number(pretCumparare);
     const buyCost =
       pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-    const costs =
-      buyCost + parseAlteCosturi(alteCosturi) + parsePretContabil(pretContabil);
+    const costs = buyCost + parseAlteCosturi(alteCosturi);
     const factor = 1 - pct / 100;
     if (factor <= 0) return null;
 
@@ -211,22 +191,10 @@
     salePrice,
     pretCumparare,
     alteCosturi = DEFAULT_ALTE_COSTURI,
-    pretContabil = DEFAULT_PRET_CONTABIL,
     pctEmag
   ) {
-    const profit = calcProfit(
-      salePrice,
-      pretCumparare,
-      alteCosturi,
-      pretContabil,
-      pctEmag
-    );
-    const minProfit = calcPretMinimProfit(
-      pretCumparare,
-      alteCosturi,
-      pretContabil,
-      pctEmag
-    );
+    const profit = calcProfit(salePrice, pretCumparare, alteCosturi, pctEmag);
+    const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi, pctEmag);
     if (profit == null || minProfit == null) return null;
     if (!Number.isFinite(profit) || !Number.isFinite(minProfit) || minProfit === 0) {
       return null;
@@ -238,7 +206,6 @@
     procentaj,
     pretCumparare,
     alteCosturi = DEFAULT_ALTE_COSTURI,
-    pretContabil = DEFAULT_PRET_CONTABIL,
     pctEmag
   ) {
     if (procentaj == null || procentaj === "" || pctEmag == null || pctEmag === "") {
@@ -253,19 +220,13 @@
     const factor = 1 - pctEmagVal / 100;
     if (factor <= 0) return null;
 
-    const minProfit = calcPretMinimProfit(
-      pretCumparare,
-      alteCosturi,
-      pretContabil,
-      pctEmagVal
-    );
+    const minProfit = calcPretMinimProfit(pretCumparare, alteCosturi, pctEmagVal);
     if (minProfit == null || !Number.isFinite(minProfit)) return null;
 
     const buy = Number(pretCumparare);
     const buyCost =
       pretCumparare == null || pretCumparare === "" || Number.isNaN(buy) ? 0 : buy;
-    const costs =
-      buyCost + parseAlteCosturi(alteCosturi) + parsePretContabil(pretContabil);
+    const costs = buyCost + parseAlteCosturi(alteCosturi);
 
     return roundPrice((costs + (pctTarget / 100) * minProfit) / factor);
   }
@@ -355,7 +316,6 @@
 
   global.Pricing = {
     DEFAULT_ALTE_COSTURI,
-    DEFAULT_PRET_CONTABIL,
     DEFAULT_PROcentaj_EMAG,
     PCT_LEVEL_CLASSES,
     escapeHtml,
@@ -370,12 +330,10 @@
     parseJsonAttr,
     parseSortNumber,
     parseAlteCosturi,
-    parsePretContabil,
     roundPrice,
     pricesEqual,
     stockSumFromArr,
     alteFromProcentaj,
-    contabilFromProcentaj,
     calcProfit,
     calcPretMinimProfit,
     calcProcentajProfit,

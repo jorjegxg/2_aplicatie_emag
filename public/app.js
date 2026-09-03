@@ -1,22 +1,18 @@
 /* Calculele si formatarile comune stau in pricing.js (incarcat inaintea acestui fisier). */
 const {
   DEFAULT_ALTE_COSTURI,
-  DEFAULT_PRET_CONTABIL,
   escapeHtml,
   formatPrice,
   relativeTimeRo,
   stalenessClass,
-  formatStatus,
   numOrNull,
   parseJsonAttr,
   parseSortNumber,
   parseAlteCosturi,
-  parsePretContabil,
   roundPrice,
   pricesEqual,
   stockSumFromArr,
   alteFromProcentaj,
-  contabilFromProcentaj,
   createPersister,
 } = window.Pricing;
 
@@ -34,12 +30,10 @@ const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const pageEl = document.querySelector(".page");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
-const inputProcentajContabil = document.getElementById("procentaj-pret-contabil");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
 const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
-const inputTotalContabilStoc = document.getElementById("total-contabil-stoc");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
@@ -205,10 +199,6 @@ function fillSettings(settings) {
     settings.procentaj_alte_costuri != null
       ? settings.procentaj_alte_costuri
       : "";
-  inputProcentajContabil.value =
-    settings.procentaj_pret_contabil != null
-      ? settings.procentaj_pret_contabil
-      : "";
   inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
   inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
   inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
@@ -218,7 +208,6 @@ function fillSettings(settings) {
 function readSettingsFromForm() {
   return {
     procentaj_alte_costuri: inputProcentajAlte.value,
-    procentaj_pret_contabil: inputProcentajContabil.value,
     mult_prp: inputMultPrp.value,
     mult_min: inputMultMin.value,
     mult_max: inputMultMax.value,
@@ -320,13 +309,6 @@ function getGlobalProcentajAlte() {
   return Number.isFinite(n) ? n : null;
 }
 
-function getGlobalProcentajContabil() {
-  const raw = inputProcentajContabil?.value;
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
 function getRowAlteCosturi(tr) {
   if (hasAlteOverride(tr)) {
     return parseAlteCosturi(tr.dataset.alteOverride);
@@ -336,23 +318,8 @@ function getRowAlteCosturi(tr) {
   return alteFromProcentaj(pct, tr?.dataset?.pretCumparare ?? "");
 }
 
-function getRowPretContabil(tr) {
-  if (hasContabilOverride(tr)) {
-    return parsePretContabil(tr.dataset.contabilOverride);
-  }
-  const pct = getGlobalProcentajContabil();
-  if (pct == null) return DEFAULT_PRET_CONTABIL;
-  return contabilFromProcentaj(pct, tr?.dataset?.pretCumparare ?? "");
-}
-
 function hasAlteOverride(tr) {
   return tr?.dataset?.alteOverride != null && tr.dataset.alteOverride !== "";
-}
-
-function hasContabilOverride(tr) {
-  return (
-    tr?.dataset?.contabilOverride != null && tr.dataset.contabilOverride !== ""
-  );
 }
 
 function syncAlteCosturiCell(tr, alteCosturi) {
@@ -370,25 +337,6 @@ function syncAlteCosturiCell(tr, alteCosturi) {
   if (resetBtn) resetBtn.hidden = !overridden;
   alteCell.classList.toggle("is-alte-override", overridden);
 }
-
-function syncPretContabilCell(tr, pretContabil) {
-  const cell = tr.querySelector("td[data-col='pret_contabil']");
-  if (!cell) return;
-  const input = cell.querySelector("input.input-pret-contabil");
-  const resetBtn = cell.querySelector("button.btn-reset-contabil");
-  const overridden = hasContabilOverride(tr);
-  if (input && !overridden) {
-    input.value =
-      pretContabil == null || !Number.isFinite(Number(pretContabil))
-        ? ""
-        : String(pretContabil);
-  }
-  if (resetBtn) resetBtn.hidden = !overridden;
-  cell.classList.toggle("is-contabil-override", overridden);
-}
-
-
-
 
 
 
@@ -501,23 +449,8 @@ function updateTotalAlteStoc() {
   inputTotalAlteStoc.value = total.toFixed(2);
 }
 
-function updateTotalContabilStoc() {
-  if (!inputTotalContabilStoc) return;
-  const rows = tbody.querySelectorAll("tr[data-offer-id]");
-  if (!rows.length) {
-    inputTotalContabilStoc.value = "—";
-    return;
-  }
-  let total = 0;
-  rows.forEach((tr) => {
-    total += getRowPretContabil(tr) * getRowStock(tr);
-  });
-  inputTotalContabilStoc.value = total.toFixed(2);
-}
-
 function updateToolbarTotals() {
   updateTotalAlteStoc();
-  updateTotalContabilStoc();
 }
 
 /** PRP sub pretul de vanzare = configurare gresita; evidentiez celula. */
@@ -543,7 +476,6 @@ function updateDirtyStatus() {
 function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const currency = tr.dataset.currency || "RON";
   const alteCosturi = getRowAlteCosturi(tr);
-  const pretContabil = getRowPretContabil(tr);
   const derived = derivePrices(salePrice);
 
   const prpCell = tr.querySelector("td[data-col='prp']");
@@ -569,7 +501,6 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const nameCell = tr.querySelector("td[data-col='name']");
   const descriptionCell = tr.querySelector("td[data-col='description']");
   syncAlteCosturiCell(tr, alteCosturi);
-  syncPretContabilCell(tr, pretContabil);
   const original = tr.dataset.originalSale ?? "";
   const priceDirty =
     markDirty &&
@@ -622,11 +553,12 @@ function updateDerivedCells() {
 }
 
 
-function eanPnk(product) {
-  const parts = [];
-  if (product.ean) parts.push(product.ean);
-  if (product.part_number_key) parts.push(product.part_number_key);
-  return parts.length ? escapeHtml(parts.join(" · ")) : "—";
+function eanCell(product) {
+  return product.ean ? escapeHtml(product.ean) : "—";
+}
+
+function pnkCell(product) {
+  return product.part_number_key ? escapeHtml(product.part_number_key) : "—";
 }
 
 
@@ -648,15 +580,6 @@ function rowHtml(product, index) {
     : alteFromProcentaj(getGlobalProcentajAlte() ?? "", pretCumparare);
   const alteInputVal =
     alte == null || !Number.isFinite(Number(alte)) ? "" : Number(alte);
-  const hasContabilOverrideFlag =
-    product.pret_contabil != null && Number.isFinite(Number(product.pret_contabil));
-  const contabil = hasContabilOverrideFlag
-    ? Number(product.pret_contabil)
-    : contabilFromProcentaj(getGlobalProcentajContabil() ?? "", pretCumparare);
-  const contabilInputVal =
-    contabil == null || !Number.isFinite(Number(contabil))
-      ? ""
-      : Number(contabil);
   const hasMinOverrideFlag =
     product.pret_minim_override != null &&
     Number.isFinite(Number(product.pret_minim_override));
@@ -692,16 +615,15 @@ function rowHtml(product, index) {
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-pret-cumparare")}><input type="number" class="input-pret-cumparare" min="0" step="0.01" value="${escapeHtml(pretCumparare)}" /></td>`,
     alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
-    pret_contabil: `<td data-col="pret_contabil"${cellClass("pret_contabil", hasContabilOverrideFlag ? "col-pret-contabil is-contabil-override" : "col-pret-contabil")}><div class="pret-contabil-wrap"><input type="number" class="input-pret-contabil" min="0" step="0.01" value="${escapeHtml(contabilInputVal)}" /><button type="button" class="btn-reset-contabil"${hasContabilOverrideFlag ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
     stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" /></td>`,
-    status: `<td data-col="status"${cellClass("status")}>${formatStatus(product.status)}</td>`,
-    ean_pnk: `<td data-col="ean_pnk"${cellClass("ean_pnk")}>${eanPnk(product)}</td>`,
+    ean: `<td data-col="ean"${cellClass("ean")}>${eanCell(product)}</td>`,
+    pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-status="${escapeHtml(product.status ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasContabilOverrideFlag ? ` data-contabil-override="${escapeHtml(contabilInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columnOrder.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -711,15 +633,12 @@ function getCellSortValue(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return null;
 
-  if (col === "pret_emag" || col === "alte_costuri" || col === "pret_contabil" || col === "pret_minim") {
+  if (col === "pret_emag" || col === "alte_costuri" || col === "pret_minim") {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
   if (col === "prp" || col === "pret_maxim") {
     return parseSortNumber(td.dataset.value);
-  }
-  if (col === "status") {
-    return parseSortNumber(tr.dataset.status);
   }
   if (col === "stoc") {
     return getRowStock(tr);
@@ -782,7 +701,6 @@ function getCellFilterText(tr, col) {
   if (
     col === "pret_emag" ||
     col === "alte_costuri" ||
-    col === "pret_contabil" ||
     col === "pret_minim" ||
     col === "pret_cumparare" ||
     col === "stoc"
@@ -844,7 +762,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="17">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="16">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -889,12 +807,6 @@ function applyCostOverrideToProduct(product, override) {
         ? null
         : Number(override.alte_costuri);
   }
-  if ("pret_contabil" in override) {
-    next.pret_contabil =
-      override.pret_contabil == null || !Number.isFinite(Number(override.pret_contabil))
-        ? null
-        : Number(override.pret_contabil);
-  }
   return next;
 }
 
@@ -906,7 +818,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="17">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="16">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
     updateToolbarTotals();
     return;
@@ -982,7 +894,7 @@ async function loadProducts() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="17">${escapeHtml(
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="16">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   } finally {
@@ -1035,23 +947,6 @@ tbody.addEventListener("input", (e) => {
     schedulePersistAlteCosturi(
       tr.dataset.offerId,
       alteInput.value === "" ? 0 : alteInput.value
-    );
-    return;
-  }
-
-  const contabilInput = e.target.closest("input.input-pret-contabil");
-  if (contabilInput) {
-    const tr = contabilInput.closest("tr[data-offer-id]");
-    if (!tr) return;
-    tr.dataset.contabilOverride =
-      contabilInput.value === "" ? "0" : contabilInput.value;
-    syncPretContabilCell(tr, getRowPretContabil(tr));
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
-    schedulePersistPretContabil(
-      tr.dataset.offerId,
-      contabilInput.value === "" ? 0 : contabilInput.value
     );
     return;
   }
@@ -1137,25 +1032,6 @@ tbody.addEventListener("click", (e) => {
     return;
   }
 
-  const resetContabilBtn = e.target.closest("button.btn-reset-contabil");
-  if (resetContabilBtn) {
-    const tr = resetContabilBtn.closest("tr[data-offer-id]");
-    if (!tr) return;
-    delete tr.dataset.contabilOverride;
-    const linked = getRowPretContabil(tr);
-    const contabilInput = tr.querySelector("input.input-pret-contabil");
-    if (contabilInput) {
-      contabilInput.value =
-        linked == null || !Number.isFinite(Number(linked)) ? "" : String(linked);
-    }
-    syncPretContabilCell(tr, linked);
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
-    schedulePersistPretContabil(tr.dataset.offerId, null);
-    return;
-  }
-
   const resetMinBtn = e.target.closest("button.btn-reset-min");
   if (!resetMinBtn) return;
   const tr = resetMinBtn.closest("tr[data-offer-id]");
@@ -1194,10 +1070,6 @@ function schedulePersistAlteCosturi(offerId, value) {
 
 function schedulePersistPretCumparare(offerId, value) {
   schedulePersistListing(offerId, { pret_cumparare: numOrNull(value) }, "pret-cumparare");
-}
-
-function schedulePersistPretContabil(offerId, value) {
-  schedulePersistListing(offerId, { pret_contabil: numOrNull(value) }, "pret-contabil");
 }
 
 function schedulePersistPretMinim(offerId, value) {
@@ -1251,7 +1123,6 @@ const EXPORT_NUMERIC_COLS = new Set([
   "id_familie",
   "pret_cumparare",
   "alte_costuri",
-  "pret_contabil",
   "pret_emag",
   "prp",
   "pret_minim",
@@ -1410,7 +1281,6 @@ function onSettingsInput() {
 }
 
 inputProcentajAlte.addEventListener("input", onSettingsInput);
-inputProcentajContabil.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);
 inputMultMin.addEventListener("input", onSettingsInput);
 inputMultMax.addEventListener("input", onSettingsInput);

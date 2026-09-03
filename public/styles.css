@@ -698,55 +698,6 @@ td.col-alte-costuri.is-alte-override .input-alte-costuri {
   border-color: var(--border-orange);
 }
 
-td.col-pret-contabil .pret-contabil-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-td.col-pret-contabil .input-pret-contabil {
-  width: 5.5rem;
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-}
-
-td.col-pret-contabil .input-pret-contabil:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  border-color: var(--accent);
-}
-
-td.col-pret-contabil .btn-reset-contabil {
-  flex: 0 0 auto;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-td.col-pret-contabil .btn-reset-contabil:hover {
-  background: var(--tint-red);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-td.col-pret-contabil.is-contabil-override {
-  background: var(--tint-orange);
-}
-
-td.col-pret-contabil.is-contabil-override .input-pret-contabil {
-  border-color: var(--border-orange);
-}
-
 td.col-pret-minim .pret-minim-wrap {
   display: flex;
   align-items: center;

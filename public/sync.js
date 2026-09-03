@@ -271,7 +271,6 @@ const {
   procentajLevelClass,
   parseSortNumber,
   alteFromProcentaj,
-  contabilFromProcentaj,
   calcProfit,
   calcPretMinimProfit,
   calcProcentajProfit,
@@ -315,11 +314,7 @@ function rowCosts(product) {
     product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri))
       ? Number(product.alte_costuri)
       : alteFromProcentaj(globalPct("procentaj_alte_costuri") ?? "", pretCumparare);
-  const contabil =
-    product.pret_contabil != null && Number.isFinite(Number(product.pret_contabil))
-      ? Number(product.pret_contabil)
-      : contabilFromProcentaj(globalPct("procentaj_pret_contabil") ?? "", pretCumparare);
-  return { pretCumparare, alte, contabil };
+  return { pretCumparare, alte };
 }
 
 function rowPctEmag(product) {
@@ -331,7 +326,7 @@ function rowPctEmag(product) {
 
 function pricingRowHtml(product, index) {
   const currency = product.currency || "RON";
-  const { pretCumparare, alte, contabil } = rowCosts(product);
+  const { pretCumparare, alte } = rowCosts(product);
   const pct = rowPctEmag(product);
   const commissionValue =
     product.commission_value != null && Number.isFinite(Number(product.commission_value))
@@ -342,13 +337,12 @@ function pricingRowHtml(product, index) {
   const tooltip = escapeHtml(procentajEmagTooltip(commissionValue, fetchedAt));
   const hasOverride = !isFetched && Number(pct) !== DEFAULT_PROcentaj_EMAG;
 
-  const minProfit = calcPretMinimProfit(pretCumparare, alte, contabil, pct);
-  const profit = calcProfit(product.sale_price, pretCumparare, alte, contabil, pct);
+  const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
+  const profit = calcProfit(product.sale_price, pretCumparare, alte, pct);
   const procentaj = calcProcentajProfit(
     product.sale_price,
     pretCumparare,
     alte,
-    contabil,
     pct
   );
   const saleNum = Number(product.sale_price);
@@ -408,15 +402,14 @@ function renderPricing() {
 /** Recalculeaza pe loc marja unui rand dupa ce s-a schimbat comisionul. */
 function refreshPricingRow(tr, product) {
   const currency = product.currency || "RON";
-  const { pretCumparare, alte, contabil } = rowCosts(product);
+  const { pretCumparare, alte } = rowCosts(product);
   const pct = rowPctEmag(product);
-  const minProfit = calcPretMinimProfit(pretCumparare, alte, contabil, pct);
-  const profit = calcProfit(product.sale_price, pretCumparare, alte, contabil, pct);
+  const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
+  const profit = calcProfit(product.sale_price, pretCumparare, alte, pct);
   const procentaj = calcProcentajProfit(
     product.sale_price,
     pretCumparare,
     alte,
-    contabil,
     pct
   );
   const saleNum = Number(product.sale_price);

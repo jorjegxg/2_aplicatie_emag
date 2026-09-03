@@ -14,7 +14,6 @@ function getDb() {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       pret_transport REAL,
-      pret_contabil REAL,
       procentaj_emag REAL,
       numar_produse REAL,
       mult_prp REAL,
@@ -31,33 +30,26 @@ function getDb() {
     "mult_max",
     "alte_costuri",
     "procentaj_alte_costuri",
-    "procentaj_pret_contabil",
   ]) {
     if (!colNames.has(name)) {
       db.exec(`ALTER TABLE settings ADD COLUMN ${name} REAL`);
     }
   }
   db.exec(`
-    INSERT OR IGNORE INTO settings (id, pret_transport, pret_contabil, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max, alte_costuri)
-    VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    INSERT OR IGNORE INTO settings (id, pret_transport, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max, alte_costuri)
+    VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   `);
   db.exec(`
     UPDATE settings
-    SET alte_costuri = COALESCE(pret_transport, 0) + COALESCE(pret_contabil, 0)
+    SET alte_costuri = COALESCE(pret_transport, 0)
     WHERE id = 1
       AND alte_costuri IS NULL
-      AND (pret_transport IS NOT NULL OR pret_contabil IS NOT NULL);
+      AND pret_transport IS NOT NULL;
   `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS product_alte_costuri (
       offer_id INTEGER PRIMARY KEY,
       alte_costuri REAL NOT NULL
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS product_pret_contabil (
-      offer_id INTEGER PRIMARY KEY,
-      pret_contabil REAL NOT NULL
     );
   `);
   db.exec(`
@@ -161,7 +153,7 @@ function lookupPretCumparare(partNumber, name) {
 function getSettings() {
   const row = getDb()
     .prepare(
-      `SELECT procentaj_emag, procentaj_alte_costuri, procentaj_pret_contabil,
+      `SELECT procentaj_emag, procentaj_alte_costuri,
               mult_prp, mult_min, mult_max
        FROM settings WHERE id = 1`
     )
@@ -169,7 +161,6 @@ function getSettings() {
   return {
     procentaj_emag: row?.procentaj_emag ?? null,
     procentaj_alte_costuri: row?.procentaj_alte_costuri ?? null,
-    procentaj_pret_contabil: row?.procentaj_pret_contabil ?? null,
     mult_prp: row?.mult_prp ?? null,
     mult_min: row?.mult_min ?? null,
     mult_max: row?.mult_max ?? null,
@@ -178,7 +169,6 @@ function getSettings() {
 
 function saveSettings({
   procentaj_alte_costuri,
-  procentaj_pret_contabil,
   mult_prp,
   mult_min,
   mult_max,
@@ -187,7 +177,6 @@ function saveSettings({
     .prepare(
       `UPDATE settings
        SET procentaj_alte_costuri = @procentaj_alte_costuri,
-           procentaj_pret_contabil = @procentaj_pret_contabil,
            mult_prp = @mult_prp,
            mult_min = @mult_min,
            mult_max = @mult_max
@@ -195,7 +184,6 @@ function saveSettings({
     )
     .run({
       procentaj_alte_costuri,
-      procentaj_pret_contabil,
       mult_prp,
       mult_min,
       mult_max,
@@ -279,55 +267,6 @@ function clearAlteCosturi(offerId) {
   return null;
 }
 
-function lookupPretContabil(offerId) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) return null;
-  try {
-    const row = getDb()
-      .prepare(
-        "SELECT pret_contabil FROM product_pret_contabil WHERE offer_id = ? LIMIT 1"
-      )
-      .get(id);
-    if (row == null || row.pret_contabil == null) return null;
-    const n = Number(row.pret_contabil);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
-}
-
-function lookupPretContabilBulk(offerIds) {
-  const ids = [
-    ...new Set(
-      (Array.isArray(offerIds) ? offerIds : [])
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id))
-    ),
-  ];
-  if (ids.length === 0) return {};
-
-  try {
-    const placeholders = ids.map(() => "?").join(", ");
-    const rows = getDb()
-      .prepare(
-        `SELECT offer_id, pret_contabil
-         FROM product_pret_contabil WHERE offer_id IN (${placeholders})`
-      )
-      .all(...ids);
-
-    const out = {};
-    for (const row of rows) {
-      if (row.pret_contabil == null) continue;
-      const n = Number(row.pret_contabil);
-      if (!Number.isFinite(n)) continue;
-      out[row.offer_id] = n;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
 function lookupCostOverridesBulk(offerIds) {
   const ids = [
     ...new Set(
@@ -339,42 +278,13 @@ function lookupCostOverridesBulk(offerIds) {
   if (ids.length === 0) return {};
 
   const alte = lookupAlteCosturiBulk(ids);
-  const contabil = lookupPretContabilBulk(ids);
   const out = {};
   for (const id of ids) {
     out[id] = {
       alte_costuri: alte[id] ?? null,
-      pret_contabil: contabil[id] ?? null,
     };
   }
   return out;
-}
-
-function savePretContabil(offerId, value) {
-  const id = Number(offerId);
-  const n = Number(value);
-  if (!Number.isFinite(id) || !Number.isFinite(n)) {
-    throw new Error("id și pret_contabil trebuie să fie numere");
-  }
-  getDb()
-    .prepare(
-      `INSERT INTO product_pret_contabil (offer_id, pret_contabil)
-       VALUES (@offer_id, @pret_contabil)
-       ON CONFLICT(offer_id) DO UPDATE SET pret_contabil = excluded.pret_contabil`
-    )
-    .run({ offer_id: id, pret_contabil: n });
-  return n;
-}
-
-function clearPretContabil(offerId) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) {
-    throw new Error("id invalid");
-  }
-  getDb()
-    .prepare("DELETE FROM product_pret_contabil WHERE offer_id = ?")
-    .run(id);
-  return null;
 }
 
 function lookupPretMinim(offerId) {
@@ -704,11 +614,7 @@ module.exports = {
   lookupAlteCosturiBulk,
   saveAlteCosturi,
   clearAlteCosturi,
-  lookupPretContabil,
-  lookupPretContabilBulk,
   lookupCostOverridesBulk,
-  savePretContabil,
-  clearPretContabil,
   lookupPretMinim,
   savePretMinim,
   clearPretMinim,
