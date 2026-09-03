@@ -6,6 +6,7 @@
  * marketplace_snapshots — ce a raportat canalul la ultimul pull (ce e acum pe marketplace)
  */
 const { getDb, getLastPriceChangeBulk } = require("./db");
+const { htmlToText, looksLikeHtml } = require("./description-format");
 
 const CHANNELS = ["emag", "trendyol"];
 
@@ -52,6 +53,13 @@ function toNumOrNull(v) {
 function toTextOrNull(v) {
   if (v == null) return null;
   const s = String(v);
+  return s === "" ? null : s;
+}
+
+// Descrierea se pastreaza ca text curat; daca ajunge HTML (lipit in UI) il curatam la scriere.
+function toPlainTextOrNull(v) {
+  if (v == null) return null;
+  const s = looksLikeHtml(v) ? htmlToText(v) : String(v);
   return s === "" ? null : s;
 }
 
@@ -235,6 +243,21 @@ function ensureSchema(database) {
       insert.run(id, now, now);
       update.run({ id: Number(id), ext: id, now });
     }
+  });
+
+  runMigration(database, "description-plain-text", () => {
+    const rewrite = (table, column) => {
+      const rows = database
+        .prepare(`SELECT id, ${column} AS value FROM ${table} WHERE ${column} IS NOT NULL AND ${column} != ''`)
+        .all();
+      const update = database.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
+      for (const row of rows) {
+        if (!looksLikeHtml(row.value)) continue;
+        update.run(htmlToText(row.value) || null, row.id);
+      }
+    };
+    rewrite("marketplace_listings", "description");
+    rewrite("catalog_products", "descriere");
   });
 }
 
@@ -503,7 +526,7 @@ function getCatalogRows(channel) {
 
 const LISTING_EDITABLE = {
   name: toTextOrNull,
-  description: toTextOrNull,
+  description: toPlainTextOrNull,
   sale_price: toNumOrNull,
   recommended_price: toNumOrNull,
   min_sale_price: toNumOrNull,
@@ -625,7 +648,7 @@ function getListings(channel, externalIds) {
 const PRODUCT_EDITABLE = {
   cod_produs: toTextOrNull,
   nume: toTextOrNull,
-  descriere: toTextOrNull,
+  descriere: toPlainTextOrNull,
   brand: toTextOrNull,
   ean: toTextOrNull,
   pret_cumparare: toNumOrNull,

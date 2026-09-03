@@ -13,6 +13,7 @@ const {
   logAuthAttempt,
   logAuthResult,
 } = require("../emag-client");
+const { htmlToText, textToHtml } = require("../description-format");
 
 const EMAG_API_V1 = "https://marketplace-api.emag.ro/api/v1";
 
@@ -62,7 +63,7 @@ function mapOffer(offer) {
   return {
     id: offer.id,
     name: offer.name || "",
-    description: offer.description || "",
+    description: htmlToText(offer.description),
     brand: offer.brand || offer.brand_name || "",
     part_number: offer.part_number || "",
     part_number_key: offer.part_number_key || "",
@@ -361,7 +362,10 @@ function buildPushPayload(listing) {
   };
   const name = typeof listing?.name === "string" ? listing.name.trim() : "";
   if (name) payload.name = name;
-  if (listing?.description != null) payload.description = listing.description;
+  if (listing?.description != null) {
+    const description = textToHtml(listing.description);
+    if (description) payload.description = description;
+  }
   if (recommended_price != null) payload.recommended_price = recommended_price;
   if (min_sale_price != null) payload.min_sale_price = min_sale_price;
   if (max_sale_price != null) payload.max_sale_price = max_sale_price;
