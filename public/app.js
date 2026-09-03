@@ -1163,7 +1163,7 @@ function rowHtml(product, index) {
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
-    pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare")}>${formatPrice(product.pret_cumparare, "RON")}</td>`,
+    pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-pret-cumparare")}><input type="number" class="input-pret-cumparare" min="0" step="0.01" value="${escapeHtml(pretCumparare)}" /></td>`,
     alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     pret_contabil: `<td data-col="pret_contabil"${cellClass("pret_contabil", hasContabilOverrideFlag ? "col-pret-contabil is-contabil-override" : "col-pret-contabil")}><div class="pret-contabil-wrap"><input type="number" class="input-pret-contabil" min="0" step="0.01" value="${escapeHtml(contabilInputVal)}" /><button type="button" class="btn-reset-contabil"${hasContabilOverrideFlag ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     procentaj_emag: isEmagFetched
@@ -1237,10 +1237,12 @@ function getCellSortValue(tr, col) {
     const description = getRowDescription(tr);
     return description ? description.toLowerCase() : null;
   }
+  if (col === "pret_cumparare") {
+    return parseSortNumber(td.querySelector("input")?.value ?? "");
+  }
   if (
     col === "index" ||
     col === "id" ||
-    col === "pret_cumparare" ||
     col === "pret_minim_profit"
   ) {
     return parseSortNumber(td.textContent);
@@ -1292,6 +1294,7 @@ function getCellFilterText(tr, col) {
     col === "alte_costuri" ||
     col === "pret_contabil" ||
     col === "pret_minim" ||
+    col === "pret_cumparare" ||
     col === "stoc"
   ) {
     return String(td.querySelector("input")?.value ?? "").trim();
@@ -1771,6 +1774,34 @@ async function syncPrices() {
   }
 }
 
+/** Pretul de cumparare se editeaza doar dupa confirmare explicita. */
+tbody.addEventListener("change", (e) => {
+  const input = e.target.closest("input.input-pret-cumparare");
+  if (!input) return;
+  const tr = input.closest("tr[data-offer-id]");
+  if (!tr) return;
+
+  const prev = tr.dataset.pretCumparare ?? "";
+  const next = input.value;
+  if (String(prev) === String(next)) return;
+
+  const ok = window.confirm(
+    "Ești sigur că vrei să schimbi prețul de cumpărare?"
+  );
+  if (!ok) {
+    input.value = prev;
+    return;
+  }
+
+  tr.dataset.pretCumparare = next;
+  const profitCell = tr.querySelector("td.col-profit");
+  if (profitCell) profitCell.dataset.pretCumparare = next;
+  const saleInput = tr.querySelector("input.input-sale-price");
+  applyRowPrices(tr, saleInput?.value ?? "");
+  updateToolbarTotals();
+  schedulePersistPretCumparare(tr.dataset.offerId, next);
+});
+
 tbody.addEventListener("input", (e) => {
   const emagPctInput = e.target.closest("input.input-procentaj-emag");
   if (emagPctInput) {
@@ -2043,6 +2074,10 @@ const numOrNull = (v) =>
 
 function schedulePersistAlteCosturi(offerId, value) {
   schedulePersistListing(offerId, { alte_costuri: numOrNull(value) }, "alte-costuri");
+}
+
+function schedulePersistPretCumparare(offerId, value) {
+  schedulePersistListing(offerId, { pret_cumparare: numOrNull(value) }, "pret-cumparare");
 }
 
 function schedulePersistPretContabil(offerId, value) {

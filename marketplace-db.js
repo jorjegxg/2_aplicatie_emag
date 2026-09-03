@@ -519,6 +519,40 @@ const LISTING_EDITABLE = {
   vat_id: toNumOrNull,
 };
 
+/** Scrie pretul de cumparare pe produsul de catalog legat de listing (il creeaza daca lipseste). */
+function setListingPretCumparare(channel, externalId, value) {
+  const database = db();
+  const listing = getListing(channel, externalId);
+  if (!listing) throw new Error("Listing inexistent");
+
+  const price = toNumOrNull(value);
+  const now = new Date().toISOString();
+  let productId = listing.product_id;
+
+  if (productId == null) {
+    productId = findCatalogProductId(listing);
+    if (productId == null) {
+      const cod = toTextOrNull(listing.part_number);
+      const nume = toTextOrNull(listing.name) || cod;
+      const info = database
+        .prepare(
+          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .run(cod, nume, price, now, now);
+      productId = Number(info.lastInsertRowid);
+    }
+    database
+      .prepare("UPDATE marketplace_listings SET product_id = ?, updated_at = ? WHERE id = ?")
+      .run(productId, now, listing.id);
+  }
+
+  database
+    .prepare("UPDATE catalog_products SET pret_cumparare = ?, updated_at = ? WHERE id = ?")
+    .run(price, now, productId);
+  return productId;
+}
+
 /** Salveaza un subset de campuri pe un listing. `stock` (array) actualizeaza si general_stock. */
 function updateListing(channel, externalId, fields) {
   const database = db();
@@ -533,6 +567,10 @@ function updateListing(channel, externalId, fields) {
        VALUES (?, ?, ?, ?)`
     )
     .run(ch, ext, now, now);
+
+  if (Object.prototype.hasOwnProperty.call(fields, "pret_cumparare")) {
+    setListingPretCumparare(ch, ext, fields.pret_cumparare);
+  }
 
   const payload = {};
   for (const [key, coerce] of Object.entries(LISTING_EDITABLE)) {

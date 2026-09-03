@@ -1693,3 +1693,18 @@ body.modal-open {
   flex: 0 0 auto;
   max-height: 60vh;
 }
+
+td.col-pret-cumparare .input-pret-cumparare {
+  width: 5.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+td.col-pret-cumparare .input-pret-cumparare:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
