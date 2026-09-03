@@ -3,6 +3,8 @@ const btnMore = document.getElementById("btn-more");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const btnSync = document.getElementById("btn-sync");
+const btnPull = document.getElementById("btn-pull");
+const channelSelect = document.getElementById("channel-select");
 const btnColumns = document.getElementById("btn-columns");
 const btnExport = document.getElementById("btn-export");
 const btnExportMenu = document.getElementById("btn-export-menu");
@@ -26,7 +28,7 @@ const inputTotalProfitStoc = document.getElementById("total-profit-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
-const PRODUCTS_CACHE_KEY = "emag-products-cache-v2";
+const CHANNEL_KEY = "marketplace-channel";
 const DEFAULT_ALTE_COSTURI = 0;
 const DEFAULT_PRET_CONTABIL = 0;
 const DEFAULT_PROcentaj_EMAG = 25;
@@ -58,6 +60,9 @@ let syncing = false;
 let fetchingCommission = false;
 let exporting = false;
 let hiddenCols = loadHiddenCols();
+let currentChannel = localStorage.getItem(CHANNEL_KEY) || "emag";
+let lastSyncAt = null;
+let pulling = false;
 let columnOrder = loadColumnOrder();
 let dragCol = null;
 let savedSettingsSnapshot = null;
@@ -1397,14 +1402,6 @@ function applyCommissionToProduct(product, commission) {
   };
 }
 
-function mergeCommissionsIntoProducts(products, commissionsMap) {
-  if (!commissionsMap || typeof commissionsMap !== "object") return products;
-  return products.map((product) => {
-    const commission =
-      commissionsMap[product.id] ?? commissionsMap[String(product.id)] ?? null;
-    return commission ? applyCommissionToProduct(product, commission) : product;
-  });
-}
 
 function patchLoadedProductCommission(id, result) {
   const idx = loadedProducts.findIndex((p) => String(p.id) === String(id));
@@ -1416,23 +1413,7 @@ function patchLoadedProductCommission(id, result) {
   });
 }
 
-function patchLoadedProductAlteCosturi(id, value) {
-  const idx = loadedProducts.findIndex((p) => String(p.id) === String(id));
-  if (idx === -1) return;
-  loadedProducts[idx] = {
-    ...loadedProducts[idx],
-    alte_costuri: value == null || !Number.isFinite(Number(value)) ? null : Number(value),
-  };
-}
 
-function patchLoadedProductPretContabil(id, value) {
-  const idx = loadedProducts.findIndex((p) => String(p.id) === String(id));
-  if (idx === -1) return;
-  loadedProducts[idx] = {
-    ...loadedProducts[idx],
-    pret_contabil: value == null || !Number.isFinite(Number(value)) ? null : Number(value),
-  };
-}
 
 function applyCostOverrideToProduct(product, override) {
   if (!override) return product;
@@ -1452,121 +1433,6 @@ function applyCostOverrideToProduct(product, override) {
   return next;
 }
 
-function mergeCostOverridesIntoProducts(products, overridesMap) {
-  if (!overridesMap || typeof overridesMap !== "object") return products;
-  return products.map((product) => {
-    const override =
-      overridesMap[product.id] ?? overridesMap[String(product.id)] ?? null;
-    return override ? applyCostOverrideToProduct(product, override) : product;
-  });
-}
-
-async function fetchCommissionsFromDb(productIds) {
-  const ids = [
-    ...new Set(
-      (Array.isArray(productIds) ? productIds : [])
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id))
-    ),
-  ];
-  if (!ids.length) return {};
-
-  const res = await fetch(`/api/products/commissions?ids=${ids.join(",")}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data.commissions && typeof data.commissions === "object" ? data.commissions : {};
-}
-
-async function fetchCostOverridesFromDb(productIds) {
-  const ids = [
-    ...new Set(
-      (Array.isArray(productIds) ? productIds : [])
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id))
-    ),
-  ];
-  if (!ids.length) return {};
-
-  const res = await fetch(`/api/products/cost-overrides?ids=${ids.join(",")}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data.overrides && typeof data.overrides === "object" ? data.overrides : {};
-}
-
-function saveProductsCache() {
-  try {
-    const payload = {
-      products: loadedProducts,
-      page: currentPage,
-      hasMore,
-      savedAt: new Date().toISOString(),
-    };
-    sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.warn("cache produse:", err.message);
-  }
-}
-
-function clearProductsCache() {
-  try {
-    sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
-function readProductsCache() {
-  try {
-    const raw = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data || !Array.isArray(data.products)) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-async function restoreProductsCache() {
-  const data = readProductsCache();
-  if (!data || data.products.length === 0) return false;
-
-  loadedProducts = data.products;
-  currentPage = Number(data.page) || 1;
-  hasMore = Boolean(data.hasMore);
-
-  const productIds = loadedProducts.map((p) => p.id);
-
-  try {
-    const commissions = await fetchCommissionsFromDb(productIds);
-    loadedProducts = mergeCommissionsIntoProducts(loadedProducts, commissions);
-  } catch (err) {
-    console.warn("[commissions] hidratare din DB:", err.message);
-  }
-
-  try {
-    const overrides = await fetchCostOverridesFromDb(productIds);
-    loadedProducts = mergeCostOverridesIntoProducts(loadedProducts, overrides);
-  } catch (err) {
-    console.warn("[cost-overrides] hidratare din DB:", err.message);
-  }
-
-  saveProductsCache();
-
-  renderProducts(loadedProducts, false);
-  btnMore.hidden = !hasMore;
-
-  const when = data.savedAt
-    ? new Date(data.savedAt).toLocaleString("ro-RO")
-    : "";
-  setStatus(
-    `Cache: ${loadedProducts.length} produse` +
-      (when ? ` (din ${when})` : "") +
-      " — Reload pentru date noi",
-    "ok"
-  );
-  return true;
-}
 
 function renderProducts(products, append) {
   if (!append) {
@@ -1610,58 +1476,88 @@ function renderProducts(products, append) {
   updateToolbarTotals();
 }
 
-async function loadProducts({ append = false } = {}) {
+function formatSyncStamp(iso) {
+  if (!iso) return "niciodată";
+  try {
+    return new Date(iso).toLocaleString("ro-RO");
+  } catch {
+    return String(iso);
+  }
+}
+
+async function loadProducts() {
   if (loading) return;
   loading = true;
   btnLoad.disabled = true;
-  btnMore.disabled = true;
-  setStatus("Se încarcă…", "loading");
+  setStatus("Se încarcă din baza de date…", "loading");
 
   try {
-    const page = append ? currentPage + 1 : 1;
-    const res = await fetch(`/api/products?page=${page}`);
+    const res = await fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`);
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
 
-    if (!res.ok) {
-      throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    }
+    loadedProducts = Array.isArray(data.products) ? data.products : [];
+    lastSyncAt = data.last_sync || null;
+    currentPage = 1;
+    hasMore = false;
+    btnMore.hidden = true;
 
-    const products = Array.isArray(data.products) ? data.products : [];
-    currentPage = data.page || page;
-    hasMore = Boolean(data.hasMore);
-
-    if (append) {
-      loadedProducts = loadedProducts.concat(products);
+    renderProducts(loadedProducts, false);
+    if (!lastSyncAt) {
+      setStatus(
+        loadedProducts.length === 0
+          ? `Nimic în DB pentru ${currentChannel} — apasă „Preia de la marketplace".`
+          : `${loadedProducts.length} produse în DB, dar niciodată sincronizate cu ${currentChannel} — apasă „Preia de la marketplace" ca să completezi nume, preț și stoc.`,
+        "error"
+      );
     } else {
-      loadedProducts = products;
+      setStatus(
+        `${loadedProducts.length} produse din DB — ultima sincronizare ${currentChannel}: ${formatSyncStamp(lastSyncAt)}`,
+        "ok"
+      );
     }
-
-    saveProductsCache();
-    renderProducts(products, append);
-
-    setStatus(
-      `Pagina ${currentPage}: ${products.length} produse` +
-        (data.authUsed ? ` (${data.authUsed})` : "") +
-        " — cached până la Reload",
-      "ok"
-    );
-
-    btnMore.hidden = !hasMore;
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    if (!append) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="25">${escapeHtml(
-        err.message || "Eroare"
-      )}</td></tr>`;
-      if (loadedProducts.length === 0) {
-        clearProductsCache();
-      }
-    }
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="25">${escapeHtml(
+      err.message || "Eroare"
+    )}</td></tr>`;
   } finally {
     loading = false;
     btnLoad.disabled = false;
-    btnMore.disabled = false;
     updateSyncButton();
+  }
+}
+
+/** Trage ofertele de la marketplace in DB (snapshot + listings noi), apoi reincarca tabelul. */
+async function pullFromChannel() {
+  if (pulling) return;
+  pulling = true;
+  if (btnPull) btnPull.disabled = true;
+  setStatus(`Se preiau ofertele de la ${currentChannel}…`, "loading");
+
+  try {
+    const res = await fetch(`/api/sync/pull?channel=${encodeURIComponent(currentChannel)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const detail = formatEmagMessages(data.messages);
+      throw new Error((data.error || `Eroare HTTP ${res.status}`) + (detail ? ` — ${detail}` : ""));
+    }
+    lastSyncAt = data.last_sync || null;
+    setStatus(
+      `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
+      "ok"
+    );
+    await loadProducts();
+  } catch (err) {
+    console.error("[sync-pull]", err.message);
+    setStatus(err.message || "Eroare la preluare", "error");
+  } finally {
+    pulling = false;
+    if (btnPull) btnPull.disabled = false;
   }
 }
 
@@ -1824,11 +1720,31 @@ async function syncPrices() {
   );
 
   try {
-    const res = await fetch("/api/products/sync-prices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offers }),
-    });
+    // DB-ul e sursa de adevar: salvez intai valorile, apoi cer push-ul dupa id.
+    for (const offer of offers) {
+      const fields = {
+        sale_price: offer.sale_price,
+        stock: offer.stock,
+        handling_time: offer.handling_time,
+        status: offer.status,
+        vat_id: offer.vat_id,
+      };
+      if (offer.recommended_price != null) fields.recommended_price = offer.recommended_price;
+      if (offer.min_sale_price != null) fields.min_sale_price = offer.min_sale_price;
+      if (offer.max_sale_price != null) fields.max_sale_price = offer.max_sale_price;
+      if (offer.name != null) fields.name = offer.name;
+      if (offer.description != null) fields.description = offer.description;
+      await patchListing(offer.id, fields);
+    }
+
+    const res = await fetch(
+      `/api/products/sync-prices?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offers: offers.map((o) => ({ id: o.id })) }),
+      }
+    );
     const data = await res.json();
     if (!res.ok) {
       console.error("[eMAG sync] eșuat:", res.status, data);
@@ -1942,6 +1858,8 @@ tbody.addEventListener("input", (e) => {
     if (saleInput) saleInput.value = String(sale);
     applyRowPrices(tr, sale);
     updateToolbarTotals();
+    schedulePersistSalePrice(tr.dataset.offerId, sale);
+    schedulePersistDerived(tr);
     return;
   }
 
@@ -1953,6 +1871,7 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();
+    schedulePersistStock(tr.dataset.offerId, parseJsonAttr(tr.dataset.stock, []));
     return;
   }
 
@@ -1964,6 +1883,7 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();
+    schedulePersistName(tr.dataset.offerId, nameInput.value);
     return;
   }
 
@@ -1975,6 +1895,7 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     updateToolbarTotals();
+    schedulePersistDescription(tr.dataset.offerId, descriptionInput.value);
     return;
   }
 
@@ -1984,6 +1905,8 @@ tbody.addEventListener("input", (e) => {
   if (!tr) return;
   applyRowPrices(tr, input.value);
   updateToolbarTotals();
+  schedulePersistSalePrice(tr.dataset.offerId, input.value);
+  schedulePersistDerived(tr);
 });
 
 tbody.addEventListener("click", (e) => {
@@ -2066,168 +1989,110 @@ tbody.addEventListener("click", (e) => {
   schedulePersistPretMinim(tr.dataset.offerId, null);
 });
 
-const altePersistTimers = new Map();
+/* ---------- Persistare in DB (sursa de adevar) ---------- */
+
+const persistTimers = new Map();
+
+/** Salveaza un subset de campuri pe listing-ul canalului curent. */
+async function patchListing(offerId, fields) {
+  const id = String(offerId ?? "").trim();
+  if (!id) return null;
+  const res = await fetch(
+    `/api/catalog/listing/${encodeURIComponent(id)}?channel=${encodeURIComponent(currentChannel)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data.listing || null;
+}
+
+/** Debounce per (oferta, camp) — ultima valoare tastata castiga. */
+function schedulePersistListing(offerId, fields, label) {
+  const id = String(offerId ?? "");
+  if (!id) return;
+  const key = `${id}:${Object.keys(fields).sort().join(",")}`;
+  const prev = persistTimers.get(key);
+  if (prev) clearTimeout(prev);
+  persistTimers.set(
+    key,
+    setTimeout(async () => {
+      persistTimers.delete(key);
+      try {
+        await patchListing(id, fields);
+        patchLoadedProduct(id, fields);
+      } catch (err) {
+        console.error(`[${label || "listing"}] salvare eșuată:`, err.message);
+        setStatus(err.message || "Eroare la salvare", "error");
+      }
+    }, 300)
+  );
+}
+
+function patchLoadedProduct(id, fields) {
+  const idx = loadedProducts.findIndex((p) => String(p.id) === String(id));
+  if (idx === -1) return;
+  loadedProducts[idx] = { ...loadedProducts[idx], ...fields };
+}
+
+const numOrNull = (v) =>
+  v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v);
 
 function schedulePersistAlteCosturi(offerId, value) {
-  const id = String(offerId ?? "");
-  if (!id) return;
-  const prev = altePersistTimers.get(id);
-  if (prev) clearTimeout(prev);
-  altePersistTimers.set(
-    id,
-    setTimeout(() => {
-      altePersistTimers.delete(id);
-      persistAlteCosturi(id, value);
-    }, 300)
-  );
+  schedulePersistListing(offerId, { alte_costuri: numOrNull(value) }, "alte-costuri");
 }
-
-async function persistAlteCosturi(offerId, value) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) return;
-  const body =
-    value === null || value === undefined || value === ""
-      ? { id, alte_costuri: null }
-      : { id, alte_costuri: Number(value) };
-  if (body.alte_costuri !== null && !Number.isFinite(body.alte_costuri)) return;
-  try {
-    const res = await fetch("/api/products/alte-costuri", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-    const data = await res.json().catch(() => ({}));
-    patchLoadedProductAlteCosturi(id, data.alte_costuri ?? body.alte_costuri);
-    saveProductsCache();
-  } catch (err) {
-    console.error("[alte-costuri] salvare eșuată:", err.message);
-    setStatus(err.message || "Eroare la salvare pret transport", "error");
-  }
-}
-
-const contabilPersistTimers = new Map();
 
 function schedulePersistPretContabil(offerId, value) {
-  const id = String(offerId ?? "");
-  if (!id) return;
-  const prev = contabilPersistTimers.get(id);
-  if (prev) clearTimeout(prev);
-  contabilPersistTimers.set(
-    id,
-    setTimeout(() => {
-      contabilPersistTimers.delete(id);
-      persistPretContabil(id, value);
-    }, 300)
-  );
+  schedulePersistListing(offerId, { pret_contabil: numOrNull(value) }, "pret-contabil");
 }
-
-async function persistPretContabil(offerId, value) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) return;
-  const body =
-    value === null || value === undefined || value === ""
-      ? { id, pret_contabil: null }
-      : { id, pret_contabil: Number(value) };
-  if (body.pret_contabil !== null && !Number.isFinite(body.pret_contabil)) return;
-  try {
-    const res = await fetch("/api/products/pret-contabil", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-    const data = await res.json().catch(() => ({}));
-    patchLoadedProductPretContabil(id, data.pret_contabil ?? body.pret_contabil);
-    saveProductsCache();
-  } catch (err) {
-    console.error("[pret-contabil] salvare eșuată:", err.message);
-    setStatus(err.message || "Eroare la salvare pret contabil", "error");
-  }
-}
-
-const pretMinimPersistTimers = new Map();
 
 function schedulePersistPretMinim(offerId, value) {
-  const id = String(offerId ?? "");
-  if (!id) return;
-  const prev = pretMinimPersistTimers.get(id);
-  if (prev) clearTimeout(prev);
-  pretMinimPersistTimers.set(
-    id,
-    setTimeout(() => {
-      pretMinimPersistTimers.delete(id);
-      persistPretMinim(id, value);
-    }, 300)
+  schedulePersistListing(
+    offerId,
+    { pret_minim_override: numOrNull(value) },
+    "pret-minim"
   );
 }
-
-async function persistPretMinim(offerId, value) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) return;
-  const body =
-    value === null || value === undefined || value === ""
-      ? { id, pret_minim: null }
-      : { id, pret_minim: Number(value) };
-  if (body.pret_minim !== null && !Number.isFinite(body.pret_minim)) return;
-  try {
-    const res = await fetch("/api/products/pret-minim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-  } catch (err) {
-    console.error("[pret-minim] salvare eșuată:", err.message);
-  }
-}
-
-const procentajEmagPersistTimers = new Map();
 
 function schedulePersistProcentajEmag(offerId, value) {
-  const id = String(offerId ?? "");
-  if (!id) return;
-  const prev = procentajEmagPersistTimers.get(id);
-  if (prev) clearTimeout(prev);
-  procentajEmagPersistTimers.set(
-    id,
-    setTimeout(() => {
-      procentajEmagPersistTimers.delete(id);
-      persistProcentajEmag(id, value);
-    }, 300)
-  );
+  schedulePersistListing(offerId, { procentaj_emag: numOrNull(value) }, "procentaj-emag");
 }
 
-async function persistProcentajEmag(offerId, value) {
-  const id = Number(offerId);
-  if (!Number.isFinite(id)) return;
-  const body =
-    value === null || value === undefined || value === ""
-      ? { id, procentaj_emag: null }
-      : { id, procentaj_emag: Number(value) };
-  if (body.procentaj_emag !== null && !Number.isFinite(body.procentaj_emag)) return;
-  try {
-    const res = await fetch("/api/products/procentaj-emag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
-  } catch (err) {
-    console.error("[procentaj-emag] salvare eșuată:", err.message);
-  }
+function schedulePersistSalePrice(offerId, value) {
+  schedulePersistListing(offerId, { sale_price: numOrNull(value) }, "pret");
+}
+
+function schedulePersistStock(offerId, stockArr) {
+  schedulePersistListing(offerId, { stock: stockArr }, "stoc");
+}
+
+function schedulePersistName(offerId, value) {
+  schedulePersistListing(offerId, { name: String(value ?? "") }, "nume");
+}
+
+function schedulePersistDescription(offerId, value) {
+  schedulePersistListing(offerId, { description: String(value ?? "") }, "descriere");
+}
+
+/** Preturile derivate (PRP/min/max) se recalculeaza in UI — le salvez odata cu pretul. */
+function schedulePersistDerived(tr) {
+  const offerId = tr?.dataset?.offerId;
+  if (!offerId) return;
+  const prp = tr.querySelector("td[data-col='prp']")?.dataset.value;
+  const max = tr.querySelector("td[data-col='pret_maxim']")?.dataset.value;
+  const min = tr.querySelector("td[data-col='pret_minim']")?.dataset.value;
+  schedulePersistListing(
+    offerId,
+    {
+      recommended_price: numOrNull(prp),
+      max_sale_price: numOrNull(max),
+      min_sale_price: numOrNull(min),
+    },
+    "preturi-derivate"
+  );
 }
 
 function collectCommissionFetchItems() {
@@ -2271,11 +2136,14 @@ async function fetchCommissionForLoadedProducts() {
   setStatus(`Preiau comision eMAG (0/${items.length})…`, "loading");
 
   try {
-    const res = await fetch("/api/products/fetch-commission", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-    });
+    const res = await fetch(
+      `/api/products/fetch-commission?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      }
+    );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
@@ -2287,7 +2155,6 @@ async function fetchCommissionForLoadedProducts() {
         patchLoadedProductCommission(result.id, result);
       }
     }
-    if (byId.size > 0) saveProductsCache();
 
     updateToolbarTotals();
     const errCount = data.errorCount || 0;
@@ -2431,8 +2298,18 @@ exportMenu?.addEventListener("click", (e) => {
 });
 
 btnSaveSettings.addEventListener("click", saveSettings);
-btnLoad.addEventListener("click", () => loadProducts({ append: false }));
-btnMore.addEventListener("click", () => loadProducts({ append: true }));
+btnLoad.addEventListener("click", () => loadProducts());
+btnPull?.addEventListener("click", pullFromChannel);
+btnMore.hidden = true;
+channelSelect?.addEventListener("change", () => {
+  currentChannel = channelSelect.value || "emag";
+  try {
+    localStorage.setItem(CHANNEL_KEY, currentChannel);
+  } catch {
+    /* ignore */
+  }
+  loadProducts();
+});
 btnFetchCommission?.addEventListener("click", fetchCommissionForLoadedProducts);
 btnSync.addEventListener("click", syncPrices);
 
@@ -2593,12 +2470,8 @@ applyColumnOrder();
 buildColumnMenu();
 applyColumnVisibility();
 updateSyncButton();
-loadSettings().then(async () => {
-  const restored = await restoreProductsCache();
-  if (!restored) {
-    setStatus("Apasă Reload produse — sau rămâi pe cache după încărcare.", "");
-  }
-});
+if (channelSelect) channelSelect.value = currentChannel;
+loadSettings().then(() => loadProducts());
 
 /* ---------- Istoric preț + comenzi (modal) ---------- */
 

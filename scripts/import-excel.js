@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const Database = require("better-sqlite3");
+const { upsertCatalogProducts } = require("../marketplace-db");
 
 const ROOT = path.join(__dirname, "..");
 const XLSX_PATH = path.join(ROOT, "document_produse_with_poze.xlsx");
@@ -103,6 +104,18 @@ function main() {
 
   tx(rows);
   db.close();
+
+  // Oglindeste importul in catalog_products (sursa de adevar pentru pretul de cumparare).
+  const catalogCount = upsertCatalogProducts(
+    rows
+      .map((row) => ({
+        cod_produs: cellStr(row, COL.cod) || null,
+        nume: cellStr(row, COL.nume) || null,
+        pret_cumparare: cellNum(row, COL.pret),
+      }))
+      .filter((r) => r.cod_produs || r.nume)
+  );
+  console.log(`Catalog actualizat: ${catalogCount} produse în catalog_products`);
 
   console.log(
     `Import OK: ${imported} produse în ${DB_PATH} (sărite: ${skipped}, sheet: ${sheetName})`

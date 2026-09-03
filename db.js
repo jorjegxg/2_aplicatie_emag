@@ -693,6 +693,7 @@ function getOrderLinesForProduct(offerId) {
 }
 
 module.exports = {
+  getDb,
   lookupPretCumparare,
   recordPretEmagIfChanged,
   getPretEmagHistory,

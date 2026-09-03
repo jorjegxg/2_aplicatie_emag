@@ -1587,3 +1587,109 @@ body.modal-open {
 [data-theme="dark"] .theme-toggle .icon-sun {
   display: none;
 }
+
+/* ---------- Selector canal + pagina de sincronizare ---------- */
+
+.field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.field-inline > span {
+  white-space: nowrap;
+}
+
+.field-checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+.sync-section-title {
+  margin: 1.6rem 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.sync-hint {
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.sync-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.sync-chip {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.sync-chip strong {
+  color: var(--text);
+}
+
+.sync-chip.is-diff {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.sync-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.sync-table th,
+.sync-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sync-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-alt);
+  z-index: 1;
+}
+
+.sync-table .sync-sub {
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sync-table td.sync-theirs {
+  border-right: 1px solid var(--border);
+}
+
+.sync-table td.is-diff {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  font-weight: 600;
+}
+
+.sync-table tr.has-diff td:first-child {
+  border-left: 3px solid var(--warn);
+}
+
+.sync-table .empty-row td {
+  color: var(--muted);
+  text-align: center;
+  padding: 1rem;
+}
+
+.sync-wrap {
+  flex: 0 0 auto;
+  max-height: 60vh;
+}

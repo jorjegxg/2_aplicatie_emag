@@ -29,6 +29,7 @@
         <nav class="site-nav" aria-label="Navigare">
           <a href="/" aria-current="page">Produse</a>
           <a href="/vanzari.html">Comenzi</a>
+          <a href="/sync.html">Sincronizare</a>
         </nav>
         <h1>eMAG Marketplace</h1>
         <p class="subtitle">Ofertele tale — caracteristici principale</p>
@@ -150,9 +151,19 @@
             </svg>
             <span class="btn-fullscreen-label">Toată pagina</span>
           </button>
+          <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în baza de date locală">
+            Preia de la marketplace
+          </button>
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
             Preia comision eMAG
           </button>
+          <label class="field field-inline">
+            <span>Canal</span>
+            <select id="channel-select">
+              <option value="emag">eMAG</option>
+              <option value="trendyol">Trendyol</option>
+            </select>
+          </label>
           <div class="col-menu-wrap export-wrap">
             <button type="button" id="btn-export" class="btn btn-secondary btn-with-icon" title="Exportă ce se vede în tabel">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -206,7 +217,7 @@
               <th data-col="pret_contabil" data-src="calc">Pret contabil</th>
               <th data-col="procentaj_emag" data-src="emag" class="col-procentaj-emag">Comision emag %</th>
               <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
-              <th data-col="pret_emag" data-src="emag" class="col-pret-emag">Pret emag</th>
+              <th data-col="pret_emag" data-src="db" class="col-pret-emag">Pret emag</th>
               <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
               <th data-col="istoric" data-src="calc">Istoric</th>
               <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
@@ -246,7 +257,7 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="25">Apasă „Reload produse” pentru a afișa ofertele.</td>
+              <td colspan="25">Se încarcă din baza de date…</td>
             </tr>
           </tbody>
         </table>

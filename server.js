@@ -2,46 +2,34 @@ const express = require("express");
 const path = require("path");
 const XLSX = require("xlsx");
 const {
-  lookupPretCumparare,
-  lookupAlteCosturi,
-  saveAlteCosturi,
-  clearAlteCosturi,
-  lookupPretContabil,
-  clearPretContabil,
-  savePretContabil,
-  lookupPretMinim,
-  savePretMinim,
-  clearPretMinim,
-  lookupCommission,
-  lookupCommissionsBulk,
-  lookupCostOverridesBulk,
-  saveCommissionFromEmag,
-  saveProcentajEmag,
-  clearProcentajEmag,
   getSettings,
   saveSettings,
   recordPretEmagIfChanged,
   getPretEmagHistory,
-  getLastPriceChangeBulk,
   upsertOrderLines,
   getOrderLinesForProduct,
 } = require("./db");
 const {
-  EMAG_API,
-  ITEMS_PER_PAGE,
-  emagFetch,
-  loadCredentials,
-  authHeader,
-  authCandidates,
-  savePreferredAuthLabel,
-  logAuthAttempt,
-  logAuthResult,
-  emagOrderRead,
-} = require("./emag-client");
+  normalizeChannel,
+  saveSnapshot,
+  upsertListingFromRemote,
+  getCatalogRows,
+  updateListing,
+  getListing,
+  getListings,
+  updateProduct,
+  getChannelDiff,
+  getChannelStats,
+  getListingCosts,
+  lookupCatalogPretCumparare,
+  ensureSchema,
+} = require("./marketplace-db");
+const { getChannel, listChannels } = require("./channels");
+const { ITEMS_PER_PAGE, loadCredentials, authCandidates, authHeader, logAuthAttempt, logAuthResult, savePreferredAuthLabel, emagOrderRead } = require("./emag-client");
 
 const PORT = process.env.PORT || 3000;
-const EMAG_API_V1 = "https://marketplace-api.emag.ro/api/v1";
 const COMMISSION_FETCH_CONCURRENCY = 5;
+const MAX_PULL_PAGES = 50;
 
 const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
@@ -49,171 +37,22 @@ app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-function formatCharacteristics(characteristics) {
-  if (!Array.isArray(characteristics) || characteristics.length === 0) {
-    return "";
-  }
-  return characteristics
-    .map((c) => {
-      const name = c.name || c.id || "?";
-      const value = Array.isArray(c.value) ? c.value.join(", ") : c.value ?? "";
-      return `${name}: ${value}`;
-    })
-    .join("; ");
+// Creeaza/migreaza schema multi-canal la pornire, ca prima cerere sa fie rapida.
+ensureSchema();
+
+function httpStatusFor(err) {
+  const s = Number(err?.status);
+  if (Number.isFinite(s) && s >= 400 && s <= 599) return s;
+  return 502;
 }
 
-function normalizeStock(stock, generalStock) {
-  if (Array.isArray(stock) && stock.length > 0) {
-    return stock.map((s) => ({
-      warehouse_id: Number(s.warehouse_id) || 1,
-      value: Number(s.value) || 0,
-    }));
-  }
-  const qty = Number(generalStock);
-  return [{ warehouse_id: 1, value: Number.isFinite(qty) ? qty : 0 }];
-}
-
-function normalizeHandlingTime(handlingTime) {
-  if (Array.isArray(handlingTime) && handlingTime.length > 0) {
-    return handlingTime.map((h) => ({
-      warehouse_id: Number(h.warehouse_id) || 1,
-      value: Number(h.value) || 0,
-    }));
-  }
-  return [{ warehouse_id: 1, value: 0 }];
-}
-
-function mapOffer(offer) {
-  const ean = Array.isArray(offer.ean) ? offer.ean.join(", ") : offer.ean || "";
-  const name = offer.name || "";
-  const part_number = offer.part_number || "";
-  const fam = Array.isArray(offer.family) ? offer.family[0] : offer.family;
-  const commission = lookupCommission(offer.id);
-  return {
-    id: offer.id,
-    name,
-    description: offer.description || "",
-    brand: offer.brand || offer.brand_name || "",
-    part_number,
-    part_number_key: offer.part_number_key || "",
-    id_familie: fam?.id ?? null,
-    familie: fam?.name || "",
-    sale_price: offer.sale_price ?? null,
-    recommended_price: offer.recommended_price ?? null,
-    min_sale_price: offer.min_sale_price ?? null,
-    max_sale_price: offer.max_sale_price ?? null,
-    pret_cumparare: lookupPretCumparare(part_number, name),
-    alte_costuri: lookupAlteCosturi(offer.id),
-    pret_contabil: lookupPretContabil(offer.id),
-    pret_minim_override: lookupPretMinim(offer.id),
-    procentaj_emag: commission?.procentaj_emag ?? null,
-    commission_value: commission?.commission_value ?? null,
-    commission_fetched_at: commission?.fetched_at ?? null,
-    currency: offer.currency || "RON",
-    general_stock: offer.general_stock ?? null,
-    estimated_stock: offer.estimated_stock ?? null,
-    status: offer.status,
-    vat_id: offer.vat_id ?? null,
-    handling_time: normalizeHandlingTime(offer.handling_time),
-    stock: normalizeStock(offer.stock, offer.general_stock),
-    ean,
-    characteristics: formatCharacteristics(offer.characteristics),
-  };
-}
-
-async function emagProductOfferRead(auth, page) {
-  const body = new URLSearchParams();
-  body.set("currentPage", String(page));
-  body.set("itemsPerPage", String(ITEMS_PER_PAGE));
-
-  const response = await emagFetch(`${EMAG_API}/product_offer/read`, {
-    method: "POST",
-    headers: {
-      Authorization: auth,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
+function sendChannelError(res, err, fallback) {
+  const status = httpStatusFor(err);
+  return res.status(status).json({
+    error: err?.message || fallback,
+    messages: err?.messages || [],
+    detail: err?.detail || undefined,
   });
-
-  const text = await response.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-
-  return { response, json, text };
-}
-
-function parseCommissionPercent(json) {
-  const raw =
-    json?.data?.value ??
-    json?.data?.commission ??
-    json?.value ??
-    json?.commission;
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
-  return Math.round(n * 100) / 100;
-}
-
-function commissionValueFromPercent(percent, salePrice) {
-  const pct = Number(percent);
-  const sale = Number(salePrice);
-  if (!Number.isFinite(pct) || !Number.isFinite(sale) || sale <= 0) return null;
-  return Math.round(sale * (pct / 100) * 100) / 100;
-}
-
-async function emagCommissionEstimate(auth, offerId) {
-  const response = await emagFetch(
-    `${EMAG_API_V1}/commission/estimate/${offerId}`,
-    {
-      method: "GET",
-      headers: { Authorization: auth },
-    }
-  );
-  const text = await response.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-  return { response, json, text };
-}
-
-async function resolveEmagAuth(probeFn) {
-  const creds = loadCredentials();
-  const candidates = authCandidates(creds);
-  let lastStatus = null;
-  let lastDetail = "";
-
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i];
-    logAuthAttempt("commission", candidate, i, candidates.length);
-    const auth = authHeader(candidate.user, candidate.pass);
-    const probe = await probeFn(auth);
-    lastStatus = probe.status;
-    lastDetail = probe.detail || "";
-
-    if (probe.status === 401 || probe.status === 403) {
-      logAuthResult("commission", candidate, probe.status, false);
-      continue;
-    }
-
-    if (probe.ok) {
-      logAuthResult("commission", candidate, probe.status, true);
-      savePreferredAuthLabel(candidate.label);
-      return { auth, label: candidate.label };
-    }
-  }
-
-  throw new Error(
-    lastStatus === 401 || lastStatus === 403
-      ? "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist."
-      : `eMAG commission API eșuat (HTTP ${lastStatus || "?"}): ${lastDetail.slice(0, 200)}`
-  );
 }
 
 async function mapPool(items, limit, fn) {
@@ -226,11 +65,13 @@ async function mapPool(items, limit, fn) {
   return results;
 }
 
+/* ---------------- comenzi (mapare) ---------------- */
+
 function mapOrderProduct(product) {
   const name = product.name || product.product_name || "";
   const part_number = product.part_number || "";
   const product_id = product.product_id ?? null;
-  const commission = lookupCommission(product_id);
+  const costs = product_id != null ? getListingCosts("emag", product_id) : null;
   return {
     id: product.id ?? null,
     product_id,
@@ -240,12 +81,12 @@ function mapOrderProduct(product) {
     sale_price: product.sale_price ?? null,
     status: product.status ?? null,
     currency: product.currency || "RON",
-    pret_cumparare: lookupPretCumparare(part_number, name),
-    alte_costuri: lookupAlteCosturi(product_id),
-    pret_contabil: lookupPretContabil(product_id),
-    procentaj_emag: commission?.procentaj_emag ?? null,
-    commission_value: commission?.commission_value ?? null,
-    commission_fetched_at: commission?.fetched_at ?? null,
+    pret_cumparare: lookupCatalogPretCumparare(part_number, name),
+    alte_costuri: costs?.alte_costuri ?? null,
+    pret_contabil: costs?.pret_contabil ?? null,
+    procentaj_emag: costs?.procentaj_emag ?? null,
+    commission_value: costs?.commission_value ?? null,
+    commission_fetched_at: costs?.commission_fetched_at ?? null,
   };
 }
 
@@ -265,6 +106,8 @@ function mapOrder(order) {
     products,
   };
 }
+
+/* ---------------- setari ---------------- */
 
 app.get("/api/settings", (_req, res) => {
   try {
@@ -298,207 +141,276 @@ app.post("/api/settings", (req, res) => {
   }
 });
 
-app.post("/api/products/alte-costuri", (req, res) => {
+/* ---------------- catalog local (sursa tabelului principal) ---------------- */
+
+app.get("/api/channels", (_req, res) => {
   try {
-    const id = Number(req.body?.id);
-    if (!Number.isFinite(id)) {
-      return res.status(400).json({ error: "id invalid" });
-    }
-    const raw = req.body?.alte_costuri;
-    if (raw === null || raw === undefined || raw === "") {
-      clearAlteCosturi(id);
-      return res.json({ ok: true, id, alte_costuri: null });
-    }
-    const n = Number(raw);
-    if (!Number.isFinite(n)) {
-      return res.status(400).json({ error: "alte_costuri invalid" });
-    }
-    const saved = saveAlteCosturi(id, n);
-    return res.json({ ok: true, id, alte_costuri: saved });
+    const channels = listChannels().map((c) => ({
+      ...c,
+      ...getChannelStats(c.id),
+    }));
+    return res.json({ channels });
   } catch (err) {
     console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la salvare pret transport" });
+    return res.status(500).json({ error: err.message || "Eroare la citire canale" });
   }
 });
 
-app.post("/api/products/pret-contabil", (req, res) => {
+app.get("/api/catalog", (req, res) => {
   try {
-    const id = Number(req.body?.id);
-    if (!Number.isFinite(id)) {
-      return res.status(400).json({ error: "id invalid" });
-    }
-    const raw = req.body?.pret_contabil;
-    if (raw === null || raw === undefined || raw === "") {
-      clearPretContabil(id);
-      return res.json({ ok: true, id, pret_contabil: null });
-    }
-    const n = Number(raw);
-    if (!Number.isFinite(n)) {
-      return res.status(400).json({ error: "pret_contabil invalid" });
-    }
-    const saved = savePretContabil(id, n);
-    return res.json({ ok: true, id, pret_contabil: saved });
+    const channel = normalizeChannel(req.query.channel);
+    const products = getCatalogRows(channel);
+    const stats = getChannelStats(channel);
+    return res.json({
+      channel,
+      count: products.length,
+      last_sync: stats.last_sync,
+      products,
+    });
   } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la salvare pret contabil" });
+    console.error("[catalog]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire catalog" });
   }
 });
 
-app.post("/api/products/pret-minim", (req, res) => {
+// Alias pentru compatibilitate — tabelul principal citeste acum din DB, nu din eMAG.
+app.get("/api/products", (req, res) => {
   try {
-    const id = Number(req.body?.id);
-    if (!Number.isFinite(id)) {
-      return res.status(400).json({ error: "id invalid" });
-    }
-    const raw = req.body?.pret_minim;
-    if (raw === null || raw === undefined || raw === "") {
-      clearPretMinim(id);
-      return res.json({ ok: true, id, pret_minim: null });
-    }
-    const n = Number(raw);
-    if (!Number.isFinite(n)) {
-      return res.status(400).json({ error: "pret_minim invalid" });
-    }
-    const saved = savePretMinim(id, n);
-    return res.json({ ok: true, id, pret_minim: saved });
+    const channel = normalizeChannel(req.query.channel);
+    const products = getCatalogRows(channel);
+    const stats = getChannelStats(channel);
+    return res.json({
+      page: 1,
+      itemsPerPage: products.length,
+      count: products.length,
+      hasMore: false,
+      last_sync: stats.last_sync,
+      products,
+    });
   } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la salvare pret minim" });
+    console.error("[products]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire produse" });
   }
 });
 
-app.get("/api/products/commissions", (req, res) => {
+app.patch("/api/catalog/listing/:externalId", (req, res) => {
   try {
-    const raw = req.query.ids;
-    let ids = [];
-    if (typeof raw === "string" && raw.trim()) {
-      ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
-    } else if (Array.isArray(raw)) {
-      ids = raw.flatMap((s) => String(s).split(",")).map((s) => s.trim()).filter(Boolean);
+    const channel = normalizeChannel(req.query.channel ?? req.body?.channel);
+    const externalId = String(req.params.externalId || "").trim();
+    if (!externalId) {
+      return res.status(400).json({ error: "external_id invalid" });
     }
-    const commissions = lookupCommissionsBulk(ids);
-    return res.json({ ok: true, commissions });
+    const fields = req.body?.fields && typeof req.body.fields === "object"
+      ? req.body.fields
+      : req.body || {};
+    const saved = updateListing(channel, externalId, fields);
+    return res.json({ ok: true, channel, listing: saved });
   } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la citire comisioane" });
+    console.error("[listing:patch]", err.message);
+    return res.status(400).json({ error: err.message || "Eroare la salvare listing" });
   }
 });
 
-app.get("/api/products/cost-overrides", (req, res) => {
+app.patch("/api/catalog/product/:productId", (req, res) => {
   try {
-    const raw = req.query.ids;
-    let ids = [];
-    if (typeof raw === "string" && raw.trim()) {
-      ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
-    } else if (Array.isArray(raw)) {
-      ids = raw.flatMap((s) => String(s).split(",")).map((s) => s.trim()).filter(Boolean);
-    }
-    const overrides = lookupCostOverridesBulk(ids);
-    return res.json({ ok: true, overrides });
+    const fields = req.body?.fields && typeof req.body.fields === "object"
+      ? req.body.fields
+      : req.body || {};
+    const saved = updateProduct(req.params.productId, fields);
+    if (!saved) return res.status(404).json({ error: "Produs inexistent" });
+    return res.json({ ok: true, product: saved });
   } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la citire cost overrides" });
+    console.error("[product:patch]", err.message);
+    return res.status(400).json({ error: err.message || "Eroare la salvare produs" });
   }
 });
 
-app.post("/api/products/procentaj-emag", (req, res) => {
+/* ---------------- sincronizare cu canalul ---------------- */
+
+app.get("/api/sync/diff", (req, res) => {
   try {
-    const id = Number(req.body?.id);
-    if (!Number.isFinite(id)) {
-      return res.status(400).json({ error: "id invalid" });
-    }
-    const raw = req.body?.procentaj_emag;
-    if (raw === null || raw === undefined || raw === "") {
-      clearProcentajEmag(id);
-      return res.json({ ok: true, id, procentaj_emag: null });
-    }
-    const n = Number(raw);
-    if (!Number.isFinite(n)) {
-      return res.status(400).json({ error: "procentaj_emag invalid" });
-    }
-    const saved = saveProcentajEmag(id, n);
-    return res.json({ ok: true, id, procentaj_emag: saved.procentaj_emag });
+    const channel = normalizeChannel(req.query.channel);
+    return res.json(getChannelDiff(channel));
   } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare la salvare procentaj emag" });
+    console.error("[diff]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la comparare" });
   }
 });
+
+/** Trage toate ofertele de la canal in DB: snapshot + upsert listing. */
+app.post("/api/sync/pull", async (req, res) => {
+  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+  try {
+    const channel = getChannel(channelName);
+
+    let page = 1;
+    let created = 0;
+    let updated = 0;
+    let total = 0;
+    let authUsed = null;
+
+    while (page <= MAX_PULL_PAGES) {
+      const result = await channel.fetchListings({ page });
+      const listings = result.listings || [];
+      authUsed = result.authUsed || authUsed;
+
+      for (const remote of listings) {
+        saveSnapshot(channelName, remote);
+        const { created: isNew } = upsertListingFromRemote(channelName, remote);
+        if (isNew) created += 1;
+        else updated += 1;
+        try {
+          recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
+        } catch (histErr) {
+          console.warn("[sync-pull] istoric pret:", histErr.message);
+        }
+      }
+
+      total += listings.length;
+      if (!result.hasMore || listings.length === 0) break;
+      page += 1;
+    }
+
+    const stats = getChannelStats(channelName);
+    console.log(
+      `[sync-pull] ${channelName}: ${total} oferte (${created} noi, ${updated} actualizate)`
+    );
+    return res.json({
+      ok: true,
+      channel: channelName,
+      count: total,
+      created,
+      updated,
+      pages: page,
+      authUsed,
+      last_sync: stats.last_sync,
+    });
+  } catch (err) {
+    console.error("[sync-pull]", err.message);
+    return sendChannelError(res, err, "Eroare la preluare de la canal");
+  }
+});
+
+/** Trimite catre canal ofertele cerute, cu valorile din DB. */
+app.post("/api/products/sync-prices", async (req, res) => {
+  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+  try {
+    const channel = getChannel(channelName);
+
+    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din DB.
+    const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
+    const ids = rawOffers
+      .map((o) => (o && typeof o === "object" ? o.id : o))
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
+    }
+
+    const listings = getListings(channelName, ids);
+    if (listings.length === 0) {
+      return res.status(404).json({ error: "Ofertele nu există în DB — sincronizează cu canalul" });
+    }
+
+    const offers = [];
+    for (const l of listings) {
+      offers.push(
+        channel.buildPushPayload({
+          id: l.external_id,
+          name: l.name,
+          description: l.description,
+          sale_price: l.sale_price,
+          recommended_price: l.recommended_price,
+          min_sale_price: l.min_sale_price,
+          max_sale_price: l.max_sale_price,
+          general_stock: l.general_stock,
+          stock: l.stock_json ? JSON.parse(l.stock_json) : null,
+          handling_time: l.handling_time_json ? JSON.parse(l.handling_time_json) : null,
+          status: l.status,
+          vat_id: l.vat_id,
+        })
+      );
+    }
+
+    const result = await channel.pushListings(offers);
+
+    // Dupa push, ce e pe canal = ce am trimis: actualizez snapshot-ul si istoricul.
+    for (const o of offers) {
+      try {
+        recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
+      } catch (histErr) {
+        console.warn("[sync-prices] istoric pret:", histErr.message);
+      }
+      try {
+        const listing = getListing(channelName, o.id);
+        saveSnapshot(channelName, {
+          id: o.id,
+          name: o.name ?? listing?.name ?? null,
+          part_number: listing?.part_number ?? null,
+          ean: listing?.ean ?? null,
+          brand: listing?.brand ?? null,
+          sale_price: o.sale_price,
+          recommended_price: o.recommended_price ?? null,
+          min_sale_price: o.min_sale_price ?? null,
+          max_sale_price: o.max_sale_price ?? null,
+          general_stock: Array.isArray(o.stock)
+            ? o.stock.reduce((sum, s) => sum + (Number(s?.value) || 0), 0)
+            : null,
+          status: o.status,
+          vat_id: o.vat_id,
+          currency: listing?.currency ?? "RON",
+        });
+      } catch (snapErr) {
+        console.warn("[sync-prices] snapshot:", snapErr.message);
+      }
+    }
+
+    return res.json({ ok: true, channel: channelName, ...result });
+  } catch (err) {
+    console.error("[sync-prices]", err.message);
+    return sendChannelError(res, err, "Eroare la sync prețuri");
+  }
+});
+
+/* ---------------- comision ---------------- */
 
 app.post("/api/products/fetch-commission", async (req, res) => {
+  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
+    const channel = getChannel(channelName);
+
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
-    if (items.length === 0) {
+    const normalized = items
+      .map((item) => ({
+        id: String(item?.id ?? "").trim(),
+        sale_price: Number(item?.sale_price),
+      }))
+      .filter((item) => item.id);
+
+    if (normalized.length === 0) {
       return res.status(400).json({ error: "items lipsă" });
     }
 
-    const normalized = items
-      .map((item) => ({
-        id: Number(item?.id),
-        sale_price: Number(item?.sale_price),
-      }))
-      .filter((item) => Number.isFinite(item.id));
-
-    if (normalized.length === 0) {
-      return res.status(400).json({ error: "niciun id valid" });
-    }
-
-    const probeId = normalized[0].id;
-    const { auth } = await resolveEmagAuth(async (authHeaderValue) => {
-      const { response, json, text } = await emagCommissionEstimate(
-        authHeaderValue,
-        probeId
-      );
-      const pct = parseCommissionPercent(json);
-      return {
-        status: response.status,
-        ok: response.ok && pct != null,
-        detail: text,
-      };
-    });
+    const auth = await channel.resolveCommissionAuth(normalized[0].id);
 
     const fetched = await mapPool(normalized, COMMISSION_FETCH_CONCURRENCY, async (item) => {
       if (!Number.isFinite(item.sale_price) || item.sale_price <= 0) {
-        return {
-          id: item.id,
-          error: "sale_price invalid — reîncarcă produsele",
-        };
+        return { id: item.id, error: "sale_price invalid — reîncarcă produsele" };
       }
-
       try {
-        const { response, json, text } = await emagCommissionEstimate(auth, item.id);
-        if (response.status === 401 || response.status === 403) {
-          return { id: item.id, error: "autentificare eMAG eșuată" };
-        }
-        if (!response.ok) {
-          return {
-            id: item.id,
-            error: `HTTP ${response.status}: ${text.slice(0, 120)}`,
-          };
-        }
-        const procentaj_emag = parseCommissionPercent(json);
-        if (procentaj_emag == null) {
-          return {
-            id: item.id,
-            error: json?.message || "răspuns fără comision",
-          };
-        }
-        const commission_value = commissionValueFromPercent(
-          procentaj_emag,
+        const { procentaj_emag, commission_value } = await channel.fetchCommission(
+          auth,
+          item.id,
           item.sale_price
         );
-        if (commission_value == null) {
-          return { id: item.id, error: "comision RON invalid" };
-        }
-        const saved = saveCommissionFromEmag(item.id, {
-          commission_value,
+        const fetched_at = new Date().toISOString();
+        updateListing(channelName, item.id, {
           procentaj_emag,
+          commission_value,
+          commission_fetched_at: fetched_at,
         });
-        return {
-          id: item.id,
-          procentaj_emag: saved.procentaj_emag,
-          commission_value: saved.commission_value,
-          fetched_at: saved.fetched_at,
-        };
+        return { id: item.id, procentaj_emag, commission_value, fetched_at };
       } catch (err) {
         return { id: item.id, error: err.message || "eroare necunoscută" };
       }
@@ -516,283 +428,11 @@ app.post("/api/products/fetch-commission", async (req, res) => {
     });
   } catch (err) {
     console.error("[fetch-commission]", err.message);
-    return res.status(500).json({ error: err.message || "Eroare la preluare comision" });
+    return sendChannelError(res, err, "Eroare la preluare comision");
   }
 });
 
-async function emagProductOfferSave(auth, offers) {
-  console.log(
-    `[eMAG update] POST ${EMAG_API}/product_offer/save — ${offers.length} oferte`
-  );
-  console.log(
-    "[eMAG update] body:",
-    JSON.stringify(
-      offers.map((o) => ({
-        id: o.id,
-        name: o.name,
-        sale_price: o.sale_price,
-        recommended_price: o.recommended_price,
-        min_sale_price: o.min_sale_price,
-        max_sale_price: o.max_sale_price,
-        status: o.status,
-        vat_id: o.vat_id,
-      }))
-    )
-  );
-
-  const response = await emagFetch(`${EMAG_API}/product_offer/save`, {
-    method: "POST",
-    headers: {
-      Authorization: auth,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ data: offers }),
-  });
-
-  const text = await response.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-
-  console.log(`[eMAG update] HTTP ${response.status}`);
-  if (json) {
-    console.log(
-      `[eMAG update] isError=${Boolean(json.isError)} messages=`,
-      json.messages || []
-    );
-  } else {
-    console.log("[eMAG update] răspuns non-JSON:", text.slice(0, 500));
-  }
-
-  return { response, json, text };
-}
-
-app.post("/api/products/sync-prices", async (req, res) => {
-  try {
-    const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
-    if (rawOffers.length === 0) {
-      return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
-    }
-
-    const toNum = (v) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    const offers = [];
-    for (const o of rawOffers) {
-      const id = toNum(o?.id);
-      const sale_price = toNum(o?.sale_price);
-      const recommended_price = toNum(o?.recommended_price);
-      const min_sale_price = toNum(o?.min_sale_price);
-      const max_sale_price = toNum(o?.max_sale_price);
-      const status = toNum(o?.status);
-      const vat_id = toNum(o?.vat_id);
-      if (id == null || sale_price == null) {
-        return res.status(400).json({
-          error: "Fiecare ofertă trebuie să aibă id și sale_price valide",
-        });
-      }
-      if (status == null || vat_id == null) {
-        return res.status(400).json({
-          error: `Oferta ${id}: lipsesc status sau vat_id (reîncarcă produsele)`,
-        });
-      }
-      if (recommended_price != null && recommended_price <= sale_price) {
-        return res.status(400).json({
-          error: `Oferta ${id}: PRP (${recommended_price}) trebuie să fie mai mare decât pretul de vânzare (${sale_price})`,
-        });
-      }
-      const stock = normalizeStock(o?.stock, o?.general_stock);
-      const handling_time = normalizeHandlingTime(o?.handling_time);
-      const name =
-        typeof o?.name === "string" ? o.name.trim() : "";
-      const description =
-        typeof o?.description === "string" ? o.description : null;
-      const payload = {
-        id,
-        status,
-        sale_price,
-        vat_id,
-        handling_time,
-        stock,
-      };
-      if (name) payload.name = name;
-      if (description != null) payload.description = description;
-      if (recommended_price != null) payload.recommended_price = recommended_price;
-      if (min_sale_price != null) payload.min_sale_price = min_sale_price;
-      if (max_sale_price != null) payload.max_sale_price = max_sale_price;
-      offers.push(payload);
-    }
-
-    console.log(`[sync-prices] start — ${offers.length} oferte de updatat pe eMAG`);
-
-    const creds = loadCredentials();
-    const candidates = authCandidates(creds);
-    console.log(
-      `[auth:sync-prices] ordine încercări:`,
-      candidates.map((c) => c.label).join(" → ")
-    );
-
-    let lastStatus = null;
-    let lastJson = null;
-    let lastText = "";
-
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      logAuthAttempt("sync-prices", candidate, i, candidates.length);
-      const auth = authHeader(candidate.user, candidate.pass);
-      const { response, json, text } = await emagProductOfferSave(auth, offers);
-      lastStatus = response.status;
-      lastJson = json;
-      lastText = text;
-
-      if (response.status === 401 || response.status === 403) {
-        logAuthResult("sync-prices", candidate, response.status, false);
-        continue;
-      }
-
-      logAuthResult("sync-prices", candidate, response.status, true);
-      savePreferredAuthLabel(candidate.label);
-
-      if (!json) {
-        console.error("[sync-prices] răspuns invalid de la eMAG", text.slice(0, 500));
-        return res.status(502).json({
-          error: "Răspuns invalid de la eMAG",
-          status: response.status,
-          detail: text.slice(0, 500),
-        });
-      }
-
-      if (json.isError) {
-        console.error("[sync-prices] eMAG isError:", json.messages || []);
-        return res.status(502).json({
-          error: "eMAG a returnat eroare la salvare prețuri",
-          messages: json.messages || [],
-        });
-      }
-
-      console.log(
-        `[sync-prices] OK — updatate ${offers.length} oferte pe eMAG (auth=${candidate.label})`,
-        offers.map((o) => ({ id: o.id, sale_price: o.sale_price }))
-      );
-      for (const o of offers) {
-        try {
-          recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
-        } catch (histErr) {
-          console.warn("[sync-prices] istoric pret:", histErr.message);
-        }
-      }
-      return res.json({
-        ok: true,
-        count: offers.length,
-        authUsed: candidate.label,
-        messages: json.messages || [],
-      });
-    }
-
-    console.error("[sync-prices] autentificare eMAG eșuată (401/403) — toate combo-urile");
-    return res.status(lastStatus || 401).json({
-      error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
-      messages: lastJson?.messages || [],
-      detail: lastText.slice(0, 300),
-    });
-  } catch (err) {
-    console.error("[sync-prices] exception:", err.message);
-    return res.status(500).json({ error: err.message || "Eroare la sync prețuri" });
-  }
-});
-
-app.get("/api/products", async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const creds = loadCredentials();
-    const candidates = authCandidates(creds);
-    console.log(
-      `[auth:products] ordine încercări:`,
-      candidates.map((c) => c.label).join(" → ")
-    );
-
-    let lastStatus = null;
-    let lastJson = null;
-    let lastText = "";
-
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      logAuthAttempt("products", candidate, i, candidates.length);
-      const auth = authHeader(candidate.user, candidate.pass);
-      const { response, json, text } = await emagProductOfferRead(auth, page);
-      lastStatus = response.status;
-      lastJson = json;
-      lastText = text;
-
-      if (response.status === 401 || response.status === 403) {
-        logAuthResult("products", candidate, response.status, false);
-        continue;
-      }
-
-      logAuthResult("products", candidate, response.status, true);
-      savePreferredAuthLabel(candidate.label);
-
-      if (!json) {
-        return res.status(502).json({
-          error: "Răspuns invalid de la eMAG",
-          status: response.status,
-          detail: text.slice(0, 500),
-        });
-      }
-
-      if (json.isError) {
-        return res.status(502).json({
-          error: "eMAG a returnat eroare",
-          messages: json.messages || [],
-        });
-      }
-
-      const results = Array.isArray(json.results) ? json.results : [];
-      const products = results.map(mapOffer);
-
-      // Snapshot pretul eMAG curent — insereaza rand nou doar daca s-a schimbat.
-      for (const p of products) {
-        try {
-          recordPretEmagIfChanged(p.id, p.sale_price, p.currency, "products-read");
-        } catch (histErr) {
-          console.warn("[products] istoric pret:", histErr.message);
-        }
-      }
-      const lastChanges = getLastPriceChangeBulk(products.map((p) => p.id));
-      for (const p of products) {
-        const lc = lastChanges[p.id];
-        p.pret_emag_last_change = lc ? lc.recorded_at : null;
-      }
-
-      console.log(
-        `[auth:products] OK page=${page} count=${products.length} auth=${candidate.label}`
-      );
-      return res.json({
-        page,
-        itemsPerPage: ITEMS_PER_PAGE,
-        count: products.length,
-        hasMore: products.length >= ITEMS_PER_PAGE,
-        authUsed: candidate.label,
-        products,
-      });
-    }
-
-    console.error("[auth:products] autentificare eMAG eșuată (401/403) — toate combo-urile");
-    return res.status(lastStatus || 401).json({
-      error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
-      messages: lastJson?.messages || [],
-      detail: lastText.slice(0, 300),
-    });
-  } catch (err) {
-    console.error(err.message);
-    return res.status(500).json({ error: err.message || "Eroare server" });
-  }
-});
+/* ---------------- comenzi ---------------- */
 
 app.get("/api/orders", async (req, res) => {
   try {
@@ -934,6 +574,8 @@ app.get("/api/orders", async (req, res) => {
     return res.status(500).json({ error: err.message || "Eroare server" });
   }
 });
+
+/* ---------------- istoric + export ---------------- */
 
 app.get("/api/products/:offerId/history", (req, res) => {
   try {
