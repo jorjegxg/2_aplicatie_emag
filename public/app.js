@@ -25,7 +25,6 @@ const exportMenu = document.getElementById("export-menu");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
-const channelSelect = document.getElementById("channel-select");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const pageEl = document.querySelector(".page");
@@ -38,24 +37,9 @@ const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
-const CHANNEL_KEY = "marketplace-channel";
-
-const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
-const DEFAULT_COLUMN_ORDER = [
-  ...headerLabelRow.querySelectorAll("th[data-col]"),
-].map((th) => th.dataset.col);
-const COLUMN_LABELS = Object.fromEntries(
-  [...headerLabelRow.querySelectorAll("th[data-col]")].map((th) => [
-    th.dataset.col,
-    th.textContent.trim(),
-  ])
-);
-const COLUMN_SOURCES = Object.fromEntries(
-  [...headerLabelRow.querySelectorAll("th[data-col]")].map((th) => [
-    th.dataset.col,
-    th.dataset.src || "",
-  ])
-);
+/* Pagina de produse nu are canal. Constanta e doar cheia sub care stau
+   randurile in marketplace_listings; canalul se alege in pagina Sincronizare. */
+const LISTING_CHANNEL = "emag";
 
 let currentPage = 1;
 let hasMore = false;
@@ -64,11 +48,7 @@ let loadedProducts = [];
 let loading = false;
 let savingSettings = false;
 let exporting = false;
-let hiddenCols = loadHiddenCols();
-let currentChannel = localStorage.getItem(CHANNEL_KEY) || "emag";
 let lastSyncAt = null;
-let columnOrder = loadColumnOrder();
-let dragCol = null;
 let savedSettingsSnapshot = null;
 let sortCol = null;
 let sortDir = "asc";
@@ -91,103 +71,15 @@ function migrateLegacyCostCols(cols) {
   return out;
 }
 
-function loadHiddenCols() {
-  try {
-    const raw = localStorage.getItem(HIDDEN_COLS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-    return migrateLegacyCostCols(parsed.filter((c) => typeof c === "string"));
-  } catch {
-    return [];
-  }
-}
-
-function saveHiddenCols() {
-  localStorage.setItem(HIDDEN_COLS_KEY, JSON.stringify(hiddenCols));
-}
-
-function insertMissingColumns(order) {
-  const result = [...order];
-  for (const col of DEFAULT_COLUMN_ORDER) {
-    if (result.includes(col)) continue;
-    const defIdx = DEFAULT_COLUMN_ORDER.indexOf(col);
-    let insertAt = result.length;
-    for (let i = defIdx - 1; i >= 0; i--) {
-      const prevIdx = result.indexOf(DEFAULT_COLUMN_ORDER[i]);
-      if (prevIdx !== -1) {
-        insertAt = prevIdx + 1;
-        break;
-      }
-    }
-    result.splice(insertAt, 0, col);
-  }
-  return result;
-}
-
-function loadColumnOrder() {
-  try {
-    const raw = localStorage.getItem(COL_ORDER_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!Array.isArray(parsed)) return [...DEFAULT_COLUMN_ORDER];
-    const migrated = migrateLegacyCostCols(
-      parsed.filter((c) => typeof c === "string")
-    );
-    const valid = new Set(DEFAULT_COLUMN_ORDER);
-    return insertMissingColumns(migrated.filter((c) => valid.has(c)));
-  } catch {
-    return [...DEFAULT_COLUMN_ORDER];
-  }
-}
-
-function saveColumnOrder() {
-  localStorage.setItem(COL_ORDER_KEY, JSON.stringify(columnOrder));
-}
-
-function applyColumnVisibility() {
-  const hidden = new Set(hiddenCols);
-  table.querySelectorAll("[data-col]").forEach((el) => {
-    el.classList.toggle("is-col-hidden", hidden.has(el.dataset.col));
-  });
-}
-
-function reorderRowByColumnOrder(row) {
-  if (!row) return;
-  const byCol = Object.fromEntries(
-    [...row.querySelectorAll("[data-col]")].map((el) => [el.dataset.col, el])
-  );
-  columnOrder.forEach((col) => {
-    if (byCol[col]) row.appendChild(byCol[col]);
-  });
-}
-
-function applyColumnOrder() {
-  reorderRowByColumnOrder(table.querySelector("thead tr:not(.filter-row)"));
-  reorderRowByColumnOrder(table.querySelector("thead tr.filter-row"));
-
-  tbody.querySelectorAll("tr:not(.empty-row)").forEach((tr) => {
-    reorderRowByColumnOrder(tr);
-  });
-}
-
-function buildColumnMenu() {
-  colMenu.innerHTML = columnOrder
-    .map((col) => {
-      const checked = !hiddenCols.includes(col) ? "checked" : "";
-      const label = COLUMN_LABELS[col] || col;
-      const src = COLUMN_SOURCES[col] || "";
-      const srcAttr = src ? ` data-src="${escapeHtml(src)}"` : "";
-      return `<div class="col-menu-item"${srcAttr} data-col="${escapeHtml(col)}">
-        <span class="col-drag-handle" draggable="true" aria-hidden="true" title="Trage pentru a reordona">⋮⋮</span>
-        <label><input type="checkbox" data-col-toggle="${escapeHtml(col)}" ${checked} />${escapeHtml(label)}</label>
-      </div>`;
-    })
-    .join("");
-}
-
-function setColumnMenuOpen(open) {
-  colMenu.hidden = !open;
-  btnColumns.setAttribute("aria-expanded", open ? "true" : "false");
-}
+const columns = window.TableColumns.create({
+  table,
+  tbody,
+  menuEl: colMenu,
+  buttonEl: btnColumns,
+  hiddenKey: HIDDEN_COLS_KEY,
+  orderKey: COL_ORDER_KEY,
+  migrate: migrateLegacyCostCols,
+});
 
 function setStatus(text, type = "") {
   statusEl.textContent = text;
@@ -567,11 +459,7 @@ function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
   const pretCumparare = product.pret_cumparare ?? "";
-  const hidden = new Set(hiddenCols);
-  const cellClass = (col, extra = "") => {
-    const parts = [extra, hidden.has(col) ? "is-col-hidden" : ""].filter(Boolean);
-    return parts.length ? ` class="${parts.join(" ")}"` : "";
-  };
+  const cellClass = (col, extra = "") => columns.cellClass(col, extra);
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
   const hasOverride =
     product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri));
@@ -624,7 +512,7 @@ function rowHtml(product, index) {
     pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
   };
   return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
-    ${columnOrder.map((col) => cells[col] || "").join("")}
+    ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
 
@@ -868,7 +756,7 @@ async function loadProducts() {
   setStatus("Se încarcă din baza de date…", "loading");
 
   try {
-    const res = await fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`);
+    const res = await fetch("/api/catalog");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
 
@@ -1053,7 +941,7 @@ tbody.addEventListener("click", (e) => {
 /* ---------- Persistare in DB (sursa de adevar) ---------- */
 
 const schedulePersistListing = createPersister({
-  getChannel: () => currentChannel,
+  getChannel: () => LISTING_CHANNEL,
   onSaved: (id, fields) => patchLoadedProduct(id, fields),
   onError: (err) => setStatus(err.message || "Eroare la salvare", "error"),
 });
@@ -1145,13 +1033,15 @@ function toExportValue(col, text) {
 
 function collectExportRows(mode) {
   const cols =
-    mode === "all" ? [...columnOrder] : columnOrder.filter((c) => !hiddenCols.includes(c));
+    mode === "all"
+      ? [...columns.order]
+      : columns.order.filter((c) => !columns.isHidden(c));
   const allRows = [...tbody.querySelectorAll("tr[data-offer-id]")];
   const rows = mode === "all" ? allRows : allRows.filter((tr) => !tr.classList.contains("is-row-filtered"));
 
   return {
     cols,
-    headers: cols.map((col) => COLUMN_LABELS[col] || col),
+    headers: cols.map((col) => columns.labels[col] || col),
     rows: rows.map((tr) => cols.map((col) => toExportValue(col, getCellFilterText(tr, col)))),
   };
 }
@@ -1238,20 +1128,6 @@ exportMenu?.addEventListener("click", (e) => {
 btnSaveSettings.addEventListener("click", saveSettings);
 btnMore.hidden = true;
 
-/* Canalul e comun cu pagina Sincronizare (aceeasi cheie in localStorage). */
-if (channelSelect) {
-  channelSelect.value = currentChannel;
-  channelSelect.addEventListener("change", () => {
-    currentChannel = channelSelect.value || "emag";
-    try {
-      localStorage.setItem(CHANNEL_KEY, currentChannel);
-    } catch {
-      /* ignore */
-    }
-    loadProducts();
-  });
-}
-
 table.querySelector("thead")?.addEventListener("click", (e) => {
   if (e.target.closest(".filter-row") || e.target.closest(".col-filter")) return;
   const th = e.target.closest("thead tr:not(.filter-row) th[data-col]");
@@ -1284,11 +1160,6 @@ inputProcentajAlte.addEventListener("input", onSettingsInput);
 inputMultPrp.addEventListener("input", onSettingsInput);
 inputMultMin.addEventListener("input", onSettingsInput);
 inputMultMax.addEventListener("input", onSettingsInput);
-
-btnColumns.addEventListener("click", (e) => {
-  e.stopPropagation();
-  setColumnMenuOpen(colMenu.hidden);
-});
 
 function setTableFullscreen(on) {
   if (!pageEl || !btnTableFullscreen) return;
@@ -1331,82 +1202,13 @@ try {
   /* ignore */
 }
 
-colMenu.addEventListener("change", (e) => {
-  const input = e.target.closest("input[data-col-toggle]");
-  if (!input) return;
-  const col = input.dataset.colToggle;
-  if (input.checked) {
-    hiddenCols = hiddenCols.filter((c) => c !== col);
-  } else {
-    if (!hiddenCols.includes(col)) hiddenCols.push(col);
-  }
-  saveHiddenCols();
-  applyColumnVisibility();
-});
-
-colMenu.addEventListener("dragstart", (e) => {
-  const handle = e.target.closest(".col-drag-handle");
-  const item = handle?.closest(".col-menu-item");
-  if (!item) {
-    e.preventDefault();
-    return;
-  }
-  dragCol = item.dataset.col;
-  item.classList.add("is-dragging");
-  e.dataTransfer.effectAllowed = "move";
-  e.dataTransfer.setData("text/plain", dragCol);
-});
-
-colMenu.addEventListener("dragend", () => {
-  dragCol = null;
-  colMenu.querySelectorAll(".col-menu-item").forEach((el) => {
-    el.classList.remove("is-dragging", "is-drop-before", "is-drop-after");
-  });
-});
-
-colMenu.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  const item = e.target.closest(".col-menu-item");
-  if (!item || !dragCol || item.dataset.col === dragCol) return;
-  e.dataTransfer.dropEffect = "move";
-  const rect = item.getBoundingClientRect();
-  const before = e.clientY < rect.top + rect.height / 2;
-  colMenu.querySelectorAll(".col-menu-item").forEach((el) => {
-    el.classList.remove("is-drop-before", "is-drop-after");
-  });
-  item.classList.add(before ? "is-drop-before" : "is-drop-after");
-});
-
-colMenu.addEventListener("drop", (e) => {
-  e.preventDefault();
-  const item = e.target.closest(".col-menu-item");
-  if (!item || !dragCol || item.dataset.col === dragCol) return;
-  const from = columnOrder.indexOf(dragCol);
-  const toCol = item.dataset.col;
-  let to = columnOrder.indexOf(toCol);
-  if (from < 0 || to < 0) return;
-  const rect = item.getBoundingClientRect();
-  const before = e.clientY < rect.top + rect.height / 2;
-  if (!before) to += 1;
-  if (from < to) to -= 1;
-  if (from === to) return;
-  columnOrder.splice(from, 1);
-  columnOrder.splice(to, 0, dragCol);
-  saveColumnOrder();
-  applyColumnOrder();
-  buildColumnMenu();
-});
-
-colMenu.addEventListener("click", (e) => e.stopPropagation());
-
 document.addEventListener("click", () => {
-  if (!colMenu.hidden) setColumnMenuOpen(false);
   if (exportMenu && !exportMenu.hidden) setExportMenuOpen(false);
 });
 
-applyColumnOrder();
-buildColumnMenu();
-applyColumnVisibility();
+columns.applyOrder();
+columns.buildMenu();
+columns.applyVisibility();
 updateDirtyStatus();
 loadSettings().then(() => loadProducts());
 

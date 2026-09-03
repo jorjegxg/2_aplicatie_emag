@@ -1042,8 +1042,21 @@ td.col-procentaj-profit.pct-2 {
 }
 
 #products-table th.is-col-hidden,
-#products-table td.is-col-hidden {
+#products-table td.is-col-hidden,
+#pricing-table th.is-col-hidden,
+#pricing-table td.is-col-hidden {
   display: none;
+}
+
+/* Descrierea in tabelul de preturi e doar text — o limitez la 3 randuri. */
+#pricing-table td.col-description-ro {
+  max-width: 22rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .site-nav {

@@ -59,6 +59,18 @@
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
             Preia comision eMAG
           </button>
+          <div class="col-menu-wrap">
+            <button type="button" id="btn-columns" class="btn btn-secondary btn-with-icon" aria-expanded="false" aria-controls="col-menu">
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M3 5h18v2.17l-6.41 6.41V21l-3.18-1.59V13.58L3 7.17V5zm2.41 2 5.59 5.59V18.5l1 .5v-6.41L17.59 7H5.41z"
+                />
+              </svg>
+              Coloane
+            </button>
+            <div id="col-menu" class="col-menu" hidden role="menu"></div>
+          </div>
           <label class="field field-inline field-checkbox">
             <input type="checkbox" id="only-diff" />
             <span>Doar diferențe</span>
@@ -77,13 +89,23 @@
               <th data-col="index" data-src="calc">#</th>
               <th data-col="id" data-src="channel">ID ofertă</th>
               <th data-col="part_number" data-src="channel">SKU</th>
+              <th data-col="id_familie" data-src="channel">ID familie</th>
+              <th data-col="familie" data-src="channel">Familie</th>
               <th data-col="name" data-src="channel">Nume</th>
+              <th data-col="description" data-src="channel">Descriere</th>
               <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
+              <th data-col="alte_costuri" data-src="calc">Pret transport</th>
               <th data-col="pret_emag" data-src="db" id="th-pret-canal" class="col-pret-emag">Pret emag</th>
+              <th data-col="prp" data-src="channel">PRP</th>
+              <th data-col="pret_minim" data-src="channel">Pret minim</th>
+              <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
+              <th data-col="stoc" data-src="channel">Stoc</th>
               <th data-col="procentaj_emag" data-src="channel" class="col-procentaj-emag">Comision %</th>
               <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
               <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
               <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
+              <th data-col="ean" data-src="channel">EAN</th>
+              <th data-col="pnk" data-src="channel">PNK</th>
               <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
               <th data-col="istoric" data-src="calc">Istoric</th>
             </tr>
@@ -91,19 +113,29 @@
               <th data-col="index"></th>
               <th data-col="id"><input type="search" class="col-filter" data-filter-col="id" placeholder="Filtrează…" aria-label="Filtrează ID ofertă" /></th>
               <th data-col="part_number"><input type="search" class="col-filter" data-filter-col="part_number" placeholder="Filtrează…" aria-label="Filtrează SKU" /></th>
+              <th data-col="id_familie"><input type="search" class="col-filter" data-filter-col="id_familie" placeholder="Filtrează…" aria-label="Filtrează ID familie" /></th>
+              <th data-col="familie"><input type="search" class="col-filter" data-filter-col="familie" placeholder="Filtrează…" aria-label="Filtrează Familie" /></th>
               <th data-col="name"><input type="search" class="col-filter" data-filter-col="name" placeholder="Filtrează…" aria-label="Filtrează Nume" /></th>
+              <th data-col="description"><input type="search" class="col-filter" data-filter-col="description" placeholder="Filtrează…" aria-label="Filtrează Descriere" /></th>
               <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
+              <th data-col="alte_costuri"><input type="search" class="col-filter" data-filter-col="alte_costuri" placeholder="Filtrează…" aria-label="Filtrează Pret transport" /></th>
               <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează preț canal" /></th>
+              <th data-col="prp"><input type="search" class="col-filter" data-filter-col="prp" placeholder="Filtrează…" aria-label="Filtrează PRP" /></th>
+              <th data-col="pret_minim"><input type="search" class="col-filter" data-filter-col="pret_minim" placeholder="Filtrează…" aria-label="Filtrează Pret minim" /></th>
+              <th data-col="pret_maxim"><input type="search" class="col-filter" data-filter-col="pret_maxim" placeholder="Filtrează…" aria-label="Filtrează Pret maxim" /></th>
+              <th data-col="stoc"><input type="search" class="col-filter" data-filter-col="stoc" placeholder="Filtrează…" aria-label="Filtrează Stoc" /></th>
               <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision" /></th>
               <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
               <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
               <th data-col="procentaj_profit"><input type="search" class="col-filter" data-filter-col="procentaj_profit" placeholder="Filtrează…" aria-label="Filtrează Procentaj profit" /></th>
+              <th data-col="ean"><input type="search" class="col-filter" data-filter-col="ean" placeholder="Filtrează…" aria-label="Filtrează EAN" /></th>
+              <th data-col="pnk"><input type="search" class="col-filter" data-filter-col="pnk" placeholder="Filtrează…" aria-label="Filtrează PNK" /></th>
               <th data-col="pret_emag_schimbat"></th>
               <th data-col="istoric"></th>
             </tr>
           </thead>
           <tbody id="pricing-body">
-            <tr class="empty-row"><td colspan="12">Se încarcă…</td></tr>
+            <tr class="empty-row"><td colspan="22">Se încarcă…</td></tr>
           </tbody>
         </table>
       </div>
@@ -171,6 +203,7 @@
       </div>
     </div>
     <script src="pricing.js"></script>
+    <script src="table-columns.js"></script>
     <script src="history-modal.js"></script>
     <script src="sync.js"></script>
   </body>

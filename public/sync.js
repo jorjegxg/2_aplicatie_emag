@@ -279,6 +279,7 @@ const {
   procentajEmagTooltip,
   procentajEmagInputHtml,
   createPersister,
+  stockSumFromArr,
 } = window.Pricing;
 
 const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
@@ -288,6 +289,18 @@ const pricingBody = document.getElementById("pricing-body");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
 const syncInfoBanner = document.getElementById("sync-info-banner");
+
+/* Chei separate de pagina de produse: ascunderea/ordinea sunt per pagina. */
+const columns = window.TableColumns.create({
+  table: pricingTable,
+  tbody: pricingBody,
+  menuEl: document.getElementById("col-menu"),
+  buttonEl: document.getElementById("btn-columns"),
+  hiddenKey: "sync-hidden-columns",
+  orderKey: "sync-column-order",
+});
+
+const PRICING_COL_COUNT = columns.defaultOrder.length;
 
 let pricingProducts = [];
 let settings = {};
@@ -349,13 +362,18 @@ function pricingRowHtml(product, index) {
   const belowMin =
     minProfit != null && Number.isFinite(minProfit) && Number.isFinite(saleNum) && saleNum < minProfit;
 
+  const cellClass = (col, extra = "") => columns.cellClass(col, extra);
   const commissionCell = isFetched
-    ? `<td data-col="procentaj_emag" class="col-procentaj-emag has-emag-commission"${
-        tooltip ? ` title="${tooltip}"` : ""
-      }>${escapeHtml(formatProcentajEmagDisplay(pct))}</td>`
-    : `<td data-col="procentaj_emag" class="col-procentaj-emag${
-        hasOverride ? " is-emag-pct-override" : ""
-      }">${procentajEmagInputHtml(pct, hasOverride)}</td>`;
+    ? `<td data-col="procentaj_emag"${cellClass(
+        "procentaj_emag",
+        "col-procentaj-emag has-emag-commission"
+      )}${tooltip ? ` title="${tooltip}"` : ""}>${escapeHtml(
+        formatProcentajEmagDisplay(pct)
+      )}</td>`
+    : `<td data-col="procentaj_emag"${cellClass(
+        "procentaj_emag",
+        `col-procentaj-emag${hasOverride ? " is-emag-pct-override" : ""}`
+      )}>${procentajEmagInputHtml(pct, hasOverride)}</td>`;
 
   const changeClass = ["col-pret-schimbat", stalenessClass(product.pret_emag_last_change)]
     .filter(Boolean)
@@ -364,38 +382,108 @@ function pricingRowHtml(product, index) {
     .filter(Boolean)
     .join(" ");
 
-  return `<tr data-offer-id="${escapeHtml(product.id)}">
-    <td data-col="index">${index}</td>
-    <td data-col="id">${escapeHtml(product.id)}</td>
-    <td data-col="part_number">${escapeHtml(product.part_number) || "—"}</td>
-    <td data-col="name" class="col-name">${escapeHtml(product.name) || "—"}</td>
-    <td data-col="pret_cumparare">${formatPrice(pretCumparare, currency)}</td>
-    <td data-col="pret_emag" class="col-pret-emag">${formatPrice(product.sale_price, currency)}</td>
-    ${commissionCell}
-    <td data-col="pret_minim_profit"${belowMin ? ' class="is-below-emag"' : ""}>${formatPrice(minProfit, currency)}</td>
-    <td data-col="profit" class="col-profit">${formatPrice(profit, currency)}</td>
-    <td data-col="procentaj_profit" class="${procentajClass}">${formatPercent(procentaj)}</td>
-    <td data-col="pret_emag_schimbat" class="${changeClass}"${
+  // Coloanele preluate din pagina de produse sunt doar afisate aici.
+  const pretMinim =
+    product.pret_minim_override != null &&
+    Number.isFinite(Number(product.pret_minim_override))
+      ? Number(product.pret_minim_override)
+      : product.min_sale_price;
+  const generalStock = Number(product.general_stock);
+  const stoc = Number.isFinite(generalStock)
+    ? generalStock
+    : stockSumFromArr(product.stock);
+
+  const cells = {
+    index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
+    id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
+    part_number: `<td data-col="part_number"${cellClass("part_number")}>${
+      escapeHtml(product.part_number) || "—"
+    }</td>`,
+    id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${
+      escapeHtml(product.id_familie) || "—"
+    }</td>`,
+    familie: `<td data-col="familie"${cellClass("familie")}>${
+      escapeHtml(product.familie) || "—"
+    }</td>`,
+    name: `<td data-col="name"${cellClass("name", "col-name")}>${
+      escapeHtml(product.name) || "—"
+    }</td>`,
+    description: `<td data-col="description"${cellClass(
+      "description",
+      "col-description-ro"
+    )}>${escapeHtml(product.description) || "—"}</td>`,
+    pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
+      "pret_cumparare"
+    )}>${formatPrice(pretCumparare, currency)}</td>`,
+    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri")}>${formatPrice(
+      alte,
+      currency
+    )}</td>`,
+    pret_emag: `<td data-col="pret_emag"${cellClass(
+      "pret_emag",
+      "col-pret-emag"
+    )}>${formatPrice(product.sale_price, currency)}</td>`,
+    prp: `<td data-col="prp"${cellClass("prp")}>${formatPrice(
+      product.recommended_price,
+      currency
+    )}</td>`,
+    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")}>${formatPrice(
+      pretMinim,
+      currency
+    )}</td>`,
+    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")}>${formatPrice(
+      product.max_sale_price,
+      currency
+    )}</td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc")}>${escapeHtml(stoc)}</td>`,
+    procentaj_emag: commissionCell,
+    pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass(
+      "pret_minim_profit",
+      belowMin ? "is-below-emag" : ""
+    )}>${formatPrice(minProfit, currency)}</td>`,
+    profit: `<td data-col="profit"${cellClass("profit", "col-profit")}>${formatPrice(
+      profit,
+      currency
+    )}</td>`,
+    procentaj_profit: `<td data-col="procentaj_profit"${cellClass(
+      "procentaj_profit",
+      procentajClass
+    )}>${formatPercent(procentaj)}</td>`,
+    ean: `<td data-col="ean"${cellClass("ean")}>${escapeHtml(product.ean) || "—"}</td>`,
+    pnk: `<td data-col="pnk"${cellClass("pnk")}>${
+      escapeHtml(product.part_number_key) || "—"
+    }</td>`,
+    pret_emag_schimbat: `<td data-col="pret_emag_schimbat"${cellClass(
+      "pret_emag_schimbat",
+      changeClass
+    )}${
       product.pret_emag_last_change
         ? ` title="${escapeHtml(new Date(product.pret_emag_last_change).toLocaleString("ro-RO"))}"`
         : ""
-    }>${escapeHtml(relativeTimeRo(product.pret_emag_last_change))}</td>
-    <td data-col="istoric" class="col-istoric"><button type="button" class="btn-history" data-offer-id="${escapeHtml(
+    }>${escapeHtml(relativeTimeRo(product.pret_emag_last_change))}</td>`,
+    istoric: `<td data-col="istoric"${cellClass(
+      "istoric",
+      "col-istoric"
+    )}><button type="button" class="btn-history" data-offer-id="${escapeHtml(
       product.id
-    )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>
+    )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
+  };
+
+  return `<tr data-offer-id="${escapeHtml(product.id)}">
+    ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
 
 function renderPricing() {
   thPretCanal.textContent = CHANNEL_PRICE_LABELS[currentChannel] || "Preț canal";
   if (!pricingProducts.length) {
-    pricingBody.innerHTML =
-      '<tr class="empty-row"><td colspan="12">Niciun produs în DB pentru canalul selectat.</td></tr>';
+    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">Niciun produs în DB pentru canalul selectat.</td></tr>`;
     return;
   }
   pricingBody.innerHTML = pricingProducts
     .map((p, i) => pricingRowHtml(p, i + 1))
     .join("");
+  columns.applyVisibility();
   applyPricingFilters();
 }
 
@@ -446,7 +534,7 @@ async function loadPricing() {
     pricingProducts = Array.isArray(catalog.products) ? catalog.products : [];
     renderPricing();
   } catch (err) {
-    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="12">${escapeHtml(
+    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   }
@@ -538,8 +626,14 @@ function applyPricingFilters() {
 const NUMERIC_PRICING_COLS = new Set([
   "index",
   "id",
+  "id_familie",
   "pret_cumparare",
+  "alte_costuri",
   "pret_emag",
+  "prp",
+  "pret_minim",
+  "pret_maxim",
+  "stoc",
   "procentaj_emag",
   "pret_minim_profit",
   "profit",
@@ -669,6 +763,10 @@ btnFetchCommission.addEventListener("click", fetchCommission);
 onlyDiffToggle.addEventListener("change", () => {
   if (currentData) renderDiffRows(currentData);
 });
+
+columns.applyOrder();
+columns.buildMenu();
+columns.applyVisibility();
 
 loadDiff();
 loadPricing();
