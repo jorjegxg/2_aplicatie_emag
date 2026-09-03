@@ -5,6 +5,7 @@ const CHANNEL_KEY = "marketplace-channel";
 const channelSelect = document.getElementById("channel-select");
 const btnReload = document.getElementById("btn-reload");
 const btnPull = document.getElementById("btn-pull");
+const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const onlyDiffToggle = document.getElementById("only-diff");
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("sync-summary");
@@ -18,6 +19,7 @@ let currentChannel = localStorage.getItem(CHANNEL_KEY) || "emag";
 let currentData = null;
 let loading = false;
 let pulling = false;
+let fetchingCommission = false;
 
 const STATUS_LABELS = { 0: "Inactiv", 1: "Activ", 2: "În așteptare" };
 
@@ -200,7 +202,7 @@ async function pullFromChannel() {
       `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
       "ok"
     );
-    await loadDiff();
+    await Promise.all([loadDiff(), loadPricing()]);
   } catch (err) {
     setStatus(err.message || "Eroare la preluare", "error");
   } finally {
@@ -208,6 +210,450 @@ async function pullFromChannel() {
     btnPull.disabled = false;
   }
 }
+
+
+/** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe listinguri. */
+async function fetchCommission() {
+  if (fetchingCommission) return;
+  fetchingCommission = true;
+  btnFetchCommission.disabled = true;
+  setStatus("Se încarcă produsele din DB…", "loading");
+  try {
+    const catalogRes = await fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`);
+    const catalog = await catalogRes.json();
+    if (!catalogRes.ok) throw new Error(catalog.error || `HTTP ${catalogRes.status}`);
+
+    const items = (Array.isArray(catalog.products) ? catalog.products : [])
+      .map((p) => ({ id: Number(p.id), sale_price: Number(p.sale_price) }))
+      .filter((item) => Number.isFinite(item.id));
+
+    if (!items.length) {
+      setStatus("Niciun produs în DB.", "error");
+      return;
+    }
+
+    setStatus(`Preiau comision eMAG (${items.length} produse)…`, "loading");
+    const res = await fetch(
+      `/api/products/fetch-commission?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const errCount = data.errorCount || 0;
+    setStatus(
+      errCount
+        ? `Comision preluat: ${data.count}/${items.length} (${errCount} erori).`
+        : `Comision preluat pentru ${data.count} produse.`,
+      errCount ? "error" : "ok"
+    );
+    await Promise.all([loadDiff(), loadPricing()]);
+  } catch (err) {
+    setStatus(err.message || "Eroare la preluare comision", "error");
+  } finally {
+    fetchingCommission = false;
+    btnFetchCommission.disabled = false;
+  }
+}
+
+/* ================= Preturi si marja (tabelul de sus) ================= */
+
+const {
+  DEFAULT_PROcentaj_EMAG,
+  formatPrice,
+  formatPercent,
+  relativeTimeRo,
+  stalenessClass,
+  procentajLevelClass,
+  parseSortNumber,
+  alteFromProcentaj,
+  contabilFromProcentaj,
+  calcProfit,
+  calcPretMinimProfit,
+  calcProcentajProfit,
+  isEmagCommissionFetched,
+  formatProcentajEmagDisplay,
+  procentajEmagTooltip,
+  procentajEmagInputHtml,
+  createPersister,
+} = window.Pricing;
+
+const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
+
+const pricingTable = document.getElementById("pricing-table");
+const pricingBody = document.getElementById("pricing-body");
+const thPretCanal = document.getElementById("th-pret-canal");
+const btnPush = document.getElementById("btn-push");
+const syncInfoBanner = document.getElementById("sync-info-banner");
+
+let pricingProducts = [];
+let settings = {};
+let pricingSortCol = null;
+let pricingSortDir = "asc";
+let pushing = false;
+
+const schedulePersistListing = createPersister({
+  getChannel: () => currentChannel,
+  onError: (err) => setStatus(err.message || "Eroare la salvare", "error"),
+});
+
+function globalPct(key) {
+  const raw = settings[key];
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Costurile derivate: override pe listing, altfel procentaj global × preț cumpărare. */
+function rowCosts(product) {
+  const pretCumparare = product.pret_cumparare ?? "";
+  const alte =
+    product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri))
+      ? Number(product.alte_costuri)
+      : alteFromProcentaj(globalPct("procentaj_alte_costuri") ?? "", pretCumparare);
+  const contabil =
+    product.pret_contabil != null && Number.isFinite(Number(product.pret_contabil))
+      ? Number(product.pret_contabil)
+      : contabilFromProcentaj(globalPct("procentaj_pret_contabil") ?? "", pretCumparare);
+  return { pretCumparare, alte, contabil };
+}
+
+function rowPctEmag(product) {
+  const raw = product.procentaj_emag;
+  return raw != null && Number.isFinite(Number(raw))
+    ? Number(raw)
+    : DEFAULT_PROcentaj_EMAG;
+}
+
+function pricingRowHtml(product, index) {
+  const currency = product.currency || "RON";
+  const { pretCumparare, alte, contabil } = rowCosts(product);
+  const pct = rowPctEmag(product);
+  const commissionValue =
+    product.commission_value != null && Number.isFinite(Number(product.commission_value))
+      ? Number(product.commission_value)
+      : null;
+  const fetchedAt = product.commission_fetched_at ?? "";
+  const isFetched = isEmagCommissionFetched(commissionValue);
+  const tooltip = escapeHtml(procentajEmagTooltip(commissionValue, fetchedAt));
+  const hasOverride = !isFetched && Number(pct) !== DEFAULT_PROcentaj_EMAG;
+
+  const minProfit = calcPretMinimProfit(pretCumparare, alte, contabil, pct);
+  const profit = calcProfit(product.sale_price, pretCumparare, alte, contabil, pct);
+  const procentaj = calcProcentajProfit(
+    product.sale_price,
+    pretCumparare,
+    alte,
+    contabil,
+    pct
+  );
+  const saleNum = Number(product.sale_price);
+  const belowMin =
+    minProfit != null && Number.isFinite(minProfit) && Number.isFinite(saleNum) && saleNum < minProfit;
+
+  const commissionCell = isFetched
+    ? `<td data-col="procentaj_emag" class="col-procentaj-emag has-emag-commission"${
+        tooltip ? ` title="${tooltip}"` : ""
+      }>${escapeHtml(formatProcentajEmagDisplay(pct))}</td>`
+    : `<td data-col="procentaj_emag" class="col-procentaj-emag${
+        hasOverride ? " is-emag-pct-override" : ""
+      }">${procentajEmagInputHtml(pct, hasOverride)}</td>`;
+
+  const changeClass = ["col-pret-schimbat", stalenessClass(product.pret_emag_last_change)]
+    .filter(Boolean)
+    .join(" ");
+  const procentajClass = ["col-procentaj-profit", procentajLevelClass(procentaj)]
+    .filter(Boolean)
+    .join(" ");
+
+  return `<tr data-offer-id="${escapeHtml(product.id)}">
+    <td data-col="index">${index}</td>
+    <td data-col="id">${escapeHtml(product.id)}</td>
+    <td data-col="part_number">${escapeHtml(product.part_number) || "—"}</td>
+    <td data-col="name" class="col-name">${escapeHtml(product.name) || "—"}</td>
+    <td data-col="pret_cumparare">${formatPrice(pretCumparare, currency)}</td>
+    <td data-col="pret_emag" class="col-pret-emag">${formatPrice(product.sale_price, currency)}</td>
+    ${commissionCell}
+    <td data-col="pret_minim_profit"${belowMin ? ' class="is-below-emag"' : ""}>${formatPrice(minProfit, currency)}</td>
+    <td data-col="profit" class="col-profit">${formatPrice(profit, currency)}</td>
+    <td data-col="procentaj_profit" class="${procentajClass}">${formatPercent(procentaj)}</td>
+    <td data-col="pret_emag_schimbat" class="${changeClass}"${
+      product.pret_emag_last_change
+        ? ` title="${escapeHtml(new Date(product.pret_emag_last_change).toLocaleString("ro-RO"))}"`
+        : ""
+    }>${escapeHtml(relativeTimeRo(product.pret_emag_last_change))}</td>
+    <td data-col="istoric" class="col-istoric"><button type="button" class="btn-history" data-offer-id="${escapeHtml(
+      product.id
+    )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>
+  </tr>`;
+}
+
+function renderPricing() {
+  thPretCanal.textContent = CHANNEL_PRICE_LABELS[currentChannel] || "Preț canal";
+  if (!pricingProducts.length) {
+    pricingBody.innerHTML =
+      '<tr class="empty-row"><td colspan="12">Niciun produs în DB pentru canalul selectat.</td></tr>';
+    return;
+  }
+  pricingBody.innerHTML = pricingProducts
+    .map((p, i) => pricingRowHtml(p, i + 1))
+    .join("");
+  applyPricingFilters();
+}
+
+/** Recalculeaza pe loc marja unui rand dupa ce s-a schimbat comisionul. */
+function refreshPricingRow(tr, product) {
+  const currency = product.currency || "RON";
+  const { pretCumparare, alte, contabil } = rowCosts(product);
+  const pct = rowPctEmag(product);
+  const minProfit = calcPretMinimProfit(pretCumparare, alte, contabil, pct);
+  const profit = calcProfit(product.sale_price, pretCumparare, alte, contabil, pct);
+  const procentaj = calcProcentajProfit(
+    product.sale_price,
+    pretCumparare,
+    alte,
+    contabil,
+    pct
+  );
+  const saleNum = Number(product.sale_price);
+
+  const minCell = tr.querySelector("td[data-col='pret_minim_profit']");
+  if (minCell) {
+    minCell.textContent = formatPrice(minProfit, currency);
+    minCell.classList.toggle(
+      "is-below-emag",
+      minProfit != null && Number.isFinite(minProfit) && Number.isFinite(saleNum) && saleNum < minProfit
+    );
+  }
+  const profitCell = tr.querySelector("td[data-col='profit']");
+  if (profitCell) profitCell.textContent = formatPrice(profit, currency);
+  const pctCell = tr.querySelector("td[data-col='procentaj_profit']");
+  if (pctCell) {
+    pctCell.textContent = formatPercent(procentaj);
+    pctCell.className = ["col-procentaj-profit", procentajLevelClass(procentaj)]
+      .filter(Boolean)
+      .join(" ");
+  }
+}
+
+async function loadPricing() {
+  try {
+    const [settingsRes, catalogRes] = await Promise.all([
+      fetch("/api/settings"),
+      fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`),
+    ]);
+    const settingsData = await settingsRes.json();
+    const catalog = await catalogRes.json();
+    if (!catalogRes.ok) throw new Error(catalog.error || `HTTP ${catalogRes.status}`);
+    settings = settingsRes.ok ? settingsData : {};
+    pricingProducts = Array.isArray(catalog.products) ? catalog.products : [];
+    renderPricing();
+  } catch (err) {
+    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="12">${escapeHtml(
+      err.message || "Eroare"
+    )}</td></tr>`;
+  }
+}
+
+/* ---------- editare comision ---------- */
+
+function findProduct(offerId) {
+  return pricingProducts.find((p) => String(p.id) === String(offerId));
+}
+
+function syncCommissionCell(tr) {
+  const cell = tr.querySelector("td[data-col='procentaj_emag']");
+  const input = cell?.querySelector("input.input-procentaj-emag");
+  if (!input) return;
+  const n = Number(input.value);
+  const overridden = Number.isFinite(n) && n !== DEFAULT_PROcentaj_EMAG;
+  const resetBtn = cell.querySelector("button.btn-reset-emag-pct");
+  if (resetBtn) resetBtn.hidden = !overridden;
+  cell.classList.toggle("is-emag-pct-override", overridden);
+}
+
+pricingBody.addEventListener("input", (e) => {
+  const input = e.target.closest("input.input-procentaj-emag");
+  if (!input) return;
+  const tr = input.closest("tr[data-offer-id]");
+  const product = findProduct(tr?.dataset.offerId);
+  if (!product) return;
+  const n = Number(input.value);
+  const isDefault = input.value === "" || !Number.isFinite(n) || n === DEFAULT_PROcentaj_EMAG;
+  product.procentaj_emag = isDefault ? null : n;
+  syncCommissionCell(tr);
+  refreshPricingRow(tr, product);
+  schedulePersistListing(
+    product.id,
+    { procentaj_emag: isDefault ? null : n },
+    "procentaj-emag"
+  );
+});
+
+pricingBody.addEventListener("click", (e) => {
+  const historyBtn = e.target.closest("button.btn-history");
+  if (historyBtn) {
+    const product = findProduct(historyBtn.dataset.offerId);
+    window.HistoryModal.open(historyBtn.dataset.offerId, product?.name || "");
+    return;
+  }
+
+  const resetBtn = e.target.closest("button.btn-reset-emag-pct");
+  if (!resetBtn) return;
+  const tr = resetBtn.closest("tr[data-offer-id]");
+  const product = findProduct(tr?.dataset.offerId);
+  if (!product) return;
+  const input = tr.querySelector("input.input-procentaj-emag");
+  if (input) input.value = String(DEFAULT_PROcentaj_EMAG);
+  product.procentaj_emag = null;
+  syncCommissionCell(tr);
+  refreshPricingRow(tr, product);
+  schedulePersistListing(product.id, { procentaj_emag: null }, "procentaj-emag");
+});
+
+/* ---------- filtrare + sortare ---------- */
+
+function pricingCellText(tr, col) {
+  const td = tr.querySelector(`td[data-col="${col}"]`);
+  if (!td) return "";
+  const input = td.querySelector("input");
+  if (input) return String(input.value ?? "").trim();
+  const text = (td.textContent || "").trim();
+  return !text || text === "—" ? "" : text;
+}
+
+function applyPricingFilters() {
+  const filters = [...pricingTable.querySelectorAll("thead .col-filter")]
+    .map((input) => ({
+      col: input.dataset.filterCol,
+      q: String(input.value || "").trim().toLowerCase(),
+    }))
+    .filter((f) => f.col && f.q);
+
+  pricingBody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
+    const match =
+      filters.length === 0 ||
+      filters.every((f) => pricingCellText(tr, f.col).toLowerCase().includes(f.q));
+    tr.classList.toggle("is-row-filtered", !match);
+  });
+}
+
+const NUMERIC_PRICING_COLS = new Set([
+  "index",
+  "id",
+  "pret_cumparare",
+  "pret_emag",
+  "procentaj_emag",
+  "pret_minim_profit",
+  "profit",
+  "procentaj_profit",
+]);
+
+function sortPricingTable() {
+  pricingTable.querySelectorAll("thead tr:not(.filter-row) th[data-col]").forEach((th) => {
+    th.classList.remove("is-sorted-asc", "is-sorted-desc");
+    if (pricingSortCol && th.dataset.col === pricingSortCol) {
+      th.classList.add(pricingSortDir === "asc" ? "is-sorted-asc" : "is-sorted-desc");
+      th.setAttribute("aria-sort", pricingSortDir === "asc" ? "ascending" : "descending");
+    } else {
+      th.setAttribute("aria-sort", "none");
+    }
+  });
+  if (!pricingSortCol) return;
+
+  const numeric = NUMERIC_PRICING_COLS.has(pricingSortCol);
+  const rows = [...pricingBody.querySelectorAll("tr[data-offer-id]")];
+  rows.sort((a, b) => {
+    const ra = pricingCellText(a, pricingSortCol);
+    const rb = pricingCellText(b, pricingSortCol);
+    const va = numeric ? parseSortNumber(ra) : ra.toLowerCase();
+    const vb = numeric ? parseSortNumber(rb) : rb.toLowerCase();
+    const aEmpty = va == null || va === "";
+    const bEmpty = vb == null || vb === "";
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return pricingSortDir === "asc" ? 1 : -1;
+    if (bEmpty) return pricingSortDir === "asc" ? -1 : 1;
+    const cmp =
+      typeof va === "number" && typeof vb === "number"
+        ? va - vb
+        : String(va).localeCompare(String(vb), "ro", { numeric: true, sensitivity: "base" });
+    return pricingSortDir === "asc" ? cmp : -cmp;
+  });
+  rows.forEach((tr, i) => {
+    pricingBody.appendChild(tr);
+    const indexCell = tr.querySelector("td[data-col='index']");
+    if (indexCell) indexCell.textContent = String(i + 1);
+  });
+}
+
+pricingTable.querySelector("thead")?.addEventListener("click", (e) => {
+  if (e.target.closest(".filter-row") || e.target.closest(".col-filter")) return;
+  const th = e.target.closest("thead tr:not(.filter-row) th[data-col]");
+  if (!th) return;
+  const col = th.dataset.col;
+  if (pricingSortCol === col) {
+    pricingSortDir = pricingSortDir === "asc" ? "desc" : "asc";
+  } else {
+    pricingSortCol = col;
+    pricingSortDir = "asc";
+  }
+  sortPricingTable();
+});
+
+let pricingFilterTimer = null;
+pricingTable.querySelector("thead tr.filter-row")?.addEventListener("input", (e) => {
+  if (!e.target.closest(".col-filter")) return;
+  clearTimeout(pricingFilterTimer);
+  pricingFilterTimer = setTimeout(applyPricingFilters, 150);
+});
+
+/* ---------- publicare pe canal ---------- */
+
+/** Trimite ofertele care difera fata de ultima preluare; DB-ul e sursa valorilor. */
+async function pushToChannel() {
+  if (pushing) return;
+  if (!currentData) {
+    setStatus("Încarcă întâi comparația.", "error");
+    return;
+  }
+  const ids = currentData.matched
+    .filter((m) => m.diff_count > 0)
+    .map((m) => m.external_id);
+  if (ids.length === 0) {
+    setStatus("Nimic de publicat — nicio diferență față de marketplace.", "ok");
+    return;
+  }
+
+  pushing = true;
+  btnPush.disabled = true;
+  setStatus(`Se publică ${ids.length} oferte…`, "loading");
+  try {
+    const res = await fetch(
+      `/api/products/sync-prices?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offers: ids.map((id) => ({ id })) }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (syncInfoBanner) syncInfoBanner.hidden = false;
+    setStatus(`Publicate ${ids.length} oferte pe ${currentChannel}.`, "ok");
+    await Promise.all([loadDiff(), loadPricing()]);
+  } catch (err) {
+    setStatus(err.message || "Eroare la publicare", "error");
+  } finally {
+    pushing = false;
+    btnPush.disabled = false;
+  }
+}
+
+/* ---------- pornire ---------- */
 
 channelSelect.value = currentChannel;
 channelSelect.addEventListener("change", () => {
@@ -218,11 +664,18 @@ channelSelect.addEventListener("change", () => {
     /* ignore */
   }
   loadDiff();
+  loadPricing();
 });
-btnReload.addEventListener("click", loadDiff);
+btnReload.addEventListener("click", () => {
+  loadDiff();
+  loadPricing();
+});
 btnPull.addEventListener("click", pullFromChannel);
+btnPush.addEventListener("click", pushToChannel);
+btnFetchCommission.addEventListener("click", fetchCommission);
 onlyDiffToggle.addEventListener("change", () => {
   if (currentData) renderDiffRows(currentData);
 });
 
 loadDiff();
+loadPricing();

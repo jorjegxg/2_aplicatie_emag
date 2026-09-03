@@ -628,7 +628,7 @@ app.post("/api/products/export", (req, res) => {
     );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="produse-emag-${stamp}.xlsx"`
+      `attachment; filename="produse-${stamp}.xlsx"`
     );
     return res.send(buf);
   } catch (err) {

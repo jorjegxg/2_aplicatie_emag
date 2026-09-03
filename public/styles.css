@@ -423,7 +423,7 @@ thead tr:not(.filter-row) th[data-col] {
   user-select: none;
 }
 
-thead tr:not(.filter-row) th[data-src="emag"] {
+thead tr:not(.filter-row) th[data-src="channel"] {
   background: var(--tint-blue);
   box-shadow: inset 0 -2px 0 var(--rule-blue);
 }
@@ -438,7 +438,7 @@ thead tr:not(.filter-row) th[data-src="calc"] {
   box-shadow: inset 0 -2px 0 var(--rule-green);
 }
 
-thead tr:not(.filter-row) th[data-src="emag"]:hover {
+thead tr:not(.filter-row) th[data-src="channel"]:hover {
   background: var(--tint-blue-hover);
 }
 
@@ -1013,7 +1013,7 @@ td.col-procentaj-profit.pct-2 {
   border-bottom: 2px solid transparent;
 }
 
-.col-menu-item[data-src="emag"] {
+.col-menu-item[data-src="channel"] {
   background: var(--tint-blue);
   box-shadow: inset 3px 0 0 var(--rule-blue);
 }
@@ -1073,7 +1073,7 @@ td.col-procentaj-profit.pct-2 {
   filter: brightness(0.96);
 }
 
-.col-menu-item[data-src="emag"]:hover {
+.col-menu-item[data-src="channel"]:hover {
   background: var(--tint-blue-hover);
 }
 

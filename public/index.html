@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>eMAG — Produse</title>
+    <title>Produse</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="theme.js"></script>
   </head>
@@ -31,11 +31,6 @@
           <a href="/vanzari.html">Comenzi</a>
           <a href="/sync.html">Sincronizare</a>
         </nav>
-        <h1>eMAG Marketplace</h1>
-        <p class="subtitle">Ofertele tale — caracteristici principale</p>
-        <p id="sync-info-banner" class="sync-info-banner" hidden role="status">
-          eMAG-ului îi ia 5–10 minute să înregistreze schimbarea.
-        </p>
       </header>
 
       <div class="toolbar">
@@ -63,7 +58,7 @@
             />
           </label>
           <label class="field">
-            <span>Mult PRP</span>
+            <span>Multiplicator preț recomandat (PRP)</span>
             <input
               type="number"
               id="mult-prp"
@@ -74,7 +69,7 @@
             />
           </label>
           <label class="field">
-            <span>Mult pret minim</span>
+            <span>Multiplicator preț minim</span>
             <input
               type="number"
               id="mult-min"
@@ -85,7 +80,7 @@
             />
           </label>
           <label class="field">
-            <span>Mult pret maxim</span>
+            <span>Multiplicator preț maxim</span>
             <input
               type="number"
               id="mult-max"
@@ -96,31 +91,18 @@
             />
           </label>
           <label class="field">
-            <span>Total transport×stoc</span>
+            <span>Total preț transport × stoc</span>
             <input type="text" id="total-alte-stoc" readonly tabindex="-1" value="—" />
           </label>
           <label class="field">
-            <span>Total contabil×stoc</span>
+            <span>Total preț contabil × stoc</span>
             <input type="text" id="total-contabil-stoc" readonly tabindex="-1" value="—" />
-          </label>
-          <label class="field">
-            <span>Total profit×stoc</span>
-            <input type="text" id="total-profit-stoc" readonly tabindex="-1" value="—" />
           </label>
           <button type="button" id="btn-save-settings" class="btn btn-secondary" disabled>
             Salvează
           </button>
         </div>
         <div class="toolbar-actions">
-          <button type="button" id="btn-load" class="btn btn-with-icon">
-            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path
-                fill="currentColor"
-                d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-9.33 4.96l-1.44 1.44A8 8 0 0 0 20 13c0-4.42-3.58-8-8-8zm-6 2.04A8 8 0 0 0 4 13c0 4.42 3.58 8 8 8v4l5-5-5-5v4a6 6 0 0 1-6-6c0-1.58.61-3.02 1.61-4.1L6 7.04z"
-              />
-            </svg>
-            Reload produse
-          </button>
           <button type="button" id="btn-more" class="btn btn-secondary" hidden>
             Pagina următoare
           </button>
@@ -151,19 +133,6 @@
             </svg>
             <span class="btn-fullscreen-label">Toată pagina</span>
           </button>
-          <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în baza de date locală">
-            Preia de la marketplace
-          </button>
-          <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
-            Preia comision eMAG
-          </button>
-          <label class="field field-inline">
-            <span>Canal</span>
-            <select id="channel-select">
-              <option value="emag">eMAG</option>
-              <option value="trendyol">Trendyol</option>
-            </select>
-          </label>
           <div class="col-menu-wrap export-wrap">
             <button type="button" id="btn-export" class="btn btn-secondary btn-with-icon" title="Exportă ce se vede în tabel">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -194,10 +163,14 @@
               </button>
             </div>
           </div>
+          <label class="field field-inline">
+            <span>Canal</span>
+            <select id="channel-select">
+              <option value="emag">eMAG</option>
+              <option value="trendyol">Trendyol</option>
+            </select>
+          </label>
           <span id="status" class="status" aria-live="polite"></span>
-          <button type="button" id="btn-sync" class="btn" disabled>
-            Sincronizează cu eMAG
-          </button>
         </div>
       </div>
 
@@ -206,28 +179,22 @@
           <thead>
             <tr>
               <th data-col="index" data-src="calc">#</th>
-              <th data-col="id" data-src="emag">ID</th>
-              <th data-col="name" data-src="emag">Nume</th>
-              <th data-col="description" data-src="emag">Descriere</th>
-              <th data-col="part_number" data-src="emag">Part number</th>
-              <th data-col="id_familie" data-src="emag">ID familie</th>
-              <th data-col="familie" data-src="emag">Familie</th>
+              <th data-col="id" data-src="channel">ID</th>
+              <th data-col="name" data-src="channel">Nume</th>
+              <th data-col="description" data-src="channel">Descriere</th>
+              <th data-col="part_number" data-src="channel">Part number</th>
+              <th data-col="id_familie" data-src="channel">ID familie</th>
+              <th data-col="familie" data-src="channel">Familie</th>
               <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
               <th data-col="alte_costuri" data-src="calc">Pret transport</th>
               <th data-col="pret_contabil" data-src="calc">Pret contabil</th>
-              <th data-col="procentaj_emag" data-src="emag" class="col-procentaj-emag">Comision emag %</th>
-              <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
-              <th data-col="pret_emag" data-src="db" class="col-pret-emag">Pret emag</th>
-              <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
-              <th data-col="istoric" data-src="calc">Istoric</th>
-              <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
-              <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
-              <th data-col="prp" data-src="emag">PRP</th>
-              <th data-col="pret_minim" data-src="emag">Pret minim</th>
-              <th data-col="pret_maxim" data-src="emag">Pret maxim</th>
-              <th data-col="stoc" data-src="emag">Stoc</th>
-              <th data-col="status" data-src="emag">Status</th>
-              <th data-col="ean_pnk" data-src="emag">EAN / PNK</th>
+              <th data-col="pret_emag" data-src="db" class="col-pret-emag">Preț vânzare</th>
+              <th data-col="prp" data-src="channel">PRP</th>
+              <th data-col="pret_minim" data-src="channel">Pret minim</th>
+              <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
+              <th data-col="stoc" data-src="channel">Stoc</th>
+              <th data-col="status" data-src="channel">Status</th>
+              <th data-col="ean_pnk" data-src="channel">EAN / PNK</th>
             </tr>
             <tr class="filter-row">
               <th data-col="index"></th>
@@ -240,13 +207,7 @@
               <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
               <th data-col="alte_costuri"><input type="search" class="col-filter" data-filter-col="alte_costuri" placeholder="Filtrează…" aria-label="Filtrează Pret transport" /></th>
               <th data-col="pret_contabil"><input type="search" class="col-filter" data-filter-col="pret_contabil" placeholder="Filtrează…" aria-label="Filtrează Pret contabil" /></th>
-              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision emag" /></th>
-              <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
-              <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Pret emag" /></th>
-              <th data-col="pret_emag_schimbat"></th>
-              <th data-col="istoric"></th>
-              <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
-              <th data-col="procentaj_profit"><input type="search" class="col-filter" data-filter-col="procentaj_profit" placeholder="Filtrează…" aria-label="Filtrează Procentaj profit" /></th>
+              <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Preț vânzare" /></th>
               <th data-col="prp"><input type="search" class="col-filter" data-filter-col="prp" placeholder="Filtrează…" aria-label="Filtrează PRP" /></th>
               <th data-col="pret_minim"><input type="search" class="col-filter" data-filter-col="pret_minim" placeholder="Filtrează…" aria-label="Filtrează Pret minim" /></th>
               <th data-col="pret_maxim"><input type="search" class="col-filter" data-filter-col="pret_maxim" placeholder="Filtrează…" aria-label="Filtrează Pret maxim" /></th>
@@ -257,41 +218,13 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="25">Se încarcă din baza de date…</td>
+              <td colspan="17">Se încarcă din baza de date…</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
-    <div id="history-modal" class="history-modal" hidden>
-      <div class="history-modal-overlay" data-close></div>
-      <div class="history-modal-card" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
-        <div class="history-modal-header">
-          <h2 id="history-modal-title">Istoric preț eMAG</h2>
-          <button type="button" class="history-modal-close" data-close aria-label="Închide">×</button>
-        </div>
-        <p class="history-modal-sub" id="history-modal-sub"></p>
-        <div class="history-chart-wrap">
-          <svg id="history-chart" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Grafic preț în timp"></svg>
-        </div>
-        <div class="history-chart-tooltip" id="history-chart-tooltip" hidden></div>
-        <h3 class="history-section-title">Comenzi</h3>
-        <div class="history-orders-wrap">
-          <table class="history-orders-table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Comandă</th>
-                <th>Cant.</th>
-                <th>Preț vânzare</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="history-orders-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <script src="pricing.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

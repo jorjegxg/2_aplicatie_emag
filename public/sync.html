@@ -33,7 +33,10 @@
         </nav>
         <h1>Sincronizare marketplace</h1>
         <p class="subtitle">
-          Datele mele din baza de date locală, comparate cu ce a raportat marketplace-ul la ultima preluare.
+          Prețurile și marja pe canalul selectat, plus datele mele comparate cu ce a raportat marketplace-ul la ultima preluare.
+        </p>
+        <p id="sync-info-banner" class="sync-info-banner" hidden role="status">
+          Marketplace-ului îi pot lua 5–10 minute să înregistreze schimbarea.
         </p>
       </header>
 
@@ -50,6 +53,12 @@
           <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în baza de date locală">
             Preia de la marketplace
           </button>
+          <button type="button" id="btn-push" class="btn" title="Trimite pe canal produsele care diferă de ultima preluare">
+            Publică prețurile pe canal
+          </button>
+          <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
+            Preia comision eMAG
+          </button>
           <label class="field field-inline field-checkbox">
             <input type="checkbox" id="only-diff" />
             <span>Doar diferențe</span>
@@ -59,6 +68,45 @@
       </div>
 
       <div class="sync-summary" id="sync-summary"></div>
+
+      <h2 class="sync-section-title">Prețuri și marjă</h2>
+      <div class="table-wrap sync-wrap">
+        <table id="pricing-table">
+          <thead>
+            <tr>
+              <th data-col="index" data-src="calc">#</th>
+              <th data-col="id" data-src="channel">ID ofertă</th>
+              <th data-col="part_number" data-src="channel">SKU</th>
+              <th data-col="name" data-src="channel">Nume</th>
+              <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
+              <th data-col="pret_emag" data-src="db" id="th-pret-canal" class="col-pret-emag">Pret emag</th>
+              <th data-col="procentaj_emag" data-src="channel" class="col-procentaj-emag">Comision %</th>
+              <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
+              <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
+              <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
+              <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
+              <th data-col="istoric" data-src="calc">Istoric</th>
+            </tr>
+            <tr class="filter-row">
+              <th data-col="index"></th>
+              <th data-col="id"><input type="search" class="col-filter" data-filter-col="id" placeholder="Filtrează…" aria-label="Filtrează ID ofertă" /></th>
+              <th data-col="part_number"><input type="search" class="col-filter" data-filter-col="part_number" placeholder="Filtrează…" aria-label="Filtrează SKU" /></th>
+              <th data-col="name"><input type="search" class="col-filter" data-filter-col="name" placeholder="Filtrează…" aria-label="Filtrează Nume" /></th>
+              <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
+              <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează preț canal" /></th>
+              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision" /></th>
+              <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
+              <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
+              <th data-col="procentaj_profit"><input type="search" class="col-filter" data-filter-col="procentaj_profit" placeholder="Filtrează…" aria-label="Filtrează Procentaj profit" /></th>
+              <th data-col="pret_emag_schimbat"></th>
+              <th data-col="istoric"></th>
+            </tr>
+          </thead>
+          <tbody id="pricing-body">
+            <tr class="empty-row"><td colspan="12">Se încarcă…</td></tr>
+          </tbody>
+        </table>
+      </div>
 
       <h2 class="sync-section-title">Produse comune</h2>
       <div class="table-wrap sync-wrap">
@@ -122,6 +170,8 @@
         </table>
       </div>
     </div>
+    <script src="pricing.js"></script>
+    <script src="history-modal.js"></script>
     <script src="sync.js"></script>
   </body>
 </html>
