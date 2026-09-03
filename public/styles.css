@@ -1048,8 +1048,9 @@ td.col-procentaj-profit.pct-2 {
   display: none;
 }
 
-/* Descrierea in tabelul de preturi e doar text — o limitez la 3 randuri. */
-#pricing-table td.col-description-ro {
+/* Descrierea in tabelul de preturi e doar text — o limitez la 3 randuri.
+   :not(.is-col-hidden) ca display:-webkit-box sa nu bata display:none la ascundere. */
+#pricing-table td.col-description-ro:not(.is-col-hidden) {
   max-width: 22rem;
   display: -webkit-box;
   -webkit-line-clamp: 3;

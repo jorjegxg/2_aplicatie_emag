@@ -288,7 +288,28 @@ const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
+const pushContentToggle = document.getElementById("push-content");
 const syncInfoBanner = document.getElementById("sync-info-banner");
+
+/** pret_transport (vechi) → alte_costuri; evita drop din sync-column-order. */
+function migrateLegacyCostCols(cols) {
+  const OLD = new Set(["pret_transport", "procentaj_alte_costuri"]);
+  const out = [];
+  let insertedAlte = false;
+  for (const c of cols) {
+    if (c === "pret_transport") {
+      if (!insertedAlte && !out.includes("alte_costuri")) {
+        out.push("alte_costuri");
+        insertedAlte = true;
+      }
+      continue;
+    }
+    if (OLD.has(c)) continue;
+    if (out.includes(c)) continue;
+    out.push(c);
+  }
+  return out;
+}
 
 /* Chei separate de pagina de produse: ascunderea/ordinea sunt per pagina. */
 const columns = window.TableColumns.create({
@@ -298,6 +319,7 @@ const columns = window.TableColumns.create({
   buttonEl: document.getElementById("btn-columns"),
   hiddenKey: "sync-hidden-columns",
   orderKey: "sync-column-order",
+  migrate: migrateLegacyCostCols,
 });
 
 const PRICING_COL_COUNT = columns.defaultOrder.length;
@@ -534,6 +556,7 @@ async function loadPricing() {
     pricingProducts = Array.isArray(catalog.products) ? catalog.products : [];
     renderPricing();
   } catch (err) {
+    setStatus(err.message || "Eroare la încărcarea prețurilor", "error");
     pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
@@ -700,6 +723,15 @@ pricingTable.querySelector("thead tr.filter-row")?.addEventListener("input", (e)
 
 /* ---------- publicare pe canal ---------- */
 
+/* Butonul publica doar pret + stoc. Numele merge doar cu bifa "Include nume si descriere". */
+const PUSH_PRICE_KEYS = new Set([
+  "sale_price",
+  "recommended_price",
+  "min_sale_price",
+  "max_sale_price",
+  "general_stock",
+]);
+
 /** Trimite ofertele care difera fata de ultima preluare; DB-ul e sursa valorilor. */
 async function pushToChannel() {
   if (pushing) return;
@@ -707,11 +739,21 @@ async function pushToChannel() {
     setStatus("Încarcă întâi comparația.", "error");
     return;
   }
+  const includeContent = pushContentToggle?.checked === true;
   const ids = currentData.matched
-    .filter((m) => m.diff_count > 0)
+    .filter((m) =>
+      m.fields.some(
+        (f) => f.differs && (PUSH_PRICE_KEYS.has(f.key) || (includeContent && f.key === "name"))
+      )
+    )
     .map((m) => m.external_id);
   if (ids.length === 0) {
-    setStatus("Nimic de publicat — nicio diferență față de marketplace.", "ok");
+    setStatus(
+      includeContent
+        ? "Nimic de publicat — nicio diferență față de marketplace."
+        : "Nimic de publicat — nicio diferență de preț sau stoc (bifează „Include nume și descriere” pentru nume).",
+      "ok"
+    );
     return;
   }
 
@@ -724,14 +766,18 @@ async function pushToChannel() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offers: ids.map((id) => ({ id })) }),
+        body: JSON.stringify({ offers: ids.map((id) => ({ id })), includeContent }),
       }
     );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     if (syncInfoBanner) syncInfoBanner.hidden = false;
-    setStatus(`Publicate ${ids.length} oferte pe ${currentChannel}.`, "ok");
+    // Snapshot-ul nu se mai actualizeaza la push: diferentele raman pana la urmatorul pull.
     await Promise.all([loadDiff(), loadPricing()]);
+    setStatus(
+      `Trimise ${ids.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+      "ok"
+    );
   } catch (err) {
     setStatus(err.message || "Eroare la publicare", "error");
   } finally {

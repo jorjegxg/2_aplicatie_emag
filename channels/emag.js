@@ -317,8 +317,11 @@ async function pushListings(offers) {
   return { count: offers.length, authUsed, messages: result?.messages || [] };
 }
 
-/** Construieste payload-ul de push din valorile mele. Arunca daca lipsesc campuri. */
-function buildPushPayload(listing) {
+/**
+ * Construieste payload-ul de push din valorile mele. Arunca daca lipsesc campuri.
+ * includeContent = true adauga nume + descriere (declanseaza re-moderare pe eMAG).
+ */
+function buildPushPayload(listing, { includeContent = false } = {}) {
   const toNum = (v) => {
     if (v == null || v === "") return null;
     const n = Number(v);
@@ -360,11 +363,13 @@ function buildPushPayload(listing) {
     handling_time: normalizeHandlingTime(listing?.handling_time),
     stock: normalizeStock(listing?.stock, listing?.general_stock),
   };
-  const name = typeof listing?.name === "string" ? listing.name.trim() : "";
-  if (name) payload.name = name;
-  if (listing?.description != null) {
-    const description = textToHtml(listing.description);
-    if (description) payload.description = description;
+  if (includeContent) {
+    const name = typeof listing?.name === "string" ? listing.name.trim() : "";
+    if (name) payload.name = name;
+    if (listing?.description != null) {
+      const description = textToHtml(listing.description);
+      if (description) payload.description = description;
+    }
   }
   if (recommended_price != null) payload.recommended_price = recommended_price;
   if (min_sale_price != null) payload.min_sale_price = min_sale_price;

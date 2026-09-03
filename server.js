@@ -15,7 +15,6 @@ const {
   upsertListingFromRemote,
   getCatalogRows,
   updateListing,
-  getListing,
   getListings,
   updateProduct,
   getChannelDiff,
@@ -369,6 +368,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
     const channel = getChannel(channelName);
 
     // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din DB.
+    const includeContent = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
     const ids = rawOffers
       .map((o) => (o && typeof o === "object" ? o.id : o))
@@ -400,44 +400,23 @@ app.post("/api/products/sync-prices", async (req, res) => {
           handling_time: l.handling_time_json ? JSON.parse(l.handling_time_json) : null,
           status: l.status,
           vat_id: l.vat_id,
-        })
+        }, { includeContent })
       );
     }
 
     const result = await channel.pushListings(offers);
 
-    // Dupa push, ce e pe canal = ce am trimis: actualizez snapshot-ul si istoricul.
+    // eMAG proceseaza salvarea asincron (5-10 min), deci NU marchez snapshot-ul ca
+    // actualizat: ce e pe canal se afla doar la urmatorul pull. Retin doar ce am trimis.
     for (const o of offers) {
       try {
         recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
       } catch (histErr) {
         console.warn("[sync-prices] istoric pret:", histErr.message);
       }
-      try {
-        const listing = getListing(channelName, o.id);
-        saveSnapshot(channelName, {
-          id: o.id,
-          name: o.name ?? listing?.name ?? null,
-          part_number: listing?.part_number ?? null,
-          ean: listing?.ean ?? null,
-          brand: listing?.brand ?? null,
-          sale_price: o.sale_price,
-          recommended_price: o.recommended_price ?? null,
-          min_sale_price: o.min_sale_price ?? null,
-          max_sale_price: o.max_sale_price ?? null,
-          general_stock: Array.isArray(o.stock)
-            ? o.stock.reduce((sum, s) => sum + (Number(s?.value) || 0), 0)
-            : null,
-          status: o.status,
-          vat_id: o.vat_id,
-          currency: listing?.currency ?? "RON",
-        });
-      } catch (snapErr) {
-        console.warn("[sync-prices] snapshot:", snapErr.message);
-      }
     }
 
-    return res.json({ ok: true, channel: channelName, ...result });
+    return res.json({ ok: true, channel: channelName, pending: true, ...result });
   } catch (err) {
     console.error("[sync-prices]", err.message);
     logCaught("sync-prices", err);

@@ -59,13 +59,14 @@ function migrateLegacyCostCols(cols) {
   let insertedAlte = false;
   for (const c of cols) {
     if (c === "pret_transport") {
-      if (!insertedAlte) {
+      if (!insertedAlte && !out.includes("alte_costuri")) {
         out.push("alte_costuri");
         insertedAlte = true;
       }
       continue;
     }
     if (OLD.has(c)) continue;
+    if (out.includes(c)) continue;
     out.push(c);
   }
   return out;

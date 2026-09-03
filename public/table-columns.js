@@ -81,7 +81,10 @@
         if (!Array.isArray(parsed)) return [...defaultOrder];
         const migrated = applyMigrate(parsed.filter((c) => typeof c === "string"));
         const valid = new Set(defaultOrder);
-        return insertMissingColumns(migrated.filter((c) => valid.has(c)));
+        /* Fara dedupe o coloana salvata de doua ori randeaza doua <td> pe rand,
+           iar antetul ramane cu un singur <th>: tot ce urmeaza se decaleaza. */
+        const unique = [...new Set(migrated.filter((c) => valid.has(c)))];
+        return insertMissingColumns(unique);
       } catch {
         return [...defaultOrder];
       }
@@ -97,6 +100,14 @@
 
     let hidden = loadHidden();
     const order = loadOrder();
+    /* Rescrie ordinea salvata daca a fost reparata (duplicate, coloane vechi). */
+    if (localStorage.getItem(orderKey) && localStorage.getItem(orderKey) !== JSON.stringify(order)) {
+      try {
+        localStorage.setItem(orderKey, JSON.stringify(order));
+      } catch {
+        /* ignore */
+      }
+    }
     let dragCol = null;
 
     function isHidden(col) {

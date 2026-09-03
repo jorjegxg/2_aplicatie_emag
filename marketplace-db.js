@@ -748,7 +748,8 @@ const DIFF_FIELDS = [
   { key: "min_sale_price", label: "Preț minim", type: "number" },
   { key: "max_sale_price", label: "Preț maxim", type: "number" },
   { key: "general_stock", label: "Stoc", type: "number" },
-  { key: "status", label: "Status", type: "number" },
+  // status/vat_id/currency sunt in CHANNEL_OWNED_FIELDS: pull-ul le rescrie mereu,
+  // deci nu pot diferi niciodata. Nu au ce cauta in comparatie.
 ];
 
 function valuesDiffer(type, mine, theirs) {
