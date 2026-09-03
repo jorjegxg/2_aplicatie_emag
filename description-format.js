@@ -21,6 +21,12 @@ const NAMED_ENTITIES = {
   rdquo: "\u201d",
   bull: "\u2022",
   deg: "\u00b0",
+  bdquo: "\u201e",
+  sbquo: "\u201a",
+  trade: "\u2122",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  times: "\u00d7",
 };
 
 const BLOCK_CLOSE = /<\/(?:p|div|ul|ol|h[1-6]|tr|table|blockquote)\s*>/gi;

@@ -257,6 +257,21 @@ function ensureSchema(database) {
     rewrite("catalog_products", "descriere");
   });
 
+  runMigration(database, "description-decode-remaining-entities", () => {
+    const rewrite = (table, column) => {
+      const rows = database
+        .prepare(`SELECT id, ${column} AS value FROM ${table} WHERE ${column} IS NOT NULL AND ${column} != ''`)
+        .all();
+      const update = database.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
+      for (const row of rows) {
+        if (!looksLikeHtml(row.value)) continue;
+        update.run(htmlToText(row.value) || null, row.id);
+      }
+    };
+    rewrite("marketplace_listings", "description");
+    rewrite("catalog_products", "descriere");
+  });
+
   runMigration(database, "drop-pret-contabil", () => {
     const hasCol = (table, col) =>
       database
