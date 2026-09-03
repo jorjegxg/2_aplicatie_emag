@@ -33,7 +33,7 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
           const ok = res.statusCode >= 200 && res.statusCode < 300;
-          log({
+          void log({
             level: ok ? "debug" : "error",
             source: "emag",
             category: "http",
@@ -57,7 +57,7 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
       }
     );
     req.on("error", (err) => {
-      log({
+      void log({
         level: "error",
         source: "emag",
         category: "http",
@@ -153,7 +153,7 @@ function logAuthAttempt(context, candidate, index, total) {
     `[auth:${context}] încerc ${index + 1}/${total} label=${candidate.label} ` +
       `user=${candidate.userHint} pass=${candidate.passHint}`
   );
-  log({
+  void log({
     level: "debug",
     source: "emag",
     category: "auth",
@@ -163,7 +163,7 @@ function logAuthAttempt(context, candidate, index, total) {
 }
 
 function logAuthResult(context, candidate, status, ok) {
-  log({
+  void log({
     level: ok ? "info" : status === 401 || status === 403 ? "error" : "warn",
     source: "emag",
     category: "auth",

@@ -154,6 +154,7 @@ async function saveSettings() {
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
     fillSettings(data);
     updateDerivedCells();
+    persistAllDerived();
     setStatus("Setări salvate.", "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la salvare", "error");
@@ -937,6 +938,7 @@ tbody.addEventListener("click", (e) => {
   applyRowPrices(tr, sale);
   updateToolbarTotals();
   schedulePersistPretMinim(tr.dataset.offerId, null);
+  schedulePersistDerived(tr);
 });
 
 /* ---------- Persistare in DB (sursa de adevar) ---------- */
@@ -1002,6 +1004,12 @@ function schedulePersistDerived(tr) {
     },
     "preturi-derivate"
   );
+}
+
+function persistAllDerived() {
+  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
+    schedulePersistDerived(tr);
+  });
 }
 
 /* ---------- Export Excel ---------- */
@@ -1157,10 +1165,16 @@ function onSettingsInput() {
   updateSaveDirtyState();
 }
 
+function onMultInput() {
+  updateDerivedCells();
+  persistAllDerived();
+  updateSaveDirtyState();
+}
+
 inputProcentajAlte.addEventListener("input", onSettingsInput);
-inputMultPrp.addEventListener("input", onSettingsInput);
-inputMultMin.addEventListener("input", onSettingsInput);
-inputMultMax.addEventListener("input", onSettingsInput);
+inputMultPrp.addEventListener("input", onMultInput);
+inputMultMin.addEventListener("input", onMultInput);
+inputMultMax.addEventListener("input", onMultInput);
 
 function setTableFullscreen(on) {
   if (!pageEl || !btnTableFullscreen) return;

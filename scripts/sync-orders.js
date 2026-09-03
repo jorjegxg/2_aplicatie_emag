@@ -128,7 +128,7 @@ async function syncWindow(auth, windowStart, windowEnd) {
   for (;;) {
     const orders = await fetchWindowPage(auth, page, createdAfter, createdBefore);
     const lines = linesFromOrders(orders);
-    const upserted = upsertOrderLines(lines);
+    const upserted = await upsertOrderLines(lines);
 
     windowOrders += orders.length;
     windowLines += upserted;

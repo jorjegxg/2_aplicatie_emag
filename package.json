@@ -8,11 +8,12 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "import:excel": "node scripts/import-excel.js",
-    "sync:orders": "node scripts/sync-orders.js"
+    "sync:orders": "node scripts/sync-orders.js",
+    "migrate:sqlite": "node scripts/migrate-sqlite-to-pg.js"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "express": "^4.21.2",
+    "pg": "^8.16.3",
     "xlsx": "^0.18.5"
   }
 }

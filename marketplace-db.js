@@ -1,11 +1,12 @@
 /**
- * Stratul multi-canal (emag, trendyol) peste SQLite.
+ * Stratul multi-canal (emag, trendyol) peste Postgres.
  *
  * catalog_products     — produsele mele, independente de canal (cheia de legare = cod_produs/SKU)
  * marketplace_listings — valorile MELE per canal (ce vreau sa fie pe marketplace)
  * marketplace_snapshots — ce a raportat canalul la ultimul pull (ce e acum pe marketplace)
  */
-const { getDb, getLastPriceChangeBulk } = require("./db");
+const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
+const { getLastPriceChangeBulk } = require("./db");
 const { htmlToText, looksLikeHtml } = require("./description-format");
 
 const CHANNELS = ["emag", "trendyol"];
@@ -15,8 +16,6 @@ function normalizeChannel(channel) {
   return CHANNELS.includes(c) ? c : "emag";
 }
 
-// Campurile mele: pull-ul le completeaza doar cand sunt NULL (listing nou sau migrat gol),
-// niciodata peste o valoare pe care am pus-o eu.
 const LOCAL_SEED_FIELDS = [
   "name",
   "description",
@@ -28,7 +27,6 @@ const LOCAL_SEED_FIELDS = [
   "stock_json",
 ];
 
-// Campuri detinute de canal — se rescriu la fiecare pull.
 const CHANNEL_OWNED_FIELDS = [
   "part_number",
   "part_number_key",
@@ -56,7 +54,6 @@ function toTextOrNull(v) {
   return s === "" ? null : s;
 }
 
-// Descrierea se pastreaza ca text curat; daca ajunge HTML (lipit in UI) il curatam la scriere.
 function toPlainTextOrNull(v) {
   if (v == null) return null;
   const s = looksLikeHtml(v) ? htmlToText(v) : String(v);
@@ -65,15 +62,22 @@ function toPlainTextOrNull(v) {
 
 function jsonOrNull(v) {
   if (v == null) return null;
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
   }
+  if (typeof v === "object") return v;
+  return null;
 }
 
 function parseJson(raw, fallback) {
   if (raw == null || raw === "") return fallback;
+  if (typeof raw === "object") return raw;
   try {
     return JSON.parse(raw);
   } catch {
@@ -81,328 +85,99 @@ function parseJson(raw, fallback) {
   }
 }
 
-/* ---------------- schema + migrari ---------------- */
-
-let schemaReady = false;
-
-function db() {
-  const database = getDb();
-  if (!schemaReady) {
-    ensureSchema(database);
-    schemaReady = true;
-  }
-  return database;
+async function ensureSchema() {
+  await ensurePgSchema();
 }
-
-function ensureSchema(database) {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS app_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-  `);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS catalog_products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cod_produs TEXT UNIQUE COLLATE NOCASE,
-      nume TEXT,
-      descriere TEXT,
-      brand TEXT,
-      ean TEXT,
-      pret_cumparare REAL,
-      created_at TEXT,
-      updated_at TEXT
-    );
-  `);
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_catalog_nume
-      ON catalog_products(nume COLLATE NOCASE);
-  `);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS marketplace_listings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      channel TEXT NOT NULL,
-      external_id TEXT NOT NULL,
-      product_id INTEGER REFERENCES catalog_products(id),
-      part_number TEXT,
-      part_number_key TEXT,
-      name TEXT,
-      description TEXT,
-      brand TEXT,
-      ean TEXT,
-      id_familie INTEGER,
-      familie TEXT,
-      characteristics TEXT,
-      sale_price REAL,
-      recommended_price REAL,
-      min_sale_price REAL,
-      max_sale_price REAL,
-      general_stock REAL,
-      estimated_stock REAL,
-      stock_json TEXT,
-      handling_time_json TEXT,
-      status INTEGER,
-      vat_id INTEGER,
-      currency TEXT,
-      alte_costuri REAL,
-      pret_minim_override REAL,
-      procentaj_emag REAL,
-      commission_value REAL,
-      commission_fetched_at TEXT,
-      created_at TEXT,
-      updated_at TEXT,
-      UNIQUE(channel, external_id)
-    );
-  `);
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_listings_product
-      ON marketplace_listings(product_id);
-  `);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS marketplace_snapshots (
-      channel TEXT NOT NULL,
-      external_id TEXT NOT NULL,
-      payload_json TEXT,
-      name TEXT,
-      part_number TEXT,
-      ean TEXT,
-      brand TEXT,
-      sale_price REAL,
-      recommended_price REAL,
-      min_sale_price REAL,
-      max_sale_price REAL,
-      general_stock REAL,
-      status INTEGER,
-      vat_id INTEGER,
-      currency TEXT,
-      fetched_at TEXT,
-      PRIMARY KEY (channel, external_id)
-    );
-  `);
-
-  const histCols = new Set(
-    database
-      .prepare("PRAGMA table_info(product_pret_emag_history)")
-      .all()
-      .map((c) => c.name)
-  );
-  if (!histCols.has("channel")) {
-    database.exec(
-      "ALTER TABLE product_pret_emag_history ADD COLUMN channel TEXT DEFAULT 'emag'"
-    );
-  }
-
-  runMigration(database, "catalog-from-products", () => {
-    let hasProducts = false;
-    try {
-      database.prepare("SELECT 1 FROM products LIMIT 1").get();
-      hasProducts = true;
-    } catch {
-      hasProducts = false;
-    }
-    if (!hasProducts) return;
-    const now = new Date().toISOString();
-    database
-      .prepare(
-        `INSERT OR IGNORE INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-         SELECT cod_produs, nume_produs, pret_cumparare, ?, ? FROM products`
-      )
-      .run(now, now);
-  });
-
-  runMigration(database, "listings-from-legacy-overrides", () => {
-    const ids = database
-      .prepare(
-        `SELECT offer_id FROM product_alte_costuri
-         UNION SELECT offer_id FROM product_pret_minim
-         UNION SELECT offer_id FROM product_procentaj_emag`
-      )
-      .all()
-      .map((r) => String(r.offer_id));
-    if (ids.length === 0) return;
-
-    const now = new Date().toISOString();
-    const insert = database.prepare(
-      `INSERT OR IGNORE INTO marketplace_listings (channel, external_id, created_at, updated_at)
-       VALUES ('emag', ?, ?, ?)`
-    );
-    const update = database.prepare(
-      `UPDATE marketplace_listings SET
-         alte_costuri = (SELECT alte_costuri FROM product_alte_costuri WHERE offer_id = @id),
-         pret_minim_override = (SELECT pret_minim FROM product_pret_minim WHERE offer_id = @id),
-         procentaj_emag = (SELECT procentaj_emag FROM product_procentaj_emag WHERE offer_id = @id),
-         commission_value = (SELECT commission_value FROM product_procentaj_emag WHERE offer_id = @id),
-         commission_fetched_at = (SELECT fetched_at FROM product_procentaj_emag WHERE offer_id = @id),
-         updated_at = @now
-       WHERE channel = 'emag' AND external_id = @ext`
-    );
-    for (const id of ids) {
-      insert.run(id, now, now);
-      update.run({ id: Number(id), ext: id, now });
-    }
-  });
-
-  runMigration(database, "description-plain-text", () => {
-    const rewrite = (table, column) => {
-      const rows = database
-        .prepare(`SELECT id, ${column} AS value FROM ${table} WHERE ${column} IS NOT NULL AND ${column} != ''`)
-        .all();
-      const update = database.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
-      for (const row of rows) {
-        if (!looksLikeHtml(row.value)) continue;
-        update.run(htmlToText(row.value) || null, row.id);
-      }
-    };
-    rewrite("marketplace_listings", "description");
-    rewrite("catalog_products", "descriere");
-  });
-
-  runMigration(database, "description-decode-remaining-entities", () => {
-    const rewrite = (table, column) => {
-      const rows = database
-        .prepare(`SELECT id, ${column} AS value FROM ${table} WHERE ${column} IS NOT NULL AND ${column} != ''`)
-        .all();
-      const update = database.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
-      for (const row of rows) {
-        if (!looksLikeHtml(row.value)) continue;
-        update.run(htmlToText(row.value) || null, row.id);
-      }
-    };
-    rewrite("marketplace_listings", "description");
-    rewrite("catalog_products", "descriere");
-  });
-
-  runMigration(database, "drop-pret-contabil", () => {
-    const hasCol = (table, col) =>
-      database
-        .prepare(`PRAGMA table_info(${table})`)
-        .all()
-        .some((c) => c.name === col);
-    if (hasCol("marketplace_listings", "pret_contabil")) {
-      database.exec("ALTER TABLE marketplace_listings DROP COLUMN pret_contabil");
-    }
-    if (hasCol("settings", "pret_contabil")) {
-      database.exec("ALTER TABLE settings DROP COLUMN pret_contabil");
-    }
-    if (hasCol("settings", "procentaj_pret_contabil")) {
-      database.exec("ALTER TABLE settings DROP COLUMN procentaj_pret_contabil");
-    }
-    database.exec("DROP TABLE IF EXISTS product_pret_contabil");
-  });
-}
-
-function runMigration(database, key, fn) {
-  const metaKey = `migration:${key}`;
-  const done = database.prepare("SELECT value FROM app_meta WHERE key = ?").get(metaKey);
-  if (done) return;
-  try {
-    database.transaction(fn)();
-  } catch (err) {
-    console.warn(`[migrare ${key}] ${err.message}`);
-    return;
-  }
-  database
-    .prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)")
-    .run(metaKey, new Date().toISOString());
-}
-
-/* ---------------- legare catalog ---------------- */
 
 /** Intai dupa SKU, apoi dupa EAN, apoi dupa nume exact. */
-function findCatalogProductId(remote) {
-  const database = db();
+async function findCatalogProductId(remote) {
+  await ensureSchema();
   const sku = toTextOrNull(remote.part_number);
   if (sku) {
-    const row = database
-      .prepare("SELECT id FROM catalog_products WHERE cod_produs = ? COLLATE NOCASE LIMIT 1")
-      .get(sku);
-    if (row) return row.id;
+    const { rows } = await query(
+      "SELECT id FROM catalog_products WHERE LOWER(cod_produs) = LOWER($1) LIMIT 1",
+      [sku]
+    );
+    if (rows[0]) return rows[0].id;
   }
   const ean = toTextOrNull(remote.ean);
   if (ean) {
     const first = ean.split(",")[0].trim();
     if (first) {
-      const row = database
-        .prepare("SELECT id FROM catalog_products WHERE ean = ? COLLATE NOCASE LIMIT 1")
-        .get(first);
-      if (row) return row.id;
+      const { rows } = await query(
+        "SELECT id FROM catalog_products WHERE LOWER(ean) = LOWER($1) LIMIT 1",
+        [first]
+      );
+      if (rows[0]) return rows[0].id;
     }
   }
   const name = toTextOrNull(remote.name);
   if (name) {
-    const row = database
-      .prepare("SELECT id FROM catalog_products WHERE nume = ? COLLATE NOCASE LIMIT 1")
-      .get(name);
-    if (row) return row.id;
+    const { rows } = await query(
+      "SELECT id FROM catalog_products WHERE LOWER(nume) = LOWER($1) LIMIT 1",
+      [name]
+    );
+    if (rows[0]) return rows[0].id;
   }
   return null;
 }
 
-/* ---------------- snapshots ---------------- */
-
-function saveSnapshot(channel, remote) {
+async function saveSnapshot(channel, remote) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
-  db()
-    .prepare(
-      `INSERT INTO marketplace_snapshots
-         (channel, external_id, payload_json, name, part_number, ean, brand,
-          sale_price, recommended_price, min_sale_price, max_sale_price,
-          general_stock, status, vat_id, currency, fetched_at)
-       VALUES (@channel, @external_id, @payload_json, @name, @part_number, @ean, @brand,
-          @sale_price, @recommended_price, @min_sale_price, @max_sale_price,
-          @general_stock, @status, @vat_id, @currency, @fetched_at)
-       ON CONFLICT(channel, external_id) DO UPDATE SET
-         payload_json = excluded.payload_json,
-         name = excluded.name,
-         part_number = excluded.part_number,
-         ean = excluded.ean,
-         brand = excluded.brand,
-         sale_price = excluded.sale_price,
-         recommended_price = excluded.recommended_price,
-         min_sale_price = excluded.min_sale_price,
-         max_sale_price = excluded.max_sale_price,
-         general_stock = excluded.general_stock,
-         status = excluded.status,
-         vat_id = excluded.vat_id,
-         currency = excluded.currency,
-         fetched_at = excluded.fetched_at`
-    )
-    .run({
-      channel: ch,
-      external_id: String(remote.id),
-      payload_json: jsonOrNull(remote),
-      name: toTextOrNull(remote.name),
-      part_number: toTextOrNull(remote.part_number),
-      ean: toTextOrNull(remote.ean),
-      brand: toTextOrNull(remote.brand),
-      sale_price: toNumOrNull(remote.sale_price),
-      recommended_price: toNumOrNull(remote.recommended_price),
-      min_sale_price: toNumOrNull(remote.min_sale_price),
-      max_sale_price: toNumOrNull(remote.max_sale_price),
-      general_stock: toNumOrNull(remote.general_stock),
-      status: toNumOrNull(remote.status),
-      vat_id: toNumOrNull(remote.vat_id),
-      currency: toTextOrNull(remote.currency),
-      fetched_at: new Date().toISOString(),
-    });
+  await query(
+    `INSERT INTO marketplace_snapshots
+       (channel, external_id, payload_json, name, part_number, ean, brand,
+        sale_price, recommended_price, min_sale_price, max_sale_price,
+        general_stock, status, vat_id, currency, fetched_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     ON CONFLICT (channel, external_id) DO UPDATE SET
+       payload_json = EXCLUDED.payload_json,
+       name = EXCLUDED.name,
+       part_number = EXCLUDED.part_number,
+       ean = EXCLUDED.ean,
+       brand = EXCLUDED.brand,
+       sale_price = EXCLUDED.sale_price,
+       recommended_price = EXCLUDED.recommended_price,
+       min_sale_price = EXCLUDED.min_sale_price,
+       max_sale_price = EXCLUDED.max_sale_price,
+       general_stock = EXCLUDED.general_stock,
+       status = EXCLUDED.status,
+       vat_id = EXCLUDED.vat_id,
+       currency = EXCLUDED.currency,
+       fetched_at = EXCLUDED.fetched_at`,
+    [
+      ch,
+      String(remote.id),
+      jsonOrNull(remote),
+      toTextOrNull(remote.name),
+      toTextOrNull(remote.part_number),
+      toTextOrNull(remote.ean),
+      toTextOrNull(remote.brand),
+      toNumOrNull(remote.sale_price),
+      toNumOrNull(remote.recommended_price),
+      toNumOrNull(remote.min_sale_price),
+      toNumOrNull(remote.max_sale_price),
+      toNumOrNull(remote.general_stock),
+      toNumOrNull(remote.status),
+      toNumOrNull(remote.vat_id),
+      toTextOrNull(remote.currency),
+      new Date().toISOString(),
+    ]
+  );
 }
 
-/**
- * Listing nou = seed complet cu valorile remote.
- * Listing existent = doar campurile detinute de canal; valorile mele
- * (pret, stoc, nume, descriere, costuri) raman neatinse.
- */
-function upsertListingFromRemote(channel, remote) {
-  const database = db();
+async function upsertListingFromRemote(channel, remote) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
   const ext = String(remote.id);
   const now = new Date().toISOString();
 
-  const existing = database
-    .prepare(
-      "SELECT id, product_id FROM marketplace_listings WHERE channel = ? AND external_id = ?"
-    )
-    .get(ch, ext);
+  const { rows: existingRows } = await query(
+    "SELECT id, product_id FROM marketplace_listings WHERE channel = $1 AND external_id = $2",
+    [ch, ext]
+  );
+  const existing = existingRows[0];
 
   const channelValues = {
     part_number: toTextOrNull(remote.part_number),
@@ -420,37 +195,44 @@ function upsertListingFromRemote(channel, remote) {
   };
 
   if (!existing) {
-    database
-      .prepare(
-        `INSERT INTO marketplace_listings
-           (channel, external_id, product_id, part_number, part_number_key, name, description,
-            brand, ean, id_familie, familie, characteristics,
-            sale_price, recommended_price, min_sale_price, max_sale_price,
-            general_stock, estimated_stock, stock_json, handling_time_json,
-            status, vat_id, currency, created_at, updated_at)
-         VALUES
-           (@channel, @external_id, @product_id, @part_number, @part_number_key, @name, @description,
-            @brand, @ean, @id_familie, @familie, @characteristics,
-            @sale_price, @recommended_price, @min_sale_price, @max_sale_price,
-            @general_stock, @estimated_stock, @stock_json, @handling_time_json,
-            @status, @vat_id, @currency, @created_at, @updated_at)`
-      )
-      .run({
-        channel: ch,
-        external_id: ext,
-        product_id: findCatalogProductId(remote),
-        ...channelValues,
-        name: toTextOrNull(remote.name),
-        description: toTextOrNull(remote.description),
-        sale_price: toNumOrNull(remote.sale_price),
-        recommended_price: toNumOrNull(remote.recommended_price),
-        min_sale_price: toNumOrNull(remote.min_sale_price),
-        max_sale_price: toNumOrNull(remote.max_sale_price),
-        general_stock: toNumOrNull(remote.general_stock),
-        stock_json: jsonOrNull(remote.stock),
-        created_at: now,
-        updated_at: now,
-      });
+    await query(
+      `INSERT INTO marketplace_listings
+         (channel, external_id, product_id, part_number, part_number_key, name, description,
+          brand, ean, id_familie, familie, characteristics,
+          sale_price, recommended_price, min_sale_price, max_sale_price,
+          general_stock, estimated_stock, stock_json, handling_time_json,
+          status, vat_id, currency, created_at, updated_at)
+       VALUES
+         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
+      [
+        ch,
+        ext,
+        await findCatalogProductId(remote),
+        channelValues.part_number,
+        channelValues.part_number_key,
+        toTextOrNull(remote.name),
+        toTextOrNull(remote.description),
+        channelValues.brand,
+        channelValues.ean,
+        channelValues.id_familie,
+        channelValues.familie,
+        channelValues.characteristics,
+        toNumOrNull(remote.sale_price),
+        toNumOrNull(remote.recommended_price),
+        toNumOrNull(remote.min_sale_price),
+        toNumOrNull(remote.max_sale_price),
+        toNumOrNull(remote.general_stock),
+        channelValues.estimated_stock,
+        jsonOrNull(remote.stock),
+        channelValues.handling_time_json,
+        channelValues.status,
+        channelValues.vat_id,
+        channelValues.currency,
+        now,
+        now,
+      ]
+    );
     return { created: true };
   }
 
@@ -465,48 +247,47 @@ function upsertListingFromRemote(channel, remote) {
     stock_json: jsonOrNull(remote.stock),
   };
 
+  const params = [];
   const sets = [
-    ...CHANNEL_OWNED_FIELDS.map((f) => `${f} = @${f}`),
-    ...LOCAL_SEED_FIELDS.map((f) => `${f} = COALESCE(${f}, @${f})`),
-  ].join(", ");
-  database
-    .prepare(
-      `UPDATE marketplace_listings SET ${sets}, updated_at = @updated_at
-       WHERE channel = @channel AND external_id = @external_id`
-    )
-    .run({
-      ...channelValues,
-      ...seedValues,
-      channel: ch,
-      external_id: ext,
-      updated_at: now,
-    });
+    ...CHANNEL_OWNED_FIELDS.map((f) => {
+      params.push(channelValues[f]);
+      return `${f} = $${params.length}`;
+    }),
+    ...LOCAL_SEED_FIELDS.map((f) => {
+      params.push(seedValues[f]);
+      return `${f} = COALESCE(${f}, $${params.length})`;
+    }),
+  ];
+  params.push(now, ch, ext);
+  await query(
+    `UPDATE marketplace_listings SET ${sets.join(", ")}, updated_at = $${params.length - 2}
+     WHERE channel = $${params.length - 1} AND external_id = $${params.length}`,
+    params
+  );
 
   if (existing.product_id == null) {
-    const productId = findCatalogProductId(remote);
+    const productId = await findCatalogProductId(remote);
     if (productId != null) {
-      database
-        .prepare("UPDATE marketplace_listings SET product_id = ? WHERE id = ?")
-        .run(productId, existing.id);
+      await query("UPDATE marketplace_listings SET product_id = $1 WHERE id = $2", [
+        productId,
+        existing.id,
+      ]);
     }
   }
   return { created: false };
 }
 
-/* ---------------- citire tabel principal ---------------- */
-
-/** Randurile pentru tabelul principal — aceeasi forma pe care o consuma public/app.js. */
-function getCatalogRows(channel) {
+async function getCatalogRows(channel) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
-  const rows = db()
-    .prepare(
-      `SELECT l.*, c.pret_cumparare AS catalog_pret_cumparare, c.cod_produs AS catalog_cod
-       FROM marketplace_listings l
-       LEFT JOIN catalog_products c ON c.id = l.product_id
-       WHERE l.channel = ?
-       ORDER BY CAST(l.external_id AS INTEGER) ASC`
-    )
-    .all(ch);
+  const { rows } = await query(
+    `SELECT l.*, c.pret_cumparare AS catalog_pret_cumparare, c.cod_produs AS catalog_cod
+     FROM marketplace_listings l
+     LEFT JOIN catalog_products c ON c.id = l.product_id
+     WHERE l.channel = $1
+     ORDER BY CAST(NULLIF(l.external_id, '') AS BIGINT) ASC NULLS LAST`,
+    [ch]
+  );
 
   const products = rows.map((r) => ({
     id: Number(r.external_id) || r.external_id,
@@ -519,19 +300,22 @@ function getCatalogRows(channel) {
     part_number_key: r.part_number_key || "",
     id_familie: r.id_familie ?? null,
     familie: r.familie || "",
-    sale_price: r.sale_price ?? null,
-    recommended_price: r.recommended_price ?? null,
-    min_sale_price: r.min_sale_price ?? null,
-    max_sale_price: r.max_sale_price ?? null,
-    pret_cumparare: r.catalog_pret_cumparare ?? null,
-    alte_costuri: r.alte_costuri ?? null,
-    pret_minim_override: r.pret_minim_override ?? null,
-    procentaj_emag: r.procentaj_emag ?? null,
-    commission_value: r.commission_value ?? null,
-    commission_fetched_at: r.commission_fetched_at ?? null,
+    sale_price: toNumOrNull(r.sale_price),
+    recommended_price: toNumOrNull(r.recommended_price),
+    min_sale_price: toNumOrNull(r.min_sale_price),
+    max_sale_price: toNumOrNull(r.max_sale_price),
+    pret_cumparare: toNumOrNull(r.catalog_pret_cumparare),
+    alte_costuri: toNumOrNull(r.alte_costuri),
+    pret_minim_override: toNumOrNull(r.pret_minim_override),
+    procentaj_emag: toNumOrNull(r.procentaj_emag),
+    commission_value: toNumOrNull(r.commission_value),
+    commission_fetched_at:
+      r.commission_fetched_at instanceof Date
+        ? r.commission_fetched_at.toISOString()
+        : r.commission_fetched_at ?? null,
     currency: r.currency || "RON",
-    general_stock: r.general_stock ?? null,
-    estimated_stock: r.estimated_stock ?? null,
+    general_stock: toNumOrNull(r.general_stock),
+    estimated_stock: toNumOrNull(r.estimated_stock),
     status: r.status,
     vat_id: r.vat_id ?? null,
     handling_time: parseJson(r.handling_time_json, [{ warehouse_id: 1, value: 0 }]),
@@ -543,15 +327,13 @@ function getCatalogRows(channel) {
     characteristics: r.characteristics || "",
   }));
 
-  const lastChanges = getLastPriceChangeBulk(products.map((p) => p.id));
+  const lastChanges = await getLastPriceChangeBulk(products.map((p) => p.id));
   for (const p of products) {
     const lc = lastChanges[p.id];
     p.pret_emag_last_change = lc ? lc.recorded_at : null;
   }
   return products;
 }
-
-/* ---------------- scriere ---------------- */
 
 const LISTING_EDITABLE = {
   name: toTextOrNull,
@@ -565,15 +347,18 @@ const LISTING_EDITABLE = {
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
-  commission_fetched_at: toTextOrNull,
+  commission_fetched_at: (v) => {
+    if (v == null || v === "") return null;
+    if (v instanceof Date) return v.toISOString();
+    return String(v);
+  },
   status: toNumOrNull,
   vat_id: toNumOrNull,
 };
 
-/** Scrie pretul de cumparare pe produsul de catalog legat de listing (il creeaza daca lipseste). */
-function setListingPretCumparare(channel, externalId, value) {
-  const database = db();
-  const listing = getListing(channel, externalId);
+async function setListingPretCumparare(channel, externalId, value) {
+  await ensureSchema();
+  const listing = await getListing(channel, externalId);
   if (!listing) throw new Error("Listing inexistent");
 
   const price = toNumOrNull(value);
@@ -581,46 +366,47 @@ function setListingPretCumparare(channel, externalId, value) {
   let productId = listing.product_id;
 
   if (productId == null) {
-    productId = findCatalogProductId(listing);
+    productId = await findCatalogProductId(listing);
     if (productId == null) {
       const cod = toTextOrNull(listing.part_number);
       const nume = toTextOrNull(listing.name) || cod;
-      const info = database
-        .prepare(
-          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`
-        )
-        .run(cod, nume, price, now, now);
-      productId = Number(info.lastInsertRowid);
+      const { rows } = await query(
+        `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [cod, nume, price, now, now]
+      );
+      productId = Number(rows[0].id);
     }
-    database
-      .prepare("UPDATE marketplace_listings SET product_id = ?, updated_at = ? WHERE id = ?")
-      .run(productId, now, listing.id);
+    await query(
+      "UPDATE marketplace_listings SET product_id = $1, updated_at = $2 WHERE id = $3",
+      [productId, now, listing.id]
+    );
   }
 
-  database
-    .prepare("UPDATE catalog_products SET pret_cumparare = ?, updated_at = ? WHERE id = ?")
-    .run(price, now, productId);
+  await query(
+    "UPDATE catalog_products SET pret_cumparare = $1, updated_at = $2 WHERE id = $3",
+    [price, now, productId]
+  );
   return productId;
 }
 
-/** Salveaza un subset de campuri pe un listing. `stock` (array) actualizeaza si general_stock. */
-function updateListing(channel, externalId, fields) {
-  const database = db();
+async function updateListing(channel, externalId, fields) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
   const ext = String(externalId ?? "").trim();
   if (!ext) throw new Error("external_id invalid");
 
   const now = new Date().toISOString();
-  database
-    .prepare(
-      `INSERT OR IGNORE INTO marketplace_listings (channel, external_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`
-    )
-    .run(ch, ext, now, now);
+  await query(
+    `INSERT INTO marketplace_listings (channel, external_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (channel, external_id) DO NOTHING`,
+    [ch, ext, now, now]
+  );
 
   if (Object.prototype.hasOwnProperty.call(fields, "pret_cumparare")) {
-    setListingPretCumparare(ch, ext, fields.pret_cumparare);
+    await setListingPretCumparare(ch, ext, fields.pret_cumparare);
   }
 
   const payload = {};
@@ -630,47 +416,54 @@ function updateListing(channel, externalId, fields) {
     }
   }
   if (Array.isArray(fields.stock)) {
-    payload.stock_json = JSON.stringify(fields.stock);
+    payload.stock_json = fields.stock;
     payload.general_stock = fields.stock.reduce(
       (sum, s) => sum + (Number(s?.value) || 0),
       0
     );
   }
   if (Array.isArray(fields.handling_time)) {
-    payload.handling_time_json = JSON.stringify(fields.handling_time);
+    payload.handling_time_json = fields.handling_time;
   }
 
   const keys = Object.keys(payload);
   if (keys.length === 0) return getListing(ch, ext);
 
-  const sets = keys.map((k) => `${k} = @${k}`).join(", ");
-  database
-    .prepare(
-      `UPDATE marketplace_listings SET ${sets}, updated_at = @updated_at
-       WHERE channel = @channel AND external_id = @external_id`
-    )
-    .run({ ...payload, channel: ch, external_id: ext, updated_at: now });
+  const params = [];
+  const sets = keys.map((k) => {
+    params.push(payload[k]);
+    return `${k} = $${params.length}`;
+  });
+  params.push(now, ch, ext);
+  await query(
+    `UPDATE marketplace_listings SET ${sets.join(", ")}, updated_at = $${params.length - 2}
+     WHERE channel = $${params.length - 1} AND external_id = $${params.length}`,
+    params
+  );
 
   return getListing(ch, ext);
 }
 
-function getListing(channel, externalId) {
-  return db()
-    .prepare("SELECT * FROM marketplace_listings WHERE channel = ? AND external_id = ?")
-    .get(normalizeChannel(channel), String(externalId));
+async function getListing(channel, externalId) {
+  await ensureSchema();
+  const { rows } = await query(
+    "SELECT * FROM marketplace_listings WHERE channel = $1 AND external_id = $2",
+    [normalizeChannel(channel), String(externalId)]
+  );
+  return rows[0] || null;
 }
 
-function getListings(channel, externalIds) {
+async function getListings(channel, externalIds) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
   const ids = [...new Set((externalIds || []).map((v) => String(v)).filter(Boolean))];
   if (ids.length === 0) return [];
-  const placeholders = ids.map(() => "?").join(", ");
-  return db()
-    .prepare(
-      `SELECT * FROM marketplace_listings
-       WHERE channel = ? AND external_id IN (${placeholders})`
-    )
-    .all(ch, ...ids);
+  const { rows } = await query(
+    `SELECT * FROM marketplace_listings
+     WHERE channel = $1 AND external_id = ANY($2::text[])`,
+    [ch, ids]
+  );
+  return rows;
 }
 
 const PRODUCT_EDITABLE = {
@@ -682,8 +475,8 @@ const PRODUCT_EDITABLE = {
   pret_cumparare: toNumOrNull,
 };
 
-function updateProduct(productId, fields) {
-  const database = db();
+async function updateProduct(productId, fields) {
+  await ensureSchema();
   const id = Number(productId);
   if (!Number.isFinite(id)) throw new Error("product_id invalid");
 
@@ -695,51 +488,55 @@ function updateProduct(productId, fields) {
   }
   const keys = Object.keys(payload);
   if (keys.length > 0) {
-    const sets = keys.map((k) => `${k} = @${k}`).join(", ");
-    database
-      .prepare(`UPDATE catalog_products SET ${sets}, updated_at = @updated_at WHERE id = @id`)
-      .run({ ...payload, id, updated_at: new Date().toISOString() });
+    const params = [];
+    const sets = keys.map((k) => {
+      params.push(payload[k]);
+      return `${k} = $${params.length}`;
+    });
+    params.push(new Date().toISOString(), id);
+    await query(
+      `UPDATE catalog_products SET ${sets.join(", ")}, updated_at = $${params.length - 1} WHERE id = $${params.length}`,
+      params
+    );
   }
-  return database.prepare("SELECT * FROM catalog_products WHERE id = ?").get(id);
+  const { rows } = await query("SELECT * FROM catalog_products WHERE id = $1", [id]);
+  return rows[0] || null;
 }
 
-function upsertCatalogProducts(items) {
-  const database = db();
+async function upsertCatalogProducts(items) {
+  await ensureSchema();
   const now = new Date().toISOString();
-  const withCod = database.prepare(
-    `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-     VALUES (@cod_produs, @nume, @pret_cumparare, @now, @now)
-     ON CONFLICT(cod_produs) DO UPDATE SET
-       nume = excluded.nume,
-       pret_cumparare = excluded.pret_cumparare,
-       updated_at = excluded.updated_at`
-  );
-  const noCod = database.prepare(
-    `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-     VALUES (NULL, @nume, @pret_cumparare, @now, @now)`
-  );
-  const run = database.transaction((rows) => {
+  const list = Array.isArray(items) ? items : [];
+
+  return withTransaction(async (client) => {
     let count = 0;
-    for (const r of rows) {
+    for (const r of list) {
       const cod = toTextOrNull(r?.cod_produs);
       const nume = toTextOrNull(r?.nume) || cod;
       if (!cod && !nume) continue;
-      const payload = {
-        cod_produs: cod,
-        nume,
-        pret_cumparare: toNumOrNull(r?.pret_cumparare),
-        now,
-      };
-      if (cod) withCod.run(payload);
-      else noCod.run(payload);
+      const pret = toNumOrNull(r?.pret_cumparare);
+      if (cod) {
+        await client.query(
+          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $4)
+           ON CONFLICT (cod_produs) DO UPDATE SET
+             nume = EXCLUDED.nume,
+             pret_cumparare = EXCLUDED.pret_cumparare,
+             updated_at = EXCLUDED.updated_at`,
+          [cod, nume, pret, now]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
+           VALUES (NULL, $1, $2, $3, $3)`,
+          [nume, pret, now]
+        );
+      }
       count += 1;
     }
     return count;
   });
-  return run(Array.isArray(items) ? items : []);
 }
-
-/* ---------------- diff local vs canal ---------------- */
 
 const DIFF_FIELDS = [
   { key: "sale_price", label: "Preț vânzare", type: "number" },
@@ -747,9 +544,6 @@ const DIFF_FIELDS = [
   { key: "min_sale_price", label: "Preț minim", type: "number" },
   { key: "max_sale_price", label: "Preț maxim", type: "number" },
   { key: "general_stock", label: "Stoc", type: "number" },
-  // status/vat_id/currency sunt in CHANNEL_OWNED_FIELDS: pull-ul le rescrie mereu,
-  // deci nu pot diferi niciodata. Nu au ce cauta in comparatie.
-  // name nu e aici: push trimite doar pret/stoc; pull nu rescrie numele (LOCAL_SEED).
 ];
 
 function valuesDiffer(type, mine, theirs) {
@@ -764,23 +558,22 @@ function valuesDiffer(type, mine, theirs) {
   return String(mine).trim() !== String(theirs).trim();
 }
 
-/** Comparatie listing local vs ultimul snapshot al canalului. */
-function getChannelDiff(channel) {
-  const database = db();
+async function getChannelDiff(channel) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
 
-  const listings = database
-    .prepare(
-      `SELECT l.*, c.cod_produs AS catalog_cod
-       FROM marketplace_listings l
-       LEFT JOIN catalog_products c ON c.id = l.product_id
-       WHERE l.channel = ?
-       ORDER BY CAST(l.external_id AS INTEGER) ASC`
-    )
-    .all(ch);
-  const snapshots = database
-    .prepare("SELECT * FROM marketplace_snapshots WHERE channel = ?")
-    .all(ch);
+  const { rows: listings } = await query(
+    `SELECT l.*, c.cod_produs AS catalog_cod
+     FROM marketplace_listings l
+     LEFT JOIN catalog_products c ON c.id = l.product_id
+     WHERE l.channel = $1
+     ORDER BY CAST(NULLIF(l.external_id, '') AS BIGINT) ASC NULLS LAST`,
+    [ch]
+  );
+  const { rows: snapshots } = await query(
+    "SELECT * FROM marketplace_snapshots WHERE channel = $1",
+    [ch]
+  );
 
   const snapByExt = new Map(snapshots.map((s) => [String(s.external_id), s]));
   const matched = [];
@@ -800,7 +593,6 @@ function getChannelDiff(channel) {
     }
     snapByExt.delete(String(l.external_id));
     const fields = DIFF_FIELDS.map((f) => {
-      // UI + push folosesc override ?? min_sale_price — comparatia la fel.
       const mine =
         f.key === "min_sale_price"
           ? (l.pret_minim_override ?? l.min_sale_price ?? null)
@@ -842,9 +634,10 @@ function getChannelDiff(channel) {
       name: l.name,
     }));
 
+  const stats = await getChannelStats(ch);
   return {
     channel: ch,
-    last_sync: getChannelStats(ch).last_sync,
+    last_sync: stats.last_sync,
     fields: DIFF_FIELDS,
     matched,
     only_local: onlyLocal,
@@ -853,28 +646,27 @@ function getChannelDiff(channel) {
   };
 }
 
-function getChannelStats(channel) {
+async function getChannelStats(channel) {
+  await ensureSchema();
   const ch = normalizeChannel(channel);
-  const database = db();
-  const listings = database
-    .prepare("SELECT COUNT(*) AS n FROM marketplace_listings WHERE channel = ?")
-    .get(ch);
-  const snaps = database
-    .prepare(
-      "SELECT COUNT(*) AS n, MAX(fetched_at) AS last FROM marketplace_snapshots WHERE channel = ?"
-    )
-    .get(ch);
+  const { rows: listingRows } = await query(
+    "SELECT COUNT(*)::int AS n FROM marketplace_listings WHERE channel = $1",
+    [ch]
+  );
+  const { rows: snapRows } = await query(
+    "SELECT COUNT(*)::int AS n, MAX(fetched_at) AS last FROM marketplace_snapshots WHERE channel = $1",
+    [ch]
+  );
   return {
     channel: ch,
-    listings: listings?.n ?? 0,
-    snapshots: snaps?.n ?? 0,
-    last_sync: snaps?.last ?? null,
+    listings: listingRows[0]?.n ?? 0,
+    snapshots: snapRows[0]?.n ?? 0,
+    last_sync: snapRows[0]?.last ?? null,
   };
 }
 
-/** Costurile mele pentru o oferta — inlocuieste tabelele legacy per-offer. */
-function getListingCosts(channel, externalId) {
-  const row = getListing(channel, externalId);
+async function getListingCosts(channel, externalId) {
+  const row = await getListing(channel, externalId);
   if (!row) return null;
   return {
     alte_costuri: row.alte_costuri ?? null,
@@ -884,22 +676,23 @@ function getListingCosts(channel, externalId) {
   };
 }
 
-/** Pret cumparare din catalog: intai dupa SKU, apoi dupa nume. */
-function lookupCatalogPretCumparare(partNumber, name) {
-  const database = db();
+async function lookupCatalogPretCumparare(partNumber, name) {
+  await ensureSchema();
   const cod = toTextOrNull(partNumber);
   if (cod) {
-    const row = database
-      .prepare('SELECT pret_cumparare FROM catalog_products WHERE cod_produs = ? COLLATE NOCASE LIMIT 1')
-      .get(cod);
-    if (row && row.pret_cumparare != null) return row.pret_cumparare;
+    const { rows } = await query(
+      "SELECT pret_cumparare FROM catalog_products WHERE LOWER(cod_produs) = LOWER($1) LIMIT 1",
+      [cod]
+    );
+    if (rows[0] && rows[0].pret_cumparare != null) return rows[0].pret_cumparare;
   }
   const nume = toTextOrNull(name);
   if (nume) {
-    const row = database
-      .prepare('SELECT pret_cumparare FROM catalog_products WHERE nume = ? COLLATE NOCASE LIMIT 1')
-      .get(nume);
-    if (row && row.pret_cumparare != null) return row.pret_cumparare;
+    const { rows } = await query(
+      "SELECT pret_cumparare FROM catalog_products WHERE LOWER(nume) = LOWER($1) LIMIT 1",
+      [nume]
+    );
+    if (rows[0] && rows[0].pret_cumparare != null) return rows[0].pret_cumparare;
   }
   return null;
 }
@@ -907,7 +700,7 @@ function lookupCatalogPretCumparare(partNumber, name) {
 module.exports = {
   CHANNELS,
   normalizeChannel,
-  ensureSchema: () => db(),
+  ensureSchema,
   saveSnapshot,
   upsertListingFromRemote,
   getCatalogRows,

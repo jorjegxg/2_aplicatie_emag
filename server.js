@@ -63,7 +63,7 @@ app.use((req, res, next) => {
   if (!req.path.startsWith("/api/") || req.path.startsWith("/api/logs")) return next();
   const startedAt = Date.now();
   res.on("finish", () => {
-    log({
+    void log({
       level: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
       source: "server",
       category: categoryForPath(req.path),
@@ -83,10 +83,6 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// Creeaza/migreaza schema multi-canal la pornire, ca prima cerere sa fie rapida.
-ensureSchema();
-pruneLogs(14);
-
 function httpStatusFor(err) {
   const s = Number(err?.status);
   if (Number.isFinite(s) && s >= 400 && s <= 599) return s;
@@ -95,7 +91,7 @@ function httpStatusFor(err) {
 
 /** Log de eroare cu stack, pentru catch-urile care nu trec prin sendChannelError. */
 function logCaught(category, err, extra) {
-  log({
+  void log({
     level: "error",
     source: "server",
     category,
@@ -106,7 +102,7 @@ function logCaught(category, err, extra) {
 
 function sendChannelError(res, err, fallback) {
   const status = httpStatusFor(err);
-  log({
+  void log({
     level: "error",
     source: "server",
     category: "channel-error",
@@ -133,11 +129,11 @@ async function mapPool(items, limit, fn) {
 
 /* ---------------- comenzi (mapare) ---------------- */
 
-function mapOrderProduct(product) {
+async function mapOrderProduct(product) {
   const name = product.name || product.product_name || "";
   const part_number = product.part_number || "";
   const product_id = product.product_id ?? null;
-  const costs = product_id != null ? getListingCosts("emag", product_id) : null;
+  const costs = product_id != null ? await getListingCosts("emag", product_id) : null;
   return {
     id: product.id ?? null,
     product_id,
@@ -147,7 +143,7 @@ function mapOrderProduct(product) {
     sale_price: product.sale_price ?? null,
     status: product.status ?? null,
     currency: product.currency || "RON",
-    pret_cumparare: lookupCatalogPretCumparare(part_number, name),
+    pret_cumparare: await lookupCatalogPretCumparare(part_number, name),
     alte_costuri: costs?.alte_costuri ?? null,
     procentaj_emag: costs?.procentaj_emag ?? null,
     commission_value: costs?.commission_value ?? null,
@@ -155,12 +151,12 @@ function mapOrderProduct(product) {
   };
 }
 
-function mapOrder(order) {
+async function mapOrder(order) {
   const customerRaw = Array.isArray(order.customer)
     ? order.customer[0]
     : order.customer;
   const products = Array.isArray(order.products)
-    ? order.products.map(mapOrderProduct)
+    ? await Promise.all(order.products.map(mapOrderProduct))
     : [];
   return {
     id: order.id,
@@ -174,16 +170,16 @@ function mapOrder(order) {
 
 /* ---------------- setari ---------------- */
 
-app.get("/api/settings", (_req, res) => {
+app.get("/api/settings", async (_req, res) => {
   try {
-    return res.json(getSettings());
+    return res.json(await getSettings());
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la citire setări" });
   }
 });
 
-app.post("/api/settings", (req, res) => {
+app.post("/api/settings", async (req, res) => {
   try {
     const toNum = (v) => {
       if (v === null || v === undefined || v === "") return null;
@@ -191,7 +187,7 @@ app.post("/api/settings", (req, res) => {
       return Number.isFinite(n) ? n : null;
     };
 
-    const saved = saveSettings({
+    const saved = await saveSettings({
       procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
@@ -207,12 +203,14 @@ app.post("/api/settings", (req, res) => {
 
 /* ---------------- catalog local (sursa tabelului principal) ---------------- */
 
-app.get("/api/channels", (_req, res) => {
+app.get("/api/channels", async (_req, res) => {
   try {
-    const channels = listChannels().map((c) => ({
-      ...c,
-      ...getChannelStats(c.id),
-    }));
+    const channels = await Promise.all(
+      listChannels().map(async (c) => ({
+        ...c,
+        ...(await getChannelStats(c.id)),
+      }))
+    );
     return res.json({ channels });
   } catch (err) {
     console.error(err.message);
@@ -220,11 +218,11 @@ app.get("/api/channels", (_req, res) => {
   }
 });
 
-app.get("/api/catalog", (req, res) => {
+app.get("/api/catalog", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel);
-    const products = getCatalogRows(channel);
-    const stats = getChannelStats(channel);
+    const products = await getCatalogRows(channel);
+    const stats = await getChannelStats(channel);
     return res.json({
       channel,
       count: products.length,
@@ -239,11 +237,11 @@ app.get("/api/catalog", (req, res) => {
 });
 
 // Alias pentru compatibilitate — tabelul principal citeste acum din DB, nu din eMAG.
-app.get("/api/products", (req, res) => {
+app.get("/api/products", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel);
-    const products = getCatalogRows(channel);
-    const stats = getChannelStats(channel);
+    const products = await getCatalogRows(channel);
+    const stats = await getChannelStats(channel);
     return res.json({
       page: 1,
       itemsPerPage: products.length,
@@ -259,7 +257,7 @@ app.get("/api/products", (req, res) => {
   }
 });
 
-app.patch("/api/catalog/listing/:externalId", (req, res) => {
+app.patch("/api/catalog/listing/:externalId", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel ?? req.body?.channel);
     const externalId = String(req.params.externalId || "").trim();
@@ -269,7 +267,7 @@ app.patch("/api/catalog/listing/:externalId", (req, res) => {
     const fields = req.body?.fields && typeof req.body.fields === "object"
       ? req.body.fields
       : req.body || {};
-    const saved = updateListing(channel, externalId, fields);
+    const saved = await updateListing(channel, externalId, fields);
     return res.json({ ok: true, channel, listing: saved });
   } catch (err) {
     console.error("[listing:patch]", err.message);
@@ -278,12 +276,12 @@ app.patch("/api/catalog/listing/:externalId", (req, res) => {
   }
 });
 
-app.patch("/api/catalog/product/:productId", (req, res) => {
+app.patch("/api/catalog/product/:productId", async (req, res) => {
   try {
     const fields = req.body?.fields && typeof req.body.fields === "object"
       ? req.body.fields
       : req.body || {};
-    const saved = updateProduct(req.params.productId, fields);
+    const saved = await updateProduct(req.params.productId, fields);
     if (!saved) return res.status(404).json({ error: "Produs inexistent" });
     return res.json({ ok: true, product: saved });
   } catch (err) {
@@ -295,10 +293,10 @@ app.patch("/api/catalog/product/:productId", (req, res) => {
 
 /* ---------------- sincronizare cu canalul ---------------- */
 
-app.get("/api/sync/diff", (req, res) => {
+app.get("/api/sync/diff", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel);
-    return res.json(getChannelDiff(channel));
+    return res.json(await getChannelDiff(channel));
   } catch (err) {
     console.error("[diff]", err.message);
     logCaught("sync-diff", err);
@@ -324,12 +322,12 @@ app.post("/api/sync/pull", async (req, res) => {
       authUsed = result.authUsed || authUsed;
 
       for (const remote of listings) {
-        saveSnapshot(channelName, remote);
-        const { created: isNew } = upsertListingFromRemote(channelName, remote);
+        await saveSnapshot(channelName, remote);
+        const { created: isNew } = await upsertListingFromRemote(channelName, remote);
         if (isNew) created += 1;
         else updated += 1;
         try {
-          recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
+          await recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
         } catch (histErr) {
           console.warn("[sync-pull] istoric pret:", histErr.message);
         }
@@ -340,7 +338,7 @@ app.post("/api/sync/pull", async (req, res) => {
       page += 1;
     }
 
-    const stats = getChannelStats(channelName);
+    const stats = await getChannelStats(channelName);
     console.log(
       `[sync-pull] ${channelName}: ${total} oferte (${created} noi, ${updated} actualizate)`
     );
@@ -379,7 +377,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
       return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
     }
 
-    const listings = getListings(channelName, ids);
+    const listings = await getListings(channelName, ids);
     if (listings.length === 0) {
       return res.status(404).json({ error: "Ofertele nu există în DB — sincronizează cu canalul" });
     }
@@ -400,8 +398,18 @@ app.post("/api/products/sync-prices", async (req, res) => {
           min_sale_price: effectiveMin,
           max_sale_price: l.max_sale_price,
           general_stock: l.general_stock,
-          stock: l.stock_json ? JSON.parse(l.stock_json) : null,
-          handling_time: l.handling_time_json ? JSON.parse(l.handling_time_json) : null,
+          stock:
+            l.stock_json == null
+              ? null
+              : typeof l.stock_json === "object"
+                ? l.stock_json
+                : JSON.parse(l.stock_json),
+          handling_time:
+            l.handling_time_json == null
+              ? null
+              : typeof l.handling_time_json === "object"
+                ? l.handling_time_json
+                : JSON.parse(l.handling_time_json),
           status: l.status,
           vat_id: l.vat_id,
         }, { includeContent })
@@ -414,7 +422,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
     // actualizat: ce e pe canal se afla doar la urmatorul pull. Retin doar ce am trimis.
     for (const o of offers) {
       try {
-        recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
+        await recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
       } catch (histErr) {
         console.warn("[sync-prices] istoric pret:", histErr.message);
       }
@@ -460,7 +468,7 @@ app.post("/api/products/fetch-commission", async (req, res) => {
           item.sale_price
         );
         const fetched_at = new Date().toISOString();
-        updateListing(channelName, item.id, {
+        await updateListing(channelName, item.id, {
           procentaj_emag,
           commission_value,
           commission_fetched_at: fetched_at,
@@ -580,7 +588,7 @@ app.get("/api/orders", async (req, res) => {
       }
 
       const results = Array.isArray(json.results) ? json.results : [];
-      const orders = results.map(mapOrder);
+      const orders = await Promise.all(results.map(mapOrder));
 
       // Acumuleaza liniile de comanda local (istoric vanzari per produs).
       try {
@@ -601,7 +609,7 @@ app.get("/api/orders", async (req, res) => {
             });
           }
         }
-        upsertOrderLines(lines);
+        await upsertOrderLines(lines);
       } catch (histErr) {
         console.warn("[orders] istoric comenzi:", histErr.message);
       }
@@ -633,16 +641,18 @@ app.get("/api/orders", async (req, res) => {
 
 /* ---------------- istoric + export ---------------- */
 
-app.get("/api/products/:offerId/history", (req, res) => {
+app.get("/api/products/:offerId/history", async (req, res) => {
   try {
     const offerId = Number(req.params.offerId);
     if (!Number.isFinite(offerId)) {
       return res.status(400).json({ error: "offerId invalid" });
     }
+    const channel = String(req.query.channel || "emag");
     return res.json({
       offer_id: offerId,
-      price_history: getPretEmagHistory(offerId),
-      orders: getOrderLinesForProduct(offerId),
+      channel,
+      price_history: await getPretEmagHistory(offerId, channel),
+      orders: await getOrderLinesForProduct(offerId),
     });
   } catch (err) {
     console.error("[history] exception:", err.message);
@@ -696,14 +706,14 @@ app.post("/api/products/export", (req, res) => {
 
 /* ---------------- logs (pagina de debug) ---------------- */
 
-app.get("/api/logs", (req, res) => {
+app.get("/api/logs", async (req, res) => {
   try {
     const levels = String(req.query.level || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
     return res.json(
-      queryLogs({
+      await queryLogs({
         level: levels,
         source: req.query.source || undefined,
         category: req.query.category || undefined,
@@ -719,17 +729,17 @@ app.get("/api/logs", (req, res) => {
   }
 });
 
-app.get("/api/logs/facets", (req, res) => {
+app.get("/api/logs/facets", async (req, res) => {
   try {
-    return res.json(getLogFacets());
+    return res.json(await getLogFacets());
   } catch (err) {
     return res.status(500).json({ error: err.message || "Eroare la citire filtre" });
   }
 });
 
-app.delete("/api/logs", (req, res) => {
+app.delete("/api/logs", async (req, res) => {
   try {
-    return res.json({ ok: true, deleted: clearLogs() });
+    return res.json({ ok: true, deleted: await clearLogs() });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Eroare la stergere loguri" });
   }
@@ -739,7 +749,7 @@ app.delete("/api/logs", (req, res) => {
 app.post("/api/logs/client", (req, res) => {
   const entries = Array.isArray(req.body?.entries) ? req.body.entries.slice(0, 50) : [];
   for (const entry of entries) {
-    log({
+    void log({
       level: entry?.level,
       source: "client",
       category: entry?.category || "ui",
@@ -755,7 +765,7 @@ app.post("/api/logs/client", (req, res) => {
 
 // Ultima plasa de siguranta: orice exceptie scapata din rute ajunge in log.
 app.use((err, req, res, next) => {
-  log({
+  void log({
     level: "error",
     source: "server",
     category: "uncaught",
@@ -768,7 +778,7 @@ app.use((err, req, res, next) => {
 });
 
 process.on("uncaughtException", (err) => {
-  log({
+  void log({
     level: "error",
     source: "server",
     category: "uncaught",
@@ -779,7 +789,7 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  log({
+  void log({
     level: "error",
     source: "server",
     category: "uncaught",
@@ -789,6 +799,15 @@ process.on("unhandledRejection", (reason) => {
   console.error("[unhandledRejection]", reason?.stack || reason);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server pornit: http://localhost:${PORT}`);
+async function start() {
+  await ensureSchema();
+  await pruneLogs(14);
+  app.listen(PORT, () => {
+    console.log(`Server pornit: http://localhost:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Nu am putut porni serverul:", err);
+  process.exit(1);
 });
