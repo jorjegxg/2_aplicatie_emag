@@ -83,18 +83,26 @@ function toPlainTextOrNull(v) {
   return s === "" ? null : s;
 }
 
+/** Mereu string JSON (sau null). Array JS nu merge direct in JSONB via pg — pg il trateaza ca array PG. */
 function jsonOrNull(v) {
   if (v == null) return null;
   if (typeof v === "string") {
     const s = v.trim();
     if (!s) return null;
     try {
-      return JSON.parse(s);
+      JSON.parse(s);
+      return s;
     } catch {
       return null;
     }
   }
-  if (typeof v === "object") return v;
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return null;
+    }
+  }
   return null;
 }
 
@@ -777,10 +785,10 @@ async function updateListingEmag(externalId, fields) {
     listingPayload.estimated_stock = toNumOrNull(fields.estimated_stock);
   }
   if (Array.isArray(fields.stock)) {
-    listingPayload.stock_json = fields.stock;
+    listingPayload.stock_json = jsonOrNull(fields.stock);
   }
   if (Array.isArray(fields.handling_time)) {
-    listingPayload.handling_time_json = fields.handling_time;
+    listingPayload.handling_time_json = jsonOrNull(fields.handling_time);
   }
 
   await upsertEmagListingFields(productId, ext, listingPayload, now);
@@ -812,14 +820,14 @@ async function updateListingLegacy(channel, externalId, fields) {
     }
   }
   if (Array.isArray(fields.stock)) {
-    payload.stock_json = fields.stock;
+    payload.stock_json = jsonOrNull(fields.stock);
     payload.general_stock = fields.stock.reduce(
       (sum, s) => sum + (Number(s?.value) || 0),
       0
     );
   }
   if (Array.isArray(fields.handling_time)) {
-    payload.handling_time_json = fields.handling_time;
+    payload.handling_time_json = jsonOrNull(fields.handling_time);
   }
 
   const keys = Object.keys(payload);
@@ -976,10 +984,10 @@ async function updateProduct(productId, fields) {
     }
   }
   if (Array.isArray(fields.stock)) {
-    listingPayload.stock_json = fields.stock;
+    listingPayload.stock_json = jsonOrNull(fields.stock);
   }
   if (Array.isArray(fields.handling_time)) {
-    listingPayload.handling_time_json = fields.handling_time;
+    listingPayload.handling_time_json = jsonOrNull(fields.handling_time);
   }
 
   if (Object.keys(listingPayload).length > 0) {
