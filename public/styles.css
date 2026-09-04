@@ -1680,12 +1680,50 @@ body.modal-open {
   color: var(--muted);
 }
 
+button.sync-chip {
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button.sync-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--text);
+}
+
+button.sync-chip.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+button.sync-chip.is-active strong {
+  color: var(--accent);
+}
+
 .sync-chip strong {
   color: var(--text);
 }
 
 .sync-chip.is-diff {
   border-color: var(--warn);
+  color: var(--warn);
+}
+
+.sync-chip.is-diff strong {
+  color: var(--warn);
+}
+
+button.sync-chip.is-diff:hover,
+button.sync-chip.is-diff.is-active {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+
+button.sync-chip.is-diff.is-active strong {
   color: var(--warn);
 }
 

@@ -20,6 +20,8 @@ let currentData = null;
 let loading = false;
 let pulling = false;
 let fetchingCommission = false;
+/** null | matched | diff | only_remote | only_local | unlinked */
+let summaryFilter = null;
 
 const STATUS_LABELS = { 0: "Inactiv", 1: "Activ", 2: "În așteptare" };
 
@@ -64,16 +66,83 @@ function formatValue(key, value) {
   return key === "general_stock" ? String(n) : n.toFixed(2);
 }
 
+function bucketOfferIds(bucket) {
+  if (!currentData) return new Set();
+  if (bucket === "matched") {
+    return new Set(currentData.matched.map((m) => String(m.external_id)));
+  }
+  if (bucket === "diff") {
+    return new Set(
+      currentData.matched.filter((m) => m.diff_count > 0).map((m) => String(m.external_id))
+    );
+  }
+  const list = currentData[bucket];
+  if (!Array.isArray(list)) return new Set();
+  return new Set(list.map((r) => String(r.external_id)));
+}
+
 function renderSummary(data) {
   const diffRows = data.matched.filter((m) => m.diff_count > 0).length;
-  summaryEl.innerHTML = `
-    <span class="sync-chip">Ultima preluare: <strong>${escapeHtml(formatStamp(data.last_sync))}</strong></span>
-    <span class="sync-chip">Comune: <strong>${data.matched.length}</strong></span>
-    <span class="sync-chip${diffRows ? " is-diff" : ""}">Cu diferențe: <strong>${diffRows}</strong></span>
-    <span class="sync-chip">Doar pe marketplace: <strong>${data.only_remote.length}</strong></span>
-    <span class="sync-chip">Doar local: <strong>${data.only_local.length}</strong></span>
-    <span class="sync-chip">Nelegate: <strong>${data.unlinked.length}</strong></span>
-  `;
+  const chips = [
+    {
+      static: true,
+      html: `Ultima preluare: <strong>${escapeHtml(formatStamp(data.last_sync))}</strong>`,
+    },
+    { filter: "matched", label: "Comune", count: data.matched.length },
+    {
+      filter: "diff",
+      label: "Cu diferențe",
+      count: diffRows,
+      warn: diffRows > 0,
+    },
+    { filter: "only_remote", label: "Doar pe marketplace", count: data.only_remote.length },
+    { filter: "only_local", label: "Doar local", count: data.only_local.length },
+    { filter: "unlinked", label: "Nelegate", count: data.unlinked.length },
+  ];
+
+  summaryEl.innerHTML = chips
+    .map((c) => {
+      if (c.static) return `<span class="sync-chip">${c.html}</span>`;
+      const active = summaryFilter === c.filter;
+      const cls = [
+        "sync-chip",
+        c.warn ? "is-diff" : "",
+        active ? "is-active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `<button type="button" class="${cls}" data-filter="${c.filter}" aria-pressed="${
+        active ? "true" : "false"
+      }">${escapeHtml(c.label)}: <strong>${c.count}</strong></button>`;
+    })
+    .join("");
+}
+
+function scrollToSummarySection(filter) {
+  const map = {
+    matched: "diff-wrap",
+    diff: "pricing-wrap",
+    only_remote: "only-remote-body",
+    only_local: "only-local-body",
+    unlinked: "unlinked-body",
+  };
+  const id = map[filter];
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const target = el.closest(".table-wrap") || el;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function applySummaryFilter() {
+  summaryEl.querySelectorAll("button.sync-chip[data-filter]").forEach((btn) => {
+    const on = btn.dataset.filter === summaryFilter;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  if (currentData) renderDiffRows(currentData);
+  applyPricingFilters();
+  if (summaryFilter) scrollToSummarySection(summaryFilter);
 }
 
 function renderHead(fields) {
@@ -95,11 +164,26 @@ function renderHead(fields) {
 }
 
 function renderDiffRows(data) {
-  const rows = data.matched;
+  let rows = data.matched;
+  if (summaryFilter === "diff") {
+    rows = rows.filter((m) => m.diff_count > 0);
+  } else if (
+    summaryFilter === "only_remote" ||
+    summaryFilter === "only_local" ||
+    summaryFilter === "unlinked"
+  ) {
+    rows = [];
+  }
   const cols = data.fields.length * 2 + 2;
 
   if (rows.length === 0) {
-    diffBody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">Niciun produs comun.</td></tr>`;
+    const emptyMsg =
+      summaryFilter === "diff"
+        ? "Nicio diferență."
+        : summaryFilter
+          ? "—"
+          : "Niciun produs comun.";
+    diffBody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">${emptyMsg}</td></tr>`;
     return;
   }
 
@@ -737,10 +821,22 @@ function applyPricingFilters() {
     }))
     .filter((f) => f.col && f.q);
 
+  const bucketIds =
+    summaryFilter && summaryFilter !== "only_remote"
+      ? bucketOfferIds(summaryFilter)
+      : null;
+
   pricingBody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
-    const match =
+    let match =
       filters.length === 0 ||
       filters.every((f) => pricingCellText(tr, f.col).toLowerCase().includes(f.q));
+    if (summaryFilter === "diff") {
+      match = match && tr.classList.contains("has-diff");
+    } else if (summaryFilter === "only_remote") {
+      match = false;
+    } else if (bucketIds) {
+      match = match && bucketIds.has(String(tr.dataset.offerId));
+    }
     tr.classList.toggle("is-row-filtered", !match);
   });
 }
@@ -919,6 +1015,7 @@ function initCompactToggles() {
 channelSelect.value = currentChannel;
 channelSelect.addEventListener("change", () => {
   currentChannel = channelSelect.value || "emag";
+  summaryFilter = null;
   try {
     localStorage.setItem(CHANNEL_KEY, currentChannel);
   } catch {
@@ -932,6 +1029,14 @@ channelSelect.addEventListener("change", () => {
 btnPull.addEventListener("click", pullFromChannel);
 btnPush.addEventListener("click", pushToChannel);
 btnFetchCommission.addEventListener("click", fetchCommission);
+
+summaryEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button.sync-chip[data-filter]");
+  if (!btn) return;
+  const next = btn.dataset.filter;
+  summaryFilter = summaryFilter === next ? null : next;
+  applySummaryFilter();
+});
 
 columns.applyOrder();
 columns.buildMenu();
