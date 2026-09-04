@@ -64,11 +64,7 @@ CREATE TABLE IF NOT EXISTS catalog_products (
   status INTEGER,
   vat_id INTEGER,
   currency TEXT,
-  alte_costuri NUMERIC(12, 4),
   pret_minim_override NUMERIC(12, 4),
-  procentaj_emag NUMERIC(8, 4),
-  commission_value NUMERIC(12, 4),
-  commission_fetched_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ
 );

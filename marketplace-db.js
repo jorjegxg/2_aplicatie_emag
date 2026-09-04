@@ -117,11 +117,25 @@ async function ensureProductFamily(idFamilie, familie, client) {
   );
 }
 
-/** Catalog + nume familie din lookup (API tot expune `familie`). */
+/** Costuri/comision pe listings (nu pe catalog). */
+const LISTING_COST_FIELDS = [
+  "alte_costuri",
+  "procentaj_emag",
+  "commission_value",
+  "commission_fetched_at",
+];
+
+/** Catalog + familie + costuri din marketplace_listings (eMAG). */
 const SQL_CATALOG_WITH_FAMILIE = `
-  SELECT c.*, pf.name AS familie
+  SELECT c.*, pf.name AS familie,
+         ml.alte_costuri,
+         ml.procentaj_emag,
+         ml.commission_value,
+         ml.commission_fetched_at
   FROM catalog_products c
   LEFT JOIN product_families pf ON pf.id = c.id_familie
+  LEFT JOIN marketplace_listings ml
+    ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
 `;
 
 function parseJson(raw, fallback) {
@@ -581,7 +595,7 @@ const LISTING_EDITABLE = {
   vat_id: toNumOrNull,
 };
 
-/** Map API field names → catalog columns. */
+/** Map API field names → catalog columns (fără costuri — pe listings). */
 const LISTING_TO_CATALOG_COL = {
   name: "nume",
   description: "descriere",
@@ -590,11 +604,7 @@ const LISTING_TO_CATALOG_COL = {
   min_sale_price: "min_sale_price",
   max_sale_price: "max_sale_price",
   general_stock: "general_stock",
-  alte_costuri: "alte_costuri",
   pret_minim_override: "pret_minim_override",
-  procentaj_emag: "procentaj_emag",
-  commission_value: "commission_value",
-  commission_fetched_at: "commission_fetched_at",
   status: "status",
   vat_id: "vat_id",
   stock_json: "stock_json",
@@ -655,12 +665,15 @@ async function updateListingEmag(externalId, fields) {
     "SELECT id FROM catalog_products WHERE emag_offer_id = $1 LIMIT 1",
     [ext]
   );
-  if (!existing[0]) {
-    await query(
+  let productId = existing[0]?.id ?? null;
+  if (productId == null) {
+    const { rows: inserted } = await query(
       `INSERT INTO catalog_products (emag_offer_id, created_at, updated_at)
-       VALUES ($1, $2, $3)`,
+       VALUES ($1, $2, $3)
+       RETURNING id`,
       [ext, now, now]
     );
+    productId = inserted[0].id;
   }
 
   if (Object.prototype.hasOwnProperty.call(fields, "pret_cumparare")) {
@@ -686,19 +699,43 @@ async function updateListingEmag(externalId, fields) {
   }
 
   const keys = Object.keys(payload);
-  if (keys.length === 0) return getListing("emag", ext);
+  if (keys.length > 0) {
+    const params = [];
+    const sets = keys.map((k) => {
+      params.push(payload[k]);
+      return `${k} = $${params.length}`;
+    });
+    params.push(now, ext);
+    await query(
+      `UPDATE catalog_products SET ${sets.join(", ")}, updated_at = $${params.length - 1}
+       WHERE emag_offer_id = $${params.length}`,
+      params
+    );
+  }
 
-  const params = [];
-  const sets = keys.map((k) => {
-    params.push(payload[k]);
-    return `${k} = $${params.length}`;
-  });
-  params.push(now, ext);
-  await query(
-    `UPDATE catalog_products SET ${sets.join(", ")}, updated_at = $${params.length - 1}
-     WHERE emag_offer_id = $${params.length}`,
-    params
-  );
+  const costPayload = {};
+  for (const key of LISTING_COST_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      costPayload[key] = LISTING_EDITABLE[key](fields[key]);
+    }
+  }
+  const costKeys = Object.keys(costPayload);
+  if (costKeys.length > 0) {
+    const cols = ["channel", "external_id", "product_id", ...costKeys, "created_at", "updated_at"];
+    const params = ["emag", ext, productId, ...costKeys.map((k) => costPayload[k]), now, now];
+    const placeholders = params.map((_, i) => `$${i + 1}`).join(", ");
+    const conflictSets = [
+      "product_id = COALESCE(EXCLUDED.product_id, marketplace_listings.product_id)",
+      ...costKeys.map((k) => `${k} = EXCLUDED.${k}`),
+      "updated_at = EXCLUDED.updated_at",
+    ];
+    await query(
+      `INSERT INTO marketplace_listings (${cols.join(", ")})
+       VALUES (${placeholders})
+       ON CONFLICT (channel, external_id) DO UPDATE SET ${conflictSets.join(", ")}`,
+      params
+    );
+  }
 
   return getListing("emag", ext);
 }
@@ -827,15 +864,7 @@ const PRODUCT_EDITABLE = {
   status: toNumOrNull,
   vat_id: toNumOrNull,
   currency: toTextOrNull,
-  alte_costuri: toNumOrNull,
   pret_minim_override: toNumOrNull,
-  procentaj_emag: toNumOrNull,
-  commission_value: toNumOrNull,
-  commission_fetched_at: (v) => {
-    if (v == null || v === "") return null;
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  },
 };
 
 async function updateProduct(productId, fields) {
