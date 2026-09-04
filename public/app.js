@@ -37,8 +37,8 @@ const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
-/* Pagina de produse nu are canal. Constanta e doar cheia sub care stau
-   randurile in marketplace_listings; canalul se alege in pagina Sincronizare. */
+/* Pagina de produse: canalul eMAG; datele stau in catalog_products (SoT).
+   Canalul se alege in pagina Sincronizare. */
 const LISTING_CHANNEL = "emag";
 
 let currentPage = 1;

@@ -86,8 +86,13 @@
 
       <div class="sync-summary" id="sync-summary"></div>
 
-      <h2 class="sync-section-title">Prețuri și marjă</h2>
-      <div class="table-wrap sync-wrap">
+      <div class="sync-section-head">
+        <h2 class="sync-section-title">Prețuri și marjă</h2>
+        <button type="button" id="btn-compact-pricing" class="btn btn-secondary btn-compact" aria-pressed="false">
+          Compact
+        </button>
+      </div>
+      <div class="table-wrap sync-wrap" id="pricing-wrap">
         <table id="pricing-table">
           <thead>
             <tr>
@@ -145,8 +150,13 @@
         </table>
       </div>
 
-      <h2 class="sync-section-title">Produse comune</h2>
-      <div class="table-wrap sync-wrap">
+      <div class="sync-section-head">
+        <h2 class="sync-section-title">Produse comune</h2>
+        <button type="button" id="btn-compact-diff" class="btn btn-secondary btn-compact" aria-pressed="false">
+          Compact
+        </button>
+      </div>
+      <div class="table-wrap sync-wrap" id="diff-wrap">
         <table id="diff-table" class="sync-table">
           <thead id="diff-head"></thead>
           <tbody id="diff-body">

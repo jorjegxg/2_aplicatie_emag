@@ -1607,10 +1607,27 @@ body.modal-open {
   margin: 0;
 }
 
+.sync-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1.6rem 0 0.5rem;
+}
+
+.sync-section-head .sync-section-title {
+  margin: 0;
+}
+
 .sync-section-title {
   margin: 1.6rem 0 0.5rem;
   font-size: 1rem;
   color: var(--text);
+}
+
+.btn-compact {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.55rem;
 }
 
 .sync-hint {
@@ -1675,13 +1692,87 @@ body.modal-open {
   border-right: 1px solid var(--border);
 }
 
-.sync-table td.is-diff {
+.sync-table td.is-diff,
+#pricing-table td.is-diff {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
   font-weight: 600;
 }
 
-.sync-table tr.has-diff td:first-child {
+.sync-table tr.has-diff td:first-child,
+#pricing-table tr.has-diff td:first-child {
   border-left: 3px solid var(--warn);
+}
+
+/* Prețuri și marjă: fără tinturi decorative — doar is-diff / has-diff */
+#pricing-table thead tr:not(.filter-row) th[data-src],
+#pricing-table thead tr:not(.filter-row) th[data-src]:hover,
+#pricing-table thead tr:not(.filter-row) th.col-pret-emag,
+#pricing-table thead tr:not(.filter-row) th.col-pret-emag:hover,
+#pricing-table thead tr:not(.filter-row) th.col-procentaj-emag,
+#pricing-table thead tr:not(.filter-row) th.col-procentaj-emag:hover,
+#pricing-table thead tr:not(.filter-row) th.col-profit,
+#pricing-table thead tr:not(.filter-row) th.col-profit:hover,
+#pricing-table thead tr:not(.filter-row) th.col-procentaj-profit,
+#pricing-table thead tr:not(.filter-row) th.col-procentaj-profit:hover {
+  color: inherit;
+  background: var(--surface-alt);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+#pricing-table td.col-pret-emag,
+#pricing-table td.col-profit,
+#pricing-table td.col-procentaj-emag,
+#pricing-table td.col-procentaj-emag.has-emag-commission,
+#pricing-table td.col-procentaj-emag.is-emag-pct-override,
+#pricing-table td.col-procentaj-profit,
+#pricing-table td.col-procentaj-profit.pct-1,
+#pricing-table td.col-procentaj-profit.pct-2,
+#pricing-table td[data-col="pret_minim_profit"].is-below-emag,
+#pricing-table td.col-pret-schimbat.is-stale-fresh,
+#pricing-table td.col-pret-schimbat.is-stale-warn,
+#pricing-table td.col-pret-schimbat.is-stale-old {
+  color: inherit;
+  background: transparent;
+  font-weight: inherit;
+}
+
+#pricing-table td.is-diff {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  font-weight: 600;
+}
+
+/* Compact: un rând, truncate, hover via title */
+.table-wrap.is-compact td {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 10rem;
+}
+
+.table-wrap.is-compact #pricing-table td.col-name:not(.is-col-hidden),
+.table-wrap.is-compact #pricing-table td.col-description-ro:not(.is-col-hidden) {
+  max-width: 12rem;
+  display: table-cell;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.table-wrap.is-compact #pricing-table td[data-col="id"],
+.table-wrap.is-compact #pricing-table td[data-col="part_number"],
+.table-wrap.is-compact #pricing-table td[data-col="ean"],
+.table-wrap.is-compact #pricing-table td[data-col="pnk"] {
+  max-width: 7rem;
+}
+
+.table-wrap.is-compact .sync-table td {
+  max-width: 6.5rem;
 }
 
 .sync-table .empty-row td {

@@ -304,7 +304,7 @@ app.get("/api/sync/diff", async (req, res) => {
   }
 });
 
-/** Trage toate ofertele de la canal in DB: snapshot + upsert listing. */
+/** Trage toate ofertele de la canal in DB: snapshot + upsert catalog (eMAG SoT). */
 app.post("/api/sync/pull", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {

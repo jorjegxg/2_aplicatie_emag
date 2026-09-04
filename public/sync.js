@@ -33,6 +33,11 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function titleAttr(text) {
+  if (text == null || text === "" || text === "—") return "";
+  return ` title="${escapeHtml(String(text))}"`;
+}
+
 function setStatus(text, kind) {
   statusEl.textContent = text || "";
   statusEl.className = "status";
@@ -101,18 +106,19 @@ function renderDiffRows(data) {
   diffBody.innerHTML = rows
     .map((row) => {
       const cells = row.fields
-        .map(
-          (f) =>
-            `<td class="sync-mine${f.differs ? " is-diff" : ""}">${escapeHtml(
-              formatValue(f.key, f.mine)
-            )}</td><td class="sync-theirs${f.differs ? " is-diff" : ""}">${escapeHtml(
-              formatValue(f.key, f.theirs)
-            )}</td>`
-        )
+        .map((f) => {
+          const mineText = formatValue(f.key, f.mine);
+          const theirsText = formatValue(f.key, f.theirs);
+          return `<td class="sync-mine${f.differs ? " is-diff" : ""}"${titleAttr(
+            mineText
+          )}>${escapeHtml(mineText)}</td><td class="sync-theirs${
+            f.differs ? " is-diff" : ""
+          }"${titleAttr(theirsText)}>${escapeHtml(theirsText)}</td>`;
+        })
         .join("");
       return `<tr class="${row.diff_count > 0 ? "has-diff" : ""}">
-        <td>${escapeHtml(row.external_id)}</td>
-        <td>${escapeHtml(row.part_number || "—")}</td>
+        <td${titleAttr(row.external_id)}>${escapeHtml(row.external_id)}</td>
+        <td${titleAttr(row.part_number || "—")}>${escapeHtml(row.part_number || "—")}</td>
         ${cells}
       </tr>`;
     })
@@ -174,6 +180,7 @@ function restoreDiffCache() {
   if (!cached) return false;
   currentData = cached.data;
   render(cached.data);
+  if (pricingProducts.length) renderPricing();
   return true;
 }
 
@@ -188,6 +195,7 @@ async function loadDiff() {
     currentData = data;
     saveDiffCache(data);
     render(data);
+    if (pricingProducts.length) renderPricing();
     const diffRows = data.matched.filter((m) => m.diff_count > 0).length;
     if (!data.last_sync) {
       setStatus(
@@ -239,7 +247,7 @@ async function pullFromChannel() {
 }
 
 
-/** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe listinguri. */
+/** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe catalog. */
 async function fetchCommission() {
   if (fetchingCommission) return;
   fetchingCommission = true;
@@ -294,8 +302,6 @@ const {
   formatPrice,
   formatPercent,
   relativeTimeRo,
-  stalenessClass,
-  procentajLevelClass,
   parseSortNumber,
   alteFromProcentaj,
   calcProfit,
@@ -311,11 +317,38 @@ const {
 
 const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
 
+/** Diff API key → coloană din tabelul Prețuri și marjă. */
+const DIFF_KEY_TO_COL = {
+  sale_price: "pret_emag",
+  recommended_price: "prp",
+  min_sale_price: "pret_minim",
+  max_sale_price: "pret_maxim",
+  general_stock: "stoc",
+};
+
+const COMPACT_PRICING_KEY = "sync-compact-pricing";
+const COMPACT_DIFF_KEY = "sync-compact-diff";
+
 const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
+const pricingWrap = document.getElementById("pricing-wrap");
+const diffWrap = document.getElementById("diff-wrap");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
+const btnCompactPricing = document.getElementById("btn-compact-pricing");
+const btnCompactDiff = document.getElementById("btn-compact-diff");
 const syncInfoBanner = document.getElementById("sync-info-banner");
+
+function diffKeysForOffer(offerId) {
+  const keys = new Set();
+  if (!currentData || !Array.isArray(currentData.matched)) return keys;
+  const row = currentData.matched.find((m) => String(m.external_id) === String(offerId));
+  if (!row) return keys;
+  for (const f of row.fields || []) {
+    if (f.differs) keys.add(f.key);
+  }
+  return keys;
+}
 
 /** pret_transport (vechi) → alte_costuri; evita drop din sync-column-order. */
 function migrateLegacyCostCols(cols) {
@@ -368,7 +401,7 @@ function globalPct(key) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Costurile derivate: override pe listing, altfel procentaj global × preț cumpărare. */
+/** Costurile derivate: override pe catalog, altfel procentaj global × preț cumpărare. */
 function rowCosts(product) {
   const pretCumparare = product.pret_cumparare ?? "";
   const alte =
@@ -406,29 +439,28 @@ function pricingRowHtml(product, index) {
     alte,
     pct
   );
-  const saleNum = Number(product.sale_price);
-  const belowMin =
-    minProfit != null && Number.isFinite(minProfit) && Number.isFinite(saleNum) && saleNum < minProfit;
 
-  const cellClass = (col, extra = "") => columns.cellClass(col, extra);
+  const diffKeys = diffKeysForOffer(product.id);
+  const colDiff = (col) => {
+    for (const [key, mapped] of Object.entries(DIFF_KEY_TO_COL)) {
+      if (mapped === col && diffKeys.has(key)) return " is-diff";
+    }
+    return "";
+  };
+  const cellClass = (col, extra = "") =>
+    columns.cellClass(col, `${extra}${colDiff(col)}`.trim());
+
   const commissionCell = isFetched
     ? `<td data-col="procentaj_emag"${cellClass(
         "procentaj_emag",
-        "col-procentaj-emag has-emag-commission"
+        "col-procentaj-emag"
       )}${tooltip ? ` title="${tooltip}"` : ""}>${escapeHtml(
         formatProcentajEmagDisplay(pct)
       )}</td>`
     : `<td data-col="procentaj_emag"${cellClass(
         "procentaj_emag",
-        `col-procentaj-emag${hasOverride ? " is-emag-pct-override" : ""}`
+        "col-procentaj-emag"
       )}>${procentajEmagInputHtml(pct, hasOverride)}</td>`;
-
-  const changeClass = ["col-pret-schimbat", stalenessClass(product.pret_emag_last_change)]
-    .filter(Boolean)
-    .join(" ");
-  const procentajClass = ["col-procentaj-profit", procentajLevelClass(procentaj)]
-    .filter(Boolean)
-    .join(" ");
 
   // Coloanele preluate din pagina de produse sunt doar afisate aici.
   const pretMinim =
@@ -441,25 +473,33 @@ function pricingRowHtml(product, index) {
     ? generalStock
     : stockSumFromArr(product.stock);
 
+  const nameText = product.name || "—";
+  const descText = product.description || "—";
+  const pretEmagText = formatPrice(product.sale_price, currency);
+  const prpText = formatPrice(product.recommended_price, currency);
+  const pretMinimText = formatPrice(pretMinim, currency);
+  const pretMaximText = formatPrice(product.max_sale_price, currency);
+  const stocText = stoc === "" || stoc == null ? "—" : String(stoc);
+
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
-    id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
-    part_number: `<td data-col="part_number"${cellClass("part_number")}>${
-      escapeHtml(product.part_number) || "—"
-    }</td>`,
-    id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${
-      escapeHtml(product.id_familie) || "—"
-    }</td>`,
-    familie: `<td data-col="familie"${cellClass("familie")}>${
+    id: `<td data-col="id"${cellClass("id")}${titleAttr(product.id)}>${escapeHtml(product.id)}</td>`,
+    part_number: `<td data-col="part_number"${cellClass("part_number")}${titleAttr(
+      product.part_number
+    )}>${escapeHtml(product.part_number) || "—"}</td>`,
+    id_familie: `<td data-col="id_familie"${cellClass("id_familie")}${titleAttr(
+      product.id_familie
+    )}>${escapeHtml(product.id_familie) || "—"}</td>`,
+    familie: `<td data-col="familie"${cellClass("familie")}${titleAttr(product.familie)}>${
       escapeHtml(product.familie) || "—"
     }</td>`,
-    name: `<td data-col="name"${cellClass("name", "col-name")}>${
+    name: `<td data-col="name"${cellClass("name", "col-name")}${titleAttr(nameText)}>${
       escapeHtml(product.name) || "—"
     }</td>`,
     description: `<td data-col="description"${cellClass(
       "description",
       "col-description-ro"
-    )}>${escapeHtml(product.description) || "—"}</td>`,
+    )}${titleAttr(descText)}>${escapeHtml(product.description) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
       "pret_cumparare"
     )}>${formatPrice(pretCumparare, currency)}</td>`,
@@ -470,24 +510,20 @@ function pricingRowHtml(product, index) {
     pret_emag: `<td data-col="pret_emag"${cellClass(
       "pret_emag",
       "col-pret-emag"
-    )}>${formatPrice(product.sale_price, currency)}</td>`,
-    prp: `<td data-col="prp"${cellClass("prp")}>${formatPrice(
-      product.recommended_price,
-      currency
+    )}${titleAttr(pretEmagText)}>${pretEmagText}</td>`,
+    prp: `<td data-col="prp"${cellClass("prp")}${titleAttr(prpText)}>${prpText}</td>`,
+    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")}${titleAttr(
+      pretMinimText
+    )}>${pretMinimText}</td>`,
+    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")}${titleAttr(
+      pretMaximText
+    )}>${pretMaximText}</td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc")}${titleAttr(stocText)}>${escapeHtml(
+      stoc
     )}</td>`,
-    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")}>${formatPrice(
-      pretMinim,
-      currency
-    )}</td>`,
-    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")}>${formatPrice(
-      product.max_sale_price,
-      currency
-    )}</td>`,
-    stoc: `<td data-col="stoc"${cellClass("stoc")}>${escapeHtml(stoc)}</td>`,
     procentaj_emag: commissionCell,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass(
-      "pret_minim_profit",
-      belowMin ? "is-below-emag" : ""
+      "pret_minim_profit"
     )}>${formatPrice(minProfit, currency)}</td>`,
     profit: `<td data-col="profit"${cellClass("profit", "col-profit")}>${formatPrice(
       profit,
@@ -495,15 +531,17 @@ function pricingRowHtml(product, index) {
     )}</td>`,
     procentaj_profit: `<td data-col="procentaj_profit"${cellClass(
       "procentaj_profit",
-      procentajClass
+      "col-procentaj-profit"
     )}>${formatPercent(procentaj)}</td>`,
-    ean: `<td data-col="ean"${cellClass("ean")}>${escapeHtml(product.ean) || "—"}</td>`,
-    pnk: `<td data-col="pnk"${cellClass("pnk")}>${
+    ean: `<td data-col="ean"${cellClass("ean")}${titleAttr(product.ean)}>${
+      escapeHtml(product.ean) || "—"
+    }</td>`,
+    pnk: `<td data-col="pnk"${cellClass("pnk")}${titleAttr(product.part_number_key)}>${
       escapeHtml(product.part_number_key) || "—"
     }</td>`,
     pret_emag_schimbat: `<td data-col="pret_emag_schimbat"${cellClass(
       "pret_emag_schimbat",
-      changeClass
+      "col-pret-schimbat"
     )}${
       product.pret_emag_last_change
         ? ` title="${escapeHtml(new Date(product.pret_emag_last_change).toLocaleString("ro-RO"))}"`
@@ -517,7 +555,8 @@ function pricingRowHtml(product, index) {
     )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
   };
 
-  return `<tr data-offer-id="${escapeHtml(product.id)}">
+  const rowClass = diffKeys.size > 0 ? ' class="has-diff"' : "";
+  return `<tr data-offer-id="${escapeHtml(product.id)}"${rowClass}>
     ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -548,24 +587,16 @@ function refreshPricingRow(tr, product) {
     alte,
     pct
   );
-  const saleNum = Number(product.sale_price);
 
   const minCell = tr.querySelector("td[data-col='pret_minim_profit']");
-  if (minCell) {
-    minCell.textContent = formatPrice(minProfit, currency);
-    minCell.classList.toggle(
-      "is-below-emag",
-      minProfit != null && Number.isFinite(minProfit) && Number.isFinite(saleNum) && saleNum < minProfit
-    );
-  }
+  if (minCell) minCell.textContent = formatPrice(minProfit, currency);
   const profitCell = tr.querySelector("td[data-col='profit']");
   if (profitCell) profitCell.textContent = formatPrice(profit, currency);
   const pctCell = tr.querySelector("td[data-col='procentaj_profit']");
   if (pctCell) {
     pctCell.textContent = formatPercent(procentaj);
-    pctCell.className = ["col-procentaj-profit", procentajLevelClass(procentaj)]
-      .filter(Boolean)
-      .join(" ");
+    // Păstrează is-col-hidden / ordine din columns — doar text, fără pct-1/pct-2.
+    pctCell.classList.remove("pct-1", "pct-2", "is-below-emag");
   }
 }
 
@@ -646,7 +677,6 @@ function syncCommissionCell(tr) {
   const overridden = Number.isFinite(n) && n !== DEFAULT_PROcentaj_EMAG;
   const resetBtn = cell.querySelector("button.btn-reset-emag-pct");
   if (resetBtn) resetBtn.hidden = !overridden;
-  cell.classList.toggle("is-emag-pct-override", overridden);
 }
 
 pricingBody.addEventListener("input", (e) => {
@@ -848,6 +878,42 @@ async function pushToChannel() {
   }
 }
 
+/* ---------- compactare tabele ---------- */
+
+function setCompact(wrap, btn, on, storageKey) {
+  if (!wrap || !btn) return;
+  wrap.classList.toggle("is-compact", on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.textContent = on ? "Normal" : "Compact";
+  try {
+    localStorage.setItem(storageKey, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+function initCompactToggles() {
+  let pricingOn = false;
+  let diffOn = false;
+  try {
+    pricingOn = localStorage.getItem(COMPACT_PRICING_KEY) === "1";
+    diffOn = localStorage.getItem(COMPACT_DIFF_KEY) === "1";
+  } catch {
+    /* ignore */
+  }
+  setCompact(pricingWrap, btnCompactPricing, pricingOn, COMPACT_PRICING_KEY);
+  setCompact(diffWrap, btnCompactDiff, diffOn, COMPACT_DIFF_KEY);
+
+  btnCompactPricing?.addEventListener("click", () => {
+    const next = !pricingWrap.classList.contains("is-compact");
+    setCompact(pricingWrap, btnCompactPricing, next, COMPACT_PRICING_KEY);
+  });
+  btnCompactDiff?.addEventListener("click", () => {
+    const next = !diffWrap.classList.contains("is-compact");
+    setCompact(diffWrap, btnCompactDiff, next, COMPACT_DIFF_KEY);
+  });
+}
+
 /* ---------- pornire ---------- */
 
 channelSelect.value = currentChannel;
@@ -870,6 +936,7 @@ btnFetchCommission.addEventListener("click", fetchCommission);
 columns.applyOrder();
 columns.buildMenu();
 columns.applyVisibility();
+initCompactToggles();
 
 restorePricingCache();
 restoreDiffCache();
