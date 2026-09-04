@@ -1653,7 +1653,8 @@ body.modal-open {
   padding: 0.25rem 0.55rem;
 }
 
-.toolbar-actions #btn-compact-products {
+.toolbar-actions #btn-compact-products,
+.sync-section-head .btn-compact {
   margin-left: auto;
 }
 
