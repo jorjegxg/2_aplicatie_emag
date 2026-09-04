@@ -1,4 +1,4 @@
-/* Comparatie: valorile mele din DB vs ultimul snapshot al marketplace-ului. Doar citire. */
+/* Comparatie: valorile mele din DB vs ultimul snapshot al marketplace-ului. */
 
 const CHANNEL_KEY = "marketplace-channel";
 const PRICING_CACHE_KEY = "sync-pricing-cache-v1";
@@ -9,11 +9,9 @@ const btnPull = document.getElementById("btn-pull");
 const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("sync-summary");
-const diffHead = document.getElementById("diff-head");
-const diffBody = document.getElementById("diff-body");
-const onlyRemoteBody = document.getElementById("only-remote-body");
-const onlyLocalBody = document.getElementById("only-local-body");
-const unlinkedBody = document.getElementById("unlinked-body");
+const filterStatusEl = document.getElementById("filter-status");
+const filterStatusText = document.getElementById("filter-status-text");
+const btnClearFilters = document.getElementById("btn-clear-filters");
 
 let currentChannel = localStorage.getItem(CHANNEL_KEY) || "emag";
 let currentData = null;
@@ -23,7 +21,13 @@ let fetchingCommission = false;
 /** null | matched | diff | only_remote | only_local | unlinked */
 let summaryFilter = null;
 
-const STATUS_LABELS = { 0: "Inactiv", 1: "Activ", 2: "În așteptare" };
+const SUMMARY_LABELS = {
+  matched: "Comune",
+  diff: "Cu diferențe",
+  only_remote: "Doar pe marketplace",
+  only_local: "Doar local",
+  unlinked: "Nelegate",
+};
 
 function escapeHtml(value) {
   if (value == null) return "";
@@ -55,15 +59,6 @@ function formatStamp(iso) {
   } catch {
     return String(iso);
   }
-}
-
-function formatValue(key, value) {
-  if (value == null || value === "") return "—";
-  if (key === "status") return STATUS_LABELS[Number(value)] ?? String(value);
-  if (key === "name") return String(value);
-  const n = Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  return key === "general_stock" ? String(n) : n.toFixed(2);
 }
 
 function bucketOfferIds(bucket) {
@@ -118,122 +113,17 @@ function renderSummary(data) {
     .join("");
 }
 
-function scrollToSummarySection(filter) {
-  const map = {
-    matched: "diff-wrap",
-    diff: "pricing-wrap",
-    only_remote: "only-remote-body",
-    only_local: "only-local-body",
-    unlinked: "unlinked-body",
-  };
-  const id = map[filter];
-  if (!id) return;
-  const el = document.getElementById(id);
-  if (!el) return;
-  const target = el.closest(".table-wrap") || el;
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
 function applySummaryFilter() {
   summaryEl.querySelectorAll("button.sync-chip[data-filter]").forEach((btn) => {
     const on = btn.dataset.filter === summaryFilter;
     btn.classList.toggle("is-active", on);
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
-  if (currentData) renderDiffRows(currentData);
   applyPricingFilters();
-  if (summaryFilter) scrollToSummarySection(summaryFilter);
-}
-
-function renderHead(fields) {
-  diffHead.innerHTML = `
-    <tr>
-      <th rowspan="2">ID ofertă</th>
-      <th rowspan="2">SKU</th>
-      ${fields.map((f) => `<th colspan="2">${escapeHtml(f.label)}</th>`).join("")}
-    </tr>
-    <tr>
-      ${fields
-        .map(
-          () =>
-            `<th class="sync-sub sync-mine">Al meu</th><th class="sync-sub sync-theirs">Marketplace</th>`
-        )
-        .join("")}
-    </tr>
-  `;
-}
-
-function renderDiffRows(data) {
-  let rows = data.matched;
-  if (summaryFilter === "diff") {
-    rows = rows.filter((m) => m.diff_count > 0);
-  } else if (
-    summaryFilter === "only_remote" ||
-    summaryFilter === "only_local" ||
-    summaryFilter === "unlinked"
-  ) {
-    rows = [];
-  }
-  const cols = data.fields.length * 2 + 2;
-
-  if (rows.length === 0) {
-    const emptyMsg =
-      summaryFilter === "diff"
-        ? "Nicio diferență."
-        : summaryFilter
-          ? "—"
-          : "Niciun produs comun.";
-    diffBody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">${emptyMsg}</td></tr>`;
-    return;
-  }
-
-  diffBody.innerHTML = rows
-    .map((row) => {
-      const cells = row.fields
-        .map((f) => {
-          const mineText = formatValue(f.key, f.mine);
-          const theirsText = formatValue(f.key, f.theirs);
-          return `<td class="sync-mine${f.differs ? " is-diff" : ""}"${titleAttr(
-            mineText
-          )}>${escapeHtml(mineText)}</td><td class="sync-theirs${
-            f.differs ? " is-diff" : ""
-          }"${titleAttr(theirsText)}>${escapeHtml(theirsText)}</td>`;
-        })
-        .join("");
-      return `<tr class="${row.diff_count > 0 ? "has-diff" : ""}">
-        <td${titleAttr(row.external_id)}>${escapeHtml(row.external_id)}</td>
-        <td${titleAttr(row.part_number || "—")}>${escapeHtml(row.part_number || "—")}</td>
-        ${cells}
-      </tr>`;
-    })
-    .join("");
-}
-
-function renderSimpleRows(tbody, items, cols) {
-  if (!items.length) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="${cols}">—</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = items
-    .map(
-      (r) => `<tr>
-        <td>${escapeHtml(r.external_id)}</td>
-        <td>${escapeHtml(r.part_number || "—")}</td>
-        <td>${escapeHtml(r.name || "—")}</td>
-        ${cols > 3 ? `<td>${escapeHtml(formatValue("sale_price", r.sale_price))}</td>` : ""}
-        ${cols > 3 ? `<td>${escapeHtml(formatValue("general_stock", r.general_stock))}</td>` : ""}
-      </tr>`
-    )
-    .join("");
 }
 
 function render(data) {
   renderSummary(data);
-  renderHead(data.fields);
-  renderDiffRows(data);
-  renderSimpleRows(onlyRemoteBody, data.only_remote, 5);
-  renderSimpleRows(onlyLocalBody, data.only_local, 5);
-  renderSimpleRows(unlinkedBody, data.unlinked, 3);
 }
 
 function saveDiffCache(data) {
@@ -296,9 +186,6 @@ async function loadDiff() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la comparare", "error");
-    diffBody.innerHTML = `<tr class="empty-row"><td colspan="16">${escapeHtml(
-      err.message || "Eroare"
-    )}</td></tr>`;
   } finally {
     loading = false;
   }
@@ -329,7 +216,6 @@ async function pullFromChannel() {
     btnPull.disabled = false;
   }
 }
-
 
 /** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe catalog. */
 async function fetchCommission() {
@@ -379,7 +265,7 @@ async function fetchCommission() {
   }
 }
 
-/* ================= Preturi si marja (tabelul de sus) ================= */
+/* ================= Preturi si marja ================= */
 
 const {
   DEFAULT_PROcentaj_EMAG,
@@ -411,17 +297,15 @@ const DIFF_KEY_TO_COL = {
 };
 
 const COMPACT_PRICING_KEY = "sync-compact-pricing";
-const COMPACT_DIFF_KEY = "sync-compact-diff";
 
 const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
 const pricingWrap = document.getElementById("pricing-wrap");
-const diffWrap = document.getElementById("diff-wrap");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
 const btnCompactPricing = document.getElementById("btn-compact-pricing");
-const btnCompactDiff = document.getElementById("btn-compact-diff");
 const syncInfoBanner = document.getElementById("sync-info-banner");
+const filterRow = pricingTable.querySelector("thead tr.filter-row");
 
 function diffKeysForOffer(offerId) {
   const keys = new Set();
@@ -546,7 +430,6 @@ function pricingRowHtml(product, index) {
         "col-procentaj-emag"
       )}>${procentajEmagInputHtml(pct, hasOverride)}</td>`;
 
-  // Coloanele preluate din pagina de produse sunt doar afisate aici.
   const pretMinim =
     product.pret_minim_override != null &&
     Number.isFinite(Number(product.pret_minim_override))
@@ -649,6 +532,7 @@ function renderPricing() {
   thPretCanal.textContent = CHANNEL_PRICE_LABELS[currentChannel] || "Preț canal";
   if (!pricingProducts.length) {
     pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">Niciun produs în DB pentru canalul selectat.</td></tr>`;
+    updateFilterStatus(0, 0);
     return;
   }
   pricingBody.innerHTML = pricingProducts
@@ -679,7 +563,6 @@ function refreshPricingRow(tr, product) {
   const pctCell = tr.querySelector("td[data-col='procentaj_profit']");
   if (pctCell) {
     pctCell.textContent = formatPercent(procentaj);
-    // Păstrează is-col-hidden / ordine din columns — doar text, fără pct-1/pct-2.
     pctCell.classList.remove("pct-1", "pct-2", "is-below-emag");
   }
 }
@@ -813,32 +696,117 @@ function pricingCellText(tr, col) {
   return !text || text === "—" ? "" : text;
 }
 
-function applyPricingFilters() {
-  const filters = [...pricingTable.querySelectorAll("thead .col-filter")]
+function getActiveColFilters() {
+  return [...pricingTable.querySelectorAll("thead .col-filter")]
     .map((input) => ({
+      input,
       col: input.dataset.filterCol,
       q: String(input.value || "").trim().toLowerCase(),
     }))
     .filter((f) => f.col && f.q);
+}
+
+function updateFilterStatus(visible, total) {
+  const colFilters = getActiveColFilters();
+  const hasCol = colFilters.length > 0;
+  const hasSummary = Boolean(summaryFilter);
+  const active = hasCol || hasSummary;
+
+  pricingTable.querySelectorAll("thead .col-filter").forEach((input) => {
+    const on = String(input.value || "").trim() !== "";
+    input.classList.toggle("is-active", on);
+    input.closest("th")?.classList.toggle("is-filter-active", on);
+  });
+  filterRow?.classList.toggle("is-filtering", active);
+  pricingWrap?.classList.toggle("is-filtering", active);
+
+  if (!filterStatusEl) return;
+  if (!active) {
+    filterStatusEl.hidden = true;
+    return;
+  }
+
+  const parts = [];
+  if (hasSummary) {
+    parts.push(`grup: ${SUMMARY_LABELS[summaryFilter] || summaryFilter}`);
+  }
+  if (hasCol) {
+    parts.push(`${colFilters.length} coloan${colFilters.length === 1 ? "ă" : "e"}`);
+  }
+  filterStatusText.textContent = `Filtru activ (${parts.join(", ")}) — ${visible} din ${total} rânduri`;
+  filterStatusEl.hidden = false;
+}
+
+function clearAllFilters() {
+  pricingTable.querySelectorAll("thead .col-filter").forEach((input) => {
+    input.value = "";
+  });
+  summaryFilter = null;
+  applySummaryFilter();
+}
+
+function filterEmptyMessage() {
+  if (summaryFilter === "only_remote") {
+    return "Doar pe marketplace — nu apar în tabelul local de prețuri.";
+  }
+  if (summaryFilter === "only_local") {
+    return "Niciun produs „doar local” în tabel.";
+  }
+  if (summaryFilter === "unlinked") {
+    return "Niciun produs nelegat în tabel.";
+  }
+  if (summaryFilter === "diff") {
+    return "Nicio diferență față de marketplace.";
+  }
+  if (summaryFilter === "matched") {
+    return "Niciun produs comun.";
+  }
+  return "Niciun rând nu potrivește filtrul.";
+}
+
+function applyPricingFilters() {
+  const filters = getActiveColFilters();
 
   const bucketIds =
     summaryFilter && summaryFilter !== "only_remote"
       ? bucketOfferIds(summaryFilter)
       : null;
 
-  pricingBody.querySelectorAll("tr[data-offer-id]").forEach((tr) => {
+  const rows = [...pricingBody.querySelectorAll("tr[data-offer-id]")];
+  let visible = 0;
+
+  rows.forEach((tr) => {
     let match =
       filters.length === 0 ||
       filters.every((f) => pricingCellText(tr, f.col).toLowerCase().includes(f.q));
     if (summaryFilter === "diff") {
       match = match && tr.classList.contains("has-diff");
     } else if (summaryFilter === "only_remote") {
+      // Ofertă doar pe marketplace — nu e în catalogul local / tabelul de prețuri.
       match = false;
     } else if (bucketIds) {
       match = match && bucketIds.has(String(tr.dataset.offerId));
     }
     tr.classList.toggle("is-row-filtered", !match);
+    if (match) visible += 1;
   });
+
+  let emptyRow = pricingBody.querySelector("tr.filter-empty-row");
+  const filtering = filters.length > 0 || Boolean(summaryFilter);
+  if (filtering && rows.length > 0 && visible === 0) {
+    if (!emptyRow) {
+      emptyRow = document.createElement("tr");
+      emptyRow.className = "empty-row filter-empty-row";
+      emptyRow.innerHTML = `<td colspan="${PRICING_COL_COUNT}"></td>`;
+      pricingBody.appendChild(emptyRow);
+    }
+    emptyRow.querySelector("td").textContent = filterEmptyMessage();
+    emptyRow.hidden = false;
+  } else if (emptyRow) {
+    emptyRow.hidden = true;
+  }
+
+  updateFilterStatus(visible, rows.length);
 }
 
 const NUMERIC_PRICING_COLS = new Set([
@@ -910,15 +878,16 @@ pricingTable.querySelector("thead")?.addEventListener("click", (e) => {
 });
 
 let pricingFilterTimer = null;
-pricingTable.querySelector("thead tr.filter-row")?.addEventListener("input", (e) => {
+filterRow?.addEventListener("input", (e) => {
   if (!e.target.closest(".col-filter")) return;
   clearTimeout(pricingFilterTimer);
   pricingFilterTimer = setTimeout(applyPricingFilters, 150);
 });
 
+btnClearFilters?.addEventListener("click", clearAllFilters);
+
 /* ---------- publicare pe canal ---------- */
 
-/* Push doar pret + stoc + PRP/min/max — fara nume/descriere. */
 const PUSH_PRICE_KEYS = new Set([
   "sale_price",
   "recommended_price",
@@ -960,7 +929,6 @@ async function pushToChannel() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     if (syncInfoBanner) syncInfoBanner.hidden = false;
-    // Snapshot-ul nu se mai actualizeaza la push: diferentele raman pana la urmatorul pull.
     await Promise.all([loadDiff(), loadPricing()]);
     setStatus(
       `Trimise ${ids.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
@@ -974,7 +942,7 @@ async function pushToChannel() {
   }
 }
 
-/* ---------- compactare tabele ---------- */
+/* ---------- compactare ---------- */
 
 function setCompact(wrap, btn, on, storageKey) {
   if (!wrap || !btn) return;
@@ -988,25 +956,17 @@ function setCompact(wrap, btn, on, storageKey) {
   }
 }
 
-function initCompactToggles() {
+function initCompactToggle() {
   let pricingOn = false;
-  let diffOn = false;
   try {
     pricingOn = localStorage.getItem(COMPACT_PRICING_KEY) === "1";
-    diffOn = localStorage.getItem(COMPACT_DIFF_KEY) === "1";
   } catch {
     /* ignore */
   }
   setCompact(pricingWrap, btnCompactPricing, pricingOn, COMPACT_PRICING_KEY);
-  setCompact(diffWrap, btnCompactDiff, diffOn, COMPACT_DIFF_KEY);
-
   btnCompactPricing?.addEventListener("click", () => {
     const next = !pricingWrap.classList.contains("is-compact");
     setCompact(pricingWrap, btnCompactPricing, next, COMPACT_PRICING_KEY);
-  });
-  btnCompactDiff?.addEventListener("click", () => {
-    const next = !diffWrap.classList.contains("is-compact");
-    setCompact(diffWrap, btnCompactDiff, next, COMPACT_DIFF_KEY);
   });
 }
 
@@ -1041,7 +1001,7 @@ summaryEl.addEventListener("click", (e) => {
 columns.applyOrder();
 columns.buildMenu();
 columns.applyVisibility();
-initCompactToggles();
+initCompactToggle();
 
 restorePricingCache();
 restoreDiffCache();

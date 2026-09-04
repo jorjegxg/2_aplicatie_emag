@@ -80,18 +80,20 @@
             </button>
             <div id="col-menu" class="col-menu" hidden role="menu"></div>
           </div>
+          <button type="button" id="btn-compact-pricing" class="btn btn-secondary btn-compact" aria-pressed="false">
+            Compact
+          </button>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
       </div>
 
       <div class="sync-summary" id="sync-summary"></div>
 
-      <div class="sync-section-head">
-        <h2 class="sync-section-title">Prețuri și marjă</h2>
-        <button type="button" id="btn-compact-pricing" class="btn btn-secondary btn-compact" aria-pressed="false">
-          Compact
-        </button>
+      <div id="filter-status" class="filter-status" hidden role="status" aria-live="polite">
+        <span id="filter-status-text"></span>
+        <button type="button" id="btn-clear-filters" class="btn btn-secondary btn-compact">Șterge filtre</button>
       </div>
+
       <div class="table-wrap sync-wrap" id="pricing-wrap">
         <table id="pricing-table">
           <thead>
@@ -147,73 +149,6 @@
           <tbody id="pricing-body">
             <tr class="empty-row"><td colspan="22">Se încarcă…</td></tr>
           </tbody>
-        </table>
-      </div>
-
-      <div class="sync-section-head">
-        <h2 class="sync-section-title">Produse comune</h2>
-        <button type="button" id="btn-compact-diff" class="btn btn-secondary btn-compact" aria-pressed="false">
-          Compact
-        </button>
-      </div>
-      <div class="table-wrap sync-wrap" id="diff-wrap">
-        <table id="diff-table" class="sync-table">
-          <thead id="diff-head"></thead>
-          <tbody id="diff-body">
-            <tr class="empty-row"><td colspan="4">Se încarcă…</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <h2 class="sync-section-title">
-        Doar pe marketplace <span class="sync-hint">(ofertă fără listing local)</span>
-      </h2>
-      <div class="table-wrap sync-wrap">
-        <table class="sync-table">
-          <thead>
-            <tr>
-              <th>ID ofertă</th>
-              <th>SKU</th>
-              <th>Nume</th>
-              <th>Preț</th>
-              <th>Stoc</th>
-            </tr>
-          </thead>
-          <tbody id="only-remote-body"></tbody>
-        </table>
-      </div>
-
-      <h2 class="sync-section-title">
-        Doar local <span class="sync-hint">(listing fără ofertă la ultima preluare)</span>
-      </h2>
-      <div class="table-wrap sync-wrap">
-        <table class="sync-table">
-          <thead>
-            <tr>
-              <th>ID ofertă</th>
-              <th>SKU</th>
-              <th>Nume</th>
-              <th>Preț</th>
-              <th>Stoc</th>
-            </tr>
-          </thead>
-          <tbody id="only-local-body"></tbody>
-        </table>
-      </div>
-
-      <h2 class="sync-section-title">
-        Nelegate de catalog <span class="sync-hint">(fără produs în catalog_products — lipsește prețul de cumpărare)</span>
-      </h2>
-      <div class="table-wrap sync-wrap">
-        <table class="sync-table">
-          <thead>
-            <tr>
-              <th>ID ofertă</th>
-              <th>SKU</th>
-              <th>Nume</th>
-            </tr>
-          </thead>
-          <tbody id="unlinked-body"></tbody>
         </table>
       </div>
     </div>

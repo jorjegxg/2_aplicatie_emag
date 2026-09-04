@@ -508,6 +508,51 @@ thead tr:not(.filter-row) th[data-src="calc"]:hover {
   box-shadow: 0 0 0 2px rgba(59, 110, 165, 0.15);
 }
 
+.col-filter.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.filter-row th.is-filter-active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--filter-bg));
+}
+
+.filter-row.is-filtering {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.filter-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.filter-status[hidden] {
+  display: none;
+}
+
+.filter-status .btn {
+  margin-left: auto;
+}
+
+.table-wrap.is-filtering {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
 .is-row-filtered {
   display: none;
 }
@@ -1896,8 +1941,14 @@ button.sync-chip.is-diff.is-active strong {
 }
 
 .sync-wrap {
-  flex: 0 0 auto;
-  max-height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.sync-summary,
+.filter-status {
+  flex-shrink: 0;
 }
 
 td.col-pret-cumparare .input-pret-cumparare {
