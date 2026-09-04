@@ -1,9 +1,9 @@
 /**
  * Stratul multi-canal peste Postgres.
  *
- * catalog_products      — SURSA ADEVARULUI (produs + oferta eMAG)
+ * catalog_products      — SURSA ADEVARULUI (produs eMAG: preturi, stoc general, etc.)
  * marketplace_snapshots — oglinda ultimului pull de pe canal
- * marketplace_listings  — legacy / stub alte canale (ex. trendyol); eMAG nu mai e SoT aici
+ * marketplace_listings  — oferta per canal (eMAG: status/vat/stock/handling/costuri; alte canale SoT)
  */
 const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
 const { getLastPriceChangeBulk } = require("./db");
@@ -29,7 +29,6 @@ const LOCAL_SEED_CATALOG = [
   { remote: "min_sale_price", col: "min_sale_price" },
   { remote: "max_sale_price", col: "max_sale_price" },
   { remote: "general_stock", col: "general_stock" },
-  { remote: "stock", col: "stock_json", json: true },
 ];
 
 const CHANNEL_OWNED_CATALOG = [
@@ -38,11 +37,6 @@ const CHANNEL_OWNED_CATALOG = [
   { remote: "brand", col: "brand" },
   { remote: "ean", col: "ean" },
   { remote: "id_familie", col: "id_familie", num: true },
-  { remote: "characteristics", col: "characteristics" },
-  { remote: "estimated_stock", col: "estimated_stock", num: true },
-  { remote: "handling_time", col: "handling_time_json", json: true },
-  { remote: "status", col: "status", num: true },
-  { remote: "vat_id", col: "vat_id", num: true },
   { remote: "currency", col: "currency" },
 ];
 
@@ -125,10 +119,27 @@ const LISTING_COST_FIELDS = [
   "commission_fetched_at",
 ];
 
-/** Catalog + familie + costuri din marketplace_listings (eMAG). */
+/** Campuri oferta eMAG pe listings (nu pe catalog). */
+const LISTING_OFFER_FIELDS = [
+  "characteristics",
+  "estimated_stock",
+  "stock_json",
+  "handling_time_json",
+  "status",
+  "vat_id",
+];
+
+/** Catalog + familie + oferta/costuri din marketplace_listings (eMAG). */
 const SQL_CATALOG_WITH_FAMILIE = `
   SELECT c.*, pf.name AS familie,
+         ml.characteristics,
+         ml.estimated_stock,
+         ml.stock_json,
+         ml.handling_time_json,
+         ml.status,
+         ml.vat_id,
          ml.alte_costuri,
+         ml.pret_minim_override,
          ml.procentaj_emag,
          ml.commission_value,
          ml.commission_fetched_at
@@ -137,6 +148,44 @@ const SQL_CATALOG_WITH_FAMILIE = `
   LEFT JOIN marketplace_listings ml
     ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
 `;
+
+/** Upsert campuri pe marketplace_listings canal eMAG. */
+async function upsertEmagListingFields(productId, externalId, fieldPayload, now) {
+  const keys = Object.keys(fieldPayload || {});
+  if (keys.length === 0) return;
+  const cols = ["channel", "external_id", "product_id", ...keys, "created_at", "updated_at"];
+  const params = [
+    "emag",
+    String(externalId),
+    productId,
+    ...keys.map((k) => fieldPayload[k]),
+    now,
+    now,
+  ];
+  const placeholders = params.map((_, i) => `$${i + 1}`).join(", ");
+  const conflictSets = [
+    "product_id = COALESCE(EXCLUDED.product_id, marketplace_listings.product_id)",
+    ...keys.map((k) => `${k} = EXCLUDED.${k}`),
+    "updated_at = EXCLUDED.updated_at",
+  ];
+  await query(
+    `INSERT INTO marketplace_listings (${cols.join(", ")})
+     VALUES (${placeholders})
+     ON CONFLICT (channel, external_id) DO UPDATE SET ${conflictSets.join(", ")}`,
+    params
+  );
+}
+
+function offerFieldsFromRemote(remote) {
+  return {
+    characteristics: toTextOrNull(remote.characteristics),
+    estimated_stock: toNumOrNull(remote.estimated_stock),
+    stock_json: jsonOrNull(remote.stock),
+    handling_time_json: jsonOrNull(remote.handling_time),
+    status: toNumOrNull(remote.status),
+    vat_id: toNumOrNull(remote.vat_id),
+  };
+}
 
 function parseJson(raw, fallback) {
   if (raw == null || raw === "") return fallback;
@@ -302,21 +351,22 @@ async function upsertCatalogFromRemote(remote) {
        WHERE id = $${params.length}`,
       params
     );
+    await upsertEmagListingFields(existingId, ext, offerFieldsFromRemote(remote), now);
     return { created: false };
   }
 
   const codForInsert = skuTakenByOtherOffer ? null : partNumber;
-  await query(
+  const { rows: inserted } = await query(
     `INSERT INTO catalog_products (
        emag_offer_id, cod_produs, nume, descriere, brand, ean,
-       part_number, part_number_key, id_familie, characteristics,
+       part_number, part_number_key, id_familie,
        sale_price, recommended_price, min_sale_price, max_sale_price,
-       general_stock, estimated_stock, stock_json, handling_time_json,
-       status, vat_id, currency, created_at, updated_at
+       general_stock, currency, created_at, updated_at
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
-     )`,
+       $1, $2, $3, $4, $5, $6, $7, $8, $9,
+       $10, $11, $12, $13, $14, $15, $16, $17
+     )
+     RETURNING id`,
     [
       ext,
       codForInsert,
@@ -327,21 +377,21 @@ async function upsertCatalogFromRemote(remote) {
       partNumber,
       toTextOrNull(remote.part_number_key),
       toNumOrNull(remote.id_familie),
-      toTextOrNull(remote.characteristics),
       toNumOrNull(remote.sale_price),
       toNumOrNull(remote.recommended_price),
       toNumOrNull(remote.min_sale_price),
       toNumOrNull(remote.max_sale_price),
       toNumOrNull(remote.general_stock),
-      toNumOrNull(remote.estimated_stock),
-      jsonOrNull(remote.stock),
-      jsonOrNull(remote.handling_time),
-      toNumOrNull(remote.status),
-      toNumOrNull(remote.vat_id),
       toTextOrNull(remote.currency),
       now,
       now,
     ]
+  );
+  await upsertEmagListingFields(
+    inserted[0].id,
+    ext,
+    offerFieldsFromRemote(remote),
+    now
   );
   return { created: true };
 }
@@ -595,7 +645,7 @@ const LISTING_EDITABLE = {
   vat_id: toNumOrNull,
 };
 
-/** Map API field names → catalog columns (fără costuri — pe listings). */
+/** Map API field names → catalog columns (fără oferta/costuri — pe listings). */
 const LISTING_TO_CATALOG_COL = {
   name: "nume",
   description: "descriere",
@@ -604,11 +654,6 @@ const LISTING_TO_CATALOG_COL = {
   min_sale_price: "min_sale_price",
   max_sale_price: "max_sale_price",
   general_stock: "general_stock",
-  pret_minim_override: "pret_minim_override",
-  status: "status",
-  vat_id: "vat_id",
-  stock_json: "stock_json",
-  handling_time_json: "handling_time_json",
 };
 
 async function setListingPretCumparare(channel, externalId, value) {
@@ -680,29 +725,26 @@ async function updateListingEmag(externalId, fields) {
     await setListingPretCumparare("emag", ext, fields.pret_cumparare);
   }
 
-  const payload = {};
+  const catalogPayload = {};
   for (const [key, coerce] of Object.entries(LISTING_EDITABLE)) {
-    if (Object.prototype.hasOwnProperty.call(fields, key)) {
-      const col = LISTING_TO_CATALOG_COL[key];
-      if (col) payload[col] = coerce(fields[key]);
-    }
+    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+    if (LISTING_COST_FIELDS.includes(key)) continue;
+    if (key === "status" || key === "vat_id" || key === "pret_minim_override") continue;
+    const col = LISTING_TO_CATALOG_COL[key];
+    if (col) catalogPayload[col] = coerce(fields[key]);
   }
   if (Array.isArray(fields.stock)) {
-    payload.stock_json = fields.stock;
-    payload.general_stock = fields.stock.reduce(
+    catalogPayload.general_stock = fields.stock.reduce(
       (sum, s) => sum + (Number(s?.value) || 0),
       0
     );
   }
-  if (Array.isArray(fields.handling_time)) {
-    payload.handling_time_json = fields.handling_time;
-  }
 
-  const keys = Object.keys(payload);
-  if (keys.length > 0) {
+  const catalogKeys = Object.keys(catalogPayload);
+  if (catalogKeys.length > 0) {
     const params = [];
-    const sets = keys.map((k) => {
-      params.push(payload[k]);
+    const sets = catalogKeys.map((k) => {
+      params.push(catalogPayload[k]);
       return `${k} = $${params.length}`;
     });
     params.push(now, ext);
@@ -713,29 +755,35 @@ async function updateListingEmag(externalId, fields) {
     );
   }
 
-  const costPayload = {};
+  const listingPayload = {};
   for (const key of LISTING_COST_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(fields, key)) {
-      costPayload[key] = LISTING_EDITABLE[key](fields[key]);
+      listingPayload[key] = LISTING_EDITABLE[key](fields[key]);
     }
   }
-  const costKeys = Object.keys(costPayload);
-  if (costKeys.length > 0) {
-    const cols = ["channel", "external_id", "product_id", ...costKeys, "created_at", "updated_at"];
-    const params = ["emag", ext, productId, ...costKeys.map((k) => costPayload[k]), now, now];
-    const placeholders = params.map((_, i) => `$${i + 1}`).join(", ");
-    const conflictSets = [
-      "product_id = COALESCE(EXCLUDED.product_id, marketplace_listings.product_id)",
-      ...costKeys.map((k) => `${k} = EXCLUDED.${k}`),
-      "updated_at = EXCLUDED.updated_at",
-    ];
-    await query(
-      `INSERT INTO marketplace_listings (${cols.join(", ")})
-       VALUES (${placeholders})
-       ON CONFLICT (channel, external_id) DO UPDATE SET ${conflictSets.join(", ")}`,
-      params
-    );
+  if (Object.prototype.hasOwnProperty.call(fields, "status")) {
+    listingPayload.status = toNumOrNull(fields.status);
   }
+  if (Object.prototype.hasOwnProperty.call(fields, "vat_id")) {
+    listingPayload.vat_id = toNumOrNull(fields.vat_id);
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "pret_minim_override")) {
+    listingPayload.pret_minim_override = toNumOrNull(fields.pret_minim_override);
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "characteristics")) {
+    listingPayload.characteristics = toTextOrNull(fields.characteristics);
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, "estimated_stock")) {
+    listingPayload.estimated_stock = toNumOrNull(fields.estimated_stock);
+  }
+  if (Array.isArray(fields.stock)) {
+    listingPayload.stock_json = fields.stock;
+  }
+  if (Array.isArray(fields.handling_time)) {
+    listingPayload.handling_time_json = fields.handling_time;
+  }
+
+  await upsertEmagListingFields(productId, ext, listingPayload, now);
 
   return getListing("emag", ext);
 }
@@ -854,16 +902,19 @@ const PRODUCT_EDITABLE = {
   part_number: toTextOrNull,
   part_number_key: toTextOrNull,
   id_familie: toNumOrNull,
-  characteristics: toTextOrNull,
   sale_price: toNumOrNull,
   recommended_price: toNumOrNull,
   min_sale_price: toNumOrNull,
   max_sale_price: toNumOrNull,
   general_stock: toNumOrNull,
+  currency: toTextOrNull,
+};
+
+const PRODUCT_LISTING_EDITABLE = {
+  characteristics: toTextOrNull,
   estimated_stock: toNumOrNull,
   status: toNumOrNull,
   vat_id: toNumOrNull,
-  currency: toTextOrNull,
   pret_minim_override: toNumOrNull,
 };
 
@@ -888,14 +939,10 @@ async function updateProduct(productId, fields) {
     payload.descriere = toPlainTextOrNull(fields.description);
   }
   if (Array.isArray(fields.stock)) {
-    payload.stock_json = fields.stock;
     payload.general_stock = fields.stock.reduce(
       (sum, s) => sum + (Number(s?.value) || 0),
       0
     );
-  }
-  if (Array.isArray(fields.handling_time)) {
-    payload.handling_time_json = fields.handling_time;
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, "id_familie")) {
@@ -907,6 +954,7 @@ async function updateProduct(productId, fields) {
     }
   }
 
+  const now = new Date().toISOString();
   const keys = Object.keys(payload);
   if (keys.length > 0) {
     const params = [];
@@ -914,12 +962,37 @@ async function updateProduct(productId, fields) {
       params.push(payload[k]);
       return `${k} = $${params.length}`;
     });
-    params.push(new Date().toISOString(), id);
+    params.push(now, id);
     await query(
       `UPDATE catalog_products SET ${sets.join(", ")}, updated_at = $${params.length - 1} WHERE id = $${params.length}`,
       params
     );
   }
+
+  const listingPayload = {};
+  for (const [key, coerce] of Object.entries(PRODUCT_LISTING_EDITABLE)) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      listingPayload[key] = coerce(fields[key]);
+    }
+  }
+  if (Array.isArray(fields.stock)) {
+    listingPayload.stock_json = fields.stock;
+  }
+  if (Array.isArray(fields.handling_time)) {
+    listingPayload.handling_time_json = fields.handling_time;
+  }
+
+  if (Object.keys(listingPayload).length > 0) {
+    const { rows: offerRows } = await query(
+      "SELECT emag_offer_id FROM catalog_products WHERE id = $1",
+      [id]
+    );
+    const ext = offerRows[0]?.emag_offer_id;
+    if (ext != null) {
+      await upsertEmagListingFields(id, ext, listingPayload, now);
+    }
+  }
+
   const { rows } = await query(
     `${SQL_CATALOG_WITH_FAMILIE} WHERE c.id = $1`,
     [id]
@@ -991,9 +1064,13 @@ async function getChannelDiff(channel) {
     const { rows } = await query(
       `SELECT c.*, pf.name AS familie,
               c.cod_produs AS catalog_cod, c.id AS product_id,
-              c.emag_offer_id AS external_id, c.nume AS name
+              c.emag_offer_id AS external_id, c.nume AS name,
+              ml.status, ml.vat_id, ml.stock_json, ml.handling_time_json,
+              ml.estimated_stock, ml.characteristics, ml.pret_minim_override
        FROM catalog_products c
        LEFT JOIN product_families pf ON pf.id = c.id_familie
+       LEFT JOIN marketplace_listings ml
+         ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
        WHERE c.emag_offer_id IS NOT NULL
        ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
     );

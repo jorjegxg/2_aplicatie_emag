@@ -23,10 +23,12 @@ const btnExport = document.getElementById("btn-export");
 const btnExportMenu = document.getElementById("btn-export-menu");
 const exportMenu = document.getElementById("export-menu");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
+const btnCompactProducts = document.getElementById("btn-compact-products");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
 const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
+const productsWrap = document.getElementById("products-wrap");
 const pageEl = document.querySelector(".page");
 const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputMultPrp = document.getElementById("mult-prp");
@@ -37,6 +39,7 @@ const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
+const COMPACT_PRODUCTS_KEY = "emag-compact-products";
 /* Pagina de produse: canalul eMAG; datele stau in catalog_products (SoT).
    Canalul se alege in pagina Sincronizare. */
 const LISTING_CHANNEL = "emag";
@@ -300,10 +303,12 @@ function getRowName(tr) {
   return String(input?.value ?? "").trim();
 }
 
+const NAME_MAX_HEIGHT_PX = 160;
+
 function autosizeNameTextarea(el) {
   if (!el) return;
   el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
+  el.style.height = `${Math.min(el.scrollHeight, NAME_MAX_HEIGHT_PX)}px`;
 }
 
 function isNameDirty(tr) {
@@ -498,7 +503,7 @@ function rowHtml(product, index) {
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
-    name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="1">${escapeHtml(product.name || "")}</textarea></td>`,
+    name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
     description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
@@ -821,6 +826,16 @@ tbody.addEventListener("change", (e) => {
   applyRowPrices(tr, saleInput?.value ?? "");
   updateToolbarTotals();
   schedulePersistPretCumparare(tr.dataset.offerId, next);
+});
+
+tbody.addEventListener("focusin", (e) => {
+  const nameInput = e.target.closest("textarea.input-name");
+  if (nameInput) {
+    autosizeNameTextarea(nameInput);
+    return;
+  }
+  const descriptionInput = e.target.closest("textarea.input-description");
+  if (descriptionInput) autosizeDescriptionTextarea(descriptionInput);
 });
 
 tbody.addEventListener("input", (e) => {
@@ -1215,6 +1230,28 @@ try {
   }
 } catch {
   /* ignore */
+}
+
+function setCompactProducts(on) {
+  if (!productsWrap || !btnCompactProducts) return;
+  productsWrap.classList.toggle("is-compact", on);
+  btnCompactProducts.setAttribute("aria-pressed", on ? "true" : "false");
+  btnCompactProducts.textContent = on ? "Normal" : "Compact";
+  try {
+    localStorage.setItem(COMPACT_PRODUCTS_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+btnCompactProducts?.addEventListener("click", () => {
+  setCompactProducts(!productsWrap.classList.contains("is-compact"));
+});
+
+try {
+  setCompactProducts(localStorage.getItem(COMPACT_PRODUCTS_KEY) === "1");
+} catch {
+  setCompactProducts(false);
 }
 
 document.addEventListener("click", () => {

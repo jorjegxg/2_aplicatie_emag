@@ -46,7 +46,7 @@
       <div class="toolbar">
         <div class="toolbar-fields">
           <label class="field">
-            <span>Procentaj pentru Pret transport (%)</span>
+            <span title="Procentaj pentru Pret transport (%)">Procentaj pentru Pret transport (%)</span>
             <input
               type="number"
               id="procentaj-alte-costuri"
@@ -57,7 +57,7 @@
             />
           </label>
           <label class="field">
-            <span>Multiplicator preț recomandat (PRP)</span>
+            <span title="Multiplicator preț recomandat (PRP)">Multiplicator preț recomandat (PRP)</span>
             <input
               type="number"
               id="mult-prp"
@@ -68,7 +68,7 @@
             />
           </label>
           <label class="field">
-            <span>Multiplicator preț minim</span>
+            <span title="Multiplicator preț minim">Multiplicator preț minim</span>
             <input
               type="number"
               id="mult-min"
@@ -79,7 +79,7 @@
             />
           </label>
           <label class="field">
-            <span>Multiplicator preț maxim</span>
+            <span title="Multiplicator preț maxim">Multiplicator preț maxim</span>
             <input
               type="number"
               id="mult-max"
@@ -90,7 +90,7 @@
             />
           </label>
           <label class="field">
-            <span>Total preț transport × stoc</span>
+            <span title="Total preț transport × stoc">Total preț transport × stoc</span>
             <input type="text" id="total-alte-stoc" readonly tabindex="-1" value="—" />
           </label>
           <button type="button" id="btn-save-settings" class="btn btn-secondary" disabled>
@@ -159,10 +159,13 @@
             </div>
           </div>
           <span id="status" class="status" aria-live="polite"></span>
+          <button type="button" id="btn-compact-products" class="btn btn-secondary btn-compact" aria-pressed="false">
+            Compact
+          </button>
         </div>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap" id="products-wrap">
         <table id="products-table">
           <thead>
             <tr>

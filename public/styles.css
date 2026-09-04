@@ -248,6 +248,15 @@ body {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--muted);
+  width: 8.5rem;
+}
+
+.field > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field input {
@@ -418,6 +427,19 @@ th {
   z-index: 3;
 }
 
+thead tr:not(.filter-row) th[data-col] .th-label {
+  display: inline-block;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+thead tr:not(.filter-row) th[data-col="index"] .th-label {
+  max-width: 2.5rem;
+}
+
 thead tr:not(.filter-row) th[data-col] {
   cursor: pointer;
   user-select: none;
@@ -467,8 +489,9 @@ thead tr:not(.filter-row) th[data-src="calc"]:hover {
 }
 
 .col-filter {
-  width: 100%;
-  min-width: 4.5rem;
+  width: 7rem;
+  min-width: 7rem;
+  max-width: 7rem;
   box-sizing: border-box;
   padding: 0.28rem 0.4rem;
   border: 1px solid var(--border);
@@ -599,8 +622,9 @@ td.col-name .input-name,
 td[data-col="name"] .input-name {
   display: block;
   width: 100%;
-  min-width: 12rem;
-  min-height: 2rem;
+  min-width: 16rem;
+  min-height: 4rem;
+  max-height: 10rem;
   font: inherit;
   font-size: 0.875rem;
   line-height: 1.35;
@@ -609,11 +633,10 @@ td[data-col="name"] .input-name {
   border-radius: 4px;
   background: var(--surface);
   box-sizing: border-box;
-  resize: none;
-  overflow: hidden;
+  resize: vertical;
+  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  field-sizing: content;
 }
 
 td.col-name .input-name:focus,
@@ -1630,6 +1653,10 @@ body.modal-open {
   padding: 0.25rem 0.55rem;
 }
 
+.toolbar-actions #btn-compact-products {
+  margin-left: auto;
+}
+
 .sync-hint {
   font-weight: 400;
   font-size: 0.82rem;
@@ -1767,8 +1794,56 @@ body.modal-open {
 .table-wrap.is-compact #pricing-table td[data-col="id"],
 .table-wrap.is-compact #pricing-table td[data-col="part_number"],
 .table-wrap.is-compact #pricing-table td[data-col="ean"],
-.table-wrap.is-compact #pricing-table td[data-col="pnk"] {
+.table-wrap.is-compact #pricing-table td[data-col="pnk"],
+.table-wrap.is-compact #products-table td[data-col="id"],
+.table-wrap.is-compact #products-table td[data-col="part_number"],
+.table-wrap.is-compact #products-table td[data-col="ean"],
+.table-wrap.is-compact #products-table td[data-col="pnk"] {
   max-width: 7rem;
+}
+
+.table-wrap.is-compact #products-table td.col-name:not(.is-col-hidden),
+.table-wrap.is-compact #products-table td[data-col="name"]:not(.is-col-hidden) {
+  max-width: 16rem;
+}
+
+.table-wrap.is-compact #products-table td.col-description:not(.is-col-hidden),
+.table-wrap.is-compact #products-table td[data-col="description"]:not(.is-col-hidden) {
+  max-width: 14rem;
+}
+
+.table-wrap.is-compact #products-table td.col-name .input-name,
+.table-wrap.is-compact #products-table td[data-col="name"] .input-name,
+.table-wrap.is-compact #products-table td.col-description .input-description,
+.table-wrap.is-compact #products-table td[data-col="description"] .input-description {
+  min-width: 0;
+  min-height: 1.75rem;
+  max-height: 1.75rem;
+  height: 1.75rem;
+  padding: 0.2rem 0.35rem;
+  resize: none;
+  overflow: hidden;
+  white-space: nowrap;
+  word-break: normal;
+  field-sizing: fixed;
+  text-overflow: ellipsis;
+}
+
+.table-wrap.is-compact #products-table td.col-name .input-name:focus,
+.table-wrap.is-compact #products-table td[data-col="name"] .input-name:focus,
+.table-wrap.is-compact #products-table td.col-description .input-description:focus,
+.table-wrap.is-compact #products-table td[data-col="description"] .input-description:focus {
+  position: relative;
+  z-index: 2;
+  min-height: 4rem;
+  max-height: 10rem;
+  height: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  text-overflow: unset;
+  field-sizing: content;
+  resize: vertical;
 }
 
 .table-wrap.is-compact .sync-table td {

@@ -33,6 +33,13 @@
       headerCells.map((th) => [th.dataset.col, th.dataset.src || ""])
     );
 
+    headerCells.forEach((th) => {
+      const label = labels[th.dataset.col] || "";
+      if (!label) return;
+      th.title = label;
+      th.innerHTML = `<span class="th-label">${escapeHtml(label)}</span>`;
+    });
+
     const applyMigrate = (cols) =>
       typeof migrate === "function" ? migrate(cols) : cols;
 
