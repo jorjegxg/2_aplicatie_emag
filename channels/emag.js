@@ -56,6 +56,19 @@ function normalizeHandlingTime(handlingTime) {
   return [{ warehouse_id: 1, value: 0 }];
 }
 
+/** Poze oferta: doar URL-uri http(s), poza principala (display_type 1) prima. */
+function normalizeImages(images) {
+  const list = (Array.isArray(images) ? images : [])
+    .map((im) => ({
+      url: String(im?.url || "").trim(),
+      display_type: Number(im?.display_type ?? 0),
+    }))
+    .filter((im) => /^https?:\/\//i.test(im.url));
+  const main = list.filter((im) => im.display_type === 1);
+  const rest = list.filter((im) => im.display_type !== 1);
+  return [...main, ...rest];
+}
+
 /** Oferta eMAG bruta -> forma canonica folosita de snapshot/listing. */
 function mapOffer(offer) {
   const ean = Array.isArray(offer.ean) ? offer.ean.join(", ") : offer.ean || "";
@@ -82,6 +95,7 @@ function mapOffer(offer) {
     stock: normalizeStock(offer.stock, offer.general_stock),
     ean,
     characteristics: formatCharacteristics(offer.characteristics),
+    images: normalizeImages(offer.images),
   };
 }
 
@@ -416,6 +430,7 @@ module.exports = {
   label,
   ITEMS_PER_PAGE,
   mapOffer,
+  normalizeImages,
   normalizeStock,
   normalizeHandlingTime,
   formatCharacteristics,
