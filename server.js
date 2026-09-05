@@ -27,14 +27,14 @@ const {
   ensureSchema,
 } = require("./marketplace-db");
 const {
-  UPLOAD_ROOT,
   MAX_BYTES,
   ALLOWED_MIME,
-  ensureUploadDirs,
+  ensureBucket,
   addImages,
   deleteImage,
   reorder: reorderImages,
   listForProduct,
+  getObjectStream,
 } = require("./product-images");
 const { getChannel, listChannels } = require("./channels");
 const {
@@ -61,7 +61,6 @@ const app = express();
 app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
 
-ensureUploadDirs();
 const uploadImages = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_BYTES, files: 20 },
@@ -116,7 +115,28 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(UPLOAD_ROOT));
+
+/** Proxy poze din MinIO/S3 — UI păstrează URL-uri relative /uploads/products/... */
+app.get("/uploads/products/:storedName", async (req, res) => {
+  try {
+    const storedName = path.basename(String(req.params.storedName || ""));
+    if (!storedName) return res.status(400).end();
+    const obj = await getObjectStream(storedName);
+    res.setHeader("Content-Type", obj.contentType);
+    if (obj.contentLength != null) {
+      res.setHeader("Content-Length", String(obj.contentLength));
+    }
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    obj.body.pipe(res);
+  } catch (err) {
+    const notFound = err?.$metadata?.httpStatusCode === 404 || err?.name === "NoSuchKey";
+    if (!notFound) {
+      console.error("[uploads:proxy]", err.message);
+      logCaught("product-images", err);
+    }
+    return res.status(404).end();
+  }
+});
 
 function httpStatusFor(err) {
   const s = Number(err?.status);
@@ -979,6 +999,7 @@ process.on("unhandledRejection", (reason) => {
 
 async function start() {
   await ensureSchema();
+  await ensureBucket();
   await pruneLogs(14);
   app.listen(PORT, () => {
     console.log(`Server pornit: http://localhost:${PORT}`);
