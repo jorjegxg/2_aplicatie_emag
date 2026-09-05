@@ -45,12 +45,37 @@ function setStatus(message, kind = "") {
   if (kind) statusEl.classList.add(`is-${kind}`);
 }
 
+function setStatusHtml(html, kind = "") {
+  statusEl.innerHTML = html || "";
+  statusEl.classList.remove("is-loading", "is-error", "is-ok");
+  if (kind) statusEl.classList.add(`is-${kind}`);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function showOrdersApiError(data, fallback) {
+  if (data && data.code === "CREDENTIALS_MISSING") {
+    const path = data.settingsPath || "/settings.html#emag";
+    const msg = escapeHtml(data.error || "Credentiale eMAG lipsă.");
+    setStatusHtml(
+      `${msg} <a class="status-settings-link" href="${escapeHtml(path)}">Mergi la Setări</a>`,
+      "error"
+    );
+    return;
+  }
+  const msgs = Array.isArray(data?.messages)
+    ? data.messages.map((m) => m.message || JSON.stringify(m)).join("; ")
+    : "";
+  setStatus(
+    [data?.error || fallback || "Eroare", msgs].filter(Boolean).join(" — "),
+    "error"
+  );
 }
 
 function formatPrice(price, currency) {
@@ -515,12 +540,13 @@ async function loadOrders({ append }) {
     const res = await fetch(`/api/orders?${buildQuery(page)}`);
     const data = await res.json();
     if (!res.ok) {
-      const msgs = Array.isArray(data.messages)
-        ? data.messages.map((m) => m.message || JSON.stringify(m)).join("; ")
-        : "";
-      throw new Error(
-        [data.error || `HTTP ${res.status}`, msgs].filter(Boolean).join(" — ")
-      );
+      showOrdersApiError(data, `HTTP ${res.status}`);
+      if (!append && loadedOrders.length === 0) {
+        ordersBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(
+          data.error || "Eroare"
+        )}</td></tr>`;
+      }
+      return;
     }
 
     const orders = Array.isArray(data.orders) ? data.orders : [];

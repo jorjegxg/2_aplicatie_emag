@@ -72,17 +72,7 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
-function loadCredentials() {
-  const filePath = path.join(__dirname, "credentials.json");
-  if (!fs.existsSync(filePath)) {
-    throw new Error("Lipsește credentials.json");
-  }
-  const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!raw.USER_EMAIL || !raw.ACCOUNT_PASSWORD) {
-    throw new Error("credentials.json trebuie să conțină USER_EMAIL și ACCOUNT_PASSWORD");
-  }
-  return raw;
-}
+const { loadCredentials } = require("./credentials-store");
 
 function authHeader(username, password) {
   const token = Buffer.from(`${username}:${password}`, "utf8").toString("base64");

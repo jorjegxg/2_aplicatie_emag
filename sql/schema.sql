@@ -193,6 +193,13 @@ CREATE INDEX IF NOT EXISTS idx_app_logs_ts ON app_logs (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs (level, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_app_logs_cat ON app_logs (category, ts DESC);
 
+-- Credentiale marketplace (payload AES-GCM, cheie din CREDENTIALS_ENCRYPTION_KEY)
+CREATE TABLE IF NOT EXISTS marketplace_credentials (
+  channel TEXT PRIMARY KEY,
+  payload_enc TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 INSERT INTO settings (id, pret_transport, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max, alte_costuri)
 VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;

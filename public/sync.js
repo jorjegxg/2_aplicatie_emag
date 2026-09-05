@@ -1,4 +1,4 @@
-/* Comparatie: valorile mele din DB vs ultimul snapshot al marketplace-ului. */
+/* Comparatie: valorile mele din DB vs oglinda remote (eMAG = cache memorie TTL). */
 
 const CHANNEL_KEY = "marketplace-channel";
 const PRICING_CACHE_KEY = "sync-pricing-cache-v1";
@@ -50,6 +50,68 @@ function setStatus(text, kind) {
   if (kind === "loading") statusEl.classList.add("is-loading");
   else if (kind === "error") statusEl.classList.add("is-error");
   else if (kind === "ok") statusEl.classList.add("is-ok");
+}
+
+function setStatusHtml(html, kind) {
+  statusEl.innerHTML = html || "";
+  statusEl.className = "status";
+  if (kind === "loading") statusEl.classList.add("is-loading");
+  else if (kind === "error") statusEl.classList.add("is-error");
+  else if (kind === "ok") statusEl.classList.add("is-ok");
+}
+
+function settingsPathForChannel(channel) {
+  const c = String(channel || currentChannel || "emag").toLowerCase();
+  return `/settings.html#${c === "trendyol" ? "trendyol" : "emag"}`;
+}
+
+function credentialsMissingHtml(message, settingsPath) {
+  const path = settingsPath || settingsPathForChannel();
+  const msg = escapeHtml(message || "Credentiale lipsă.");
+  return `${msg} <a class="status-settings-link" href="${escapeHtml(path)}">Mergi la Setări</a>`;
+}
+
+function showApiError(data, fallback) {
+  if (data && data.code === "CREDENTIALS_MISSING") {
+    setStatusHtml(
+      credentialsMissingHtml(data.error, data.settingsPath || settingsPathForChannel()),
+      "error"
+    );
+    return;
+  }
+  setStatus((data && data.error) || fallback || "Eroare", "error");
+}
+
+/** @type {Record<string, boolean>} */
+let channelConfiguredMap = {};
+
+async function refreshChannelConfigured() {
+  try {
+    const res = await fetch("/api/channels");
+    const data = await res.json();
+    if (!res.ok) return;
+    const map = {};
+    for (const c of data.channels || []) {
+      map[c.id] = c.configured !== false;
+    }
+    channelConfiguredMap = map;
+  } catch {
+    /* ignore */
+  }
+}
+
+function warnIfChannelUnconfigured() {
+  if (channelConfiguredMap[currentChannel] === false) {
+    setStatusHtml(
+      credentialsMissingHtml(
+        `Credentiale lipsă pentru ${currentChannel}.`,
+        settingsPathForChannel(currentChannel)
+      ),
+      "error"
+    );
+    return true;
+  }
+  return false;
 }
 
 function formatStamp(iso) {
@@ -149,9 +211,26 @@ function readDiffCache() {
   }
 }
 
+function clearClientSyncCaches() {
+  try {
+    sessionStorage.removeItem(PRICING_CACHE_KEY);
+    sessionStorage.removeItem(DIFF_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function restoreDiffCache() {
+  if (channelConfiguredMap[currentChannel] === false) {
+    clearClientSyncCaches();
+    return false;
+  }
   const cached = readDiffCache();
   if (!cached) return false;
+  if (!cached.data?.last_sync) {
+    clearClientSyncCaches();
+    return false;
+  }
   currentData = cached.data;
   render(cached.data);
   if (pricingProducts.length) renderPricing();
@@ -172,6 +251,7 @@ async function loadDiff() {
     if (pricingProducts.length) renderPricing();
     const diffRows = data.matched.filter((m) => m.diff_count > 0).length;
     if (!data.last_sync) {
+      clearClientSyncCaches();
       setStatus(
         `Nicio preluare de la ${currentChannel} încă — apasă „Preia de la marketplace".`,
         "error"
@@ -193,6 +273,7 @@ async function loadDiff() {
 
 async function pullFromChannel() {
   if (pulling) return;
+  if (warnIfChannelUnconfigured()) return;
   pulling = true;
   btnPull.disabled = true;
   setStatus(`Se preiau ofertele de la ${currentChannel}…`, "loading");
@@ -203,7 +284,10 @@ async function pullFromChannel() {
       body: JSON.stringify({}),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      showApiError(data, `HTTP ${res.status}`);
+      return;
+    }
     setStatus(
       `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
       "ok"
@@ -220,6 +304,7 @@ async function pullFromChannel() {
 /** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe catalog. */
 async function fetchCommission() {
   if (fetchingCommission) return;
+  if (warnIfChannelUnconfigured()) return;
   fetchingCommission = true;
   btnFetchCommission.disabled = true;
   setStatus("Se încarcă produsele din DB…", "loading");
@@ -247,7 +332,10 @@ async function fetchCommission() {
       }
     );
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      showApiError(data, `HTTP ${res.status}`);
+      return;
+    }
 
     const errCount = data.errorCount || 0;
     setStatus(
@@ -297,25 +385,86 @@ const DIFF_KEY_TO_COL = {
 };
 
 const COMPACT_PRICING_KEY = "sync-compact-pricing";
+const TABLE_FULLSCREEN_KEY = "sync-table-fullscreen";
 
+const pageEl = document.querySelector(".page");
 const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
 const pricingWrap = document.getElementById("pricing-wrap");
 const thPretCanal = document.getElementById("th-pret-canal");
 const btnPush = document.getElementById("btn-push");
 const btnCompactPricing = document.getElementById("btn-compact-pricing");
+const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const syncInfoBanner = document.getElementById("sync-info-banner");
 const filterRow = pricingTable.querySelector("thead tr.filter-row");
 
+function matchedDiffRow(offerId) {
+  if (!currentData || !Array.isArray(currentData.matched)) return null;
+  return (
+    currentData.matched.find((m) => String(m.external_id) === String(offerId)) || null
+  );
+}
+
 function diffKeysForOffer(offerId) {
   const keys = new Set();
-  if (!currentData || !Array.isArray(currentData.matched)) return keys;
-  const row = currentData.matched.find((m) => String(m.external_id) === String(offerId));
+  const row = matchedDiffRow(offerId);
   if (!row) return keys;
   for (const f of row.fields || []) {
     if (f.differs) keys.add(f.key);
   }
   return keys;
+}
+
+/** Field diff (mine/theirs) pentru o coloană din tabel, dacă diferă. */
+function diffFieldForCol(offerId, col) {
+  const row = matchedDiffRow(offerId);
+  if (!row) return null;
+  let key = null;
+  for (const [k, mapped] of Object.entries(DIFF_KEY_TO_COL)) {
+    if (mapped === col) {
+      key = k;
+      break;
+    }
+  }
+  if (!key) return null;
+  const field = (row.fields || []).find((f) => f.key === key);
+  return field && field.differs ? field : null;
+}
+
+/** Celulă cu valoare locală + marketplace + Δ când diferă. */
+function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
+  const field = diffFieldForCol(offerId, col);
+  const dataVal =
+    mineRaw != null && mineRaw !== ""
+      ? ` data-value="${escapeHtml(mineRaw)}"`
+      : "";
+  if (!field) {
+    return { html: mineText, title: titleAttr(mineText), dataVal };
+  }
+
+  const isStock = field.key === "general_stock";
+  const theirsText = isStock
+    ? field.theirs == null || field.theirs === ""
+      ? "—"
+      : String(field.theirs)
+    : formatPrice(field.theirs, currency);
+  const mineNum = Number(field.mine);
+  const theirsNum = Number(field.theirs);
+  let deltaText = "";
+  if (
+    !isStock &&
+    Number.isFinite(mineNum) &&
+    Number.isFinite(theirsNum)
+  ) {
+    const d = mineNum - theirsNum;
+    const sign = d > 0 ? "+" : "";
+    deltaText = ` · Δ ${sign}${d.toFixed(2)}`;
+  }
+  const tip = `Local (Produse): ${mineText} · Marketplace: ${theirsText}${deltaText}`;
+  const html = `<span class="diff-mine">${mineText}</span><span class="diff-vs">MP: ${escapeHtml(
+    theirsText
+  )}${escapeHtml(deltaText)}</span>`;
+  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
 }
 
 /** pret_transport (vechi) → alte_costuri; evita drop din sync-column-order. */
@@ -448,6 +597,42 @@ function pricingRowHtml(product, index) {
   const pretMaximText = formatPrice(product.max_sale_price, currency);
   const stocText = stoc === "" || stoc == null ? "—" : String(stoc);
 
+  const pretEmagDiff = priceCellWithDiff(
+    product.id,
+    "pret_emag",
+    pretEmagText,
+    currency,
+    product.sale_price
+  );
+  const prpDiff = priceCellWithDiff(
+    product.id,
+    "prp",
+    prpText,
+    currency,
+    product.recommended_price
+  );
+  const pretMinimDiff = priceCellWithDiff(
+    product.id,
+    "pret_minim",
+    pretMinimText,
+    currency,
+    pretMinim
+  );
+  const pretMaximDiff = priceCellWithDiff(
+    product.id,
+    "pret_maxim",
+    pretMaximText,
+    currency,
+    product.max_sale_price
+  );
+  const stocDiff = priceCellWithDiff(
+    product.id,
+    "stoc",
+    escapeHtml(stocText),
+    currency,
+    stoc
+  );
+
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}${titleAttr(product.id)}>${escapeHtml(product.id)}</td>`,
@@ -477,17 +662,19 @@ function pricingRowHtml(product, index) {
     pret_emag: `<td data-col="pret_emag"${cellClass(
       "pret_emag",
       "col-pret-emag"
-    )}${titleAttr(pretEmagText)}>${pretEmagText}</td>`,
-    prp: `<td data-col="prp"${cellClass("prp")}${titleAttr(prpText)}>${prpText}</td>`,
-    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")}${titleAttr(
-      pretMinimText
-    )}>${pretMinimText}</td>`,
-    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")}${titleAttr(
-      pretMaximText
-    )}>${pretMaximText}</td>`,
-    stoc: `<td data-col="stoc"${cellClass("stoc")}${titleAttr(stocText)}>${escapeHtml(
-      stoc
-    )}</td>`,
+    )}${pretEmagDiff.dataVal}${pretEmagDiff.title}>${pretEmagDiff.html}</td>`,
+    prp: `<td data-col="prp"${cellClass("prp")}${prpDiff.dataVal}${prpDiff.title}>${
+      prpDiff.html
+    }</td>`,
+    pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim")}${
+      pretMinimDiff.dataVal
+    }${pretMinimDiff.title}>${pretMinimDiff.html}</td>`,
+    pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")}${
+      pretMaximDiff.dataVal
+    }${pretMaximDiff.title}>${pretMaximDiff.html}</td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc")}${stocDiff.dataVal}${stocDiff.title}>${
+      stocDiff.html
+    }</td>`,
     procentaj_emag: commissionCell,
     pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass(
       "pret_minim_profit"
@@ -617,6 +804,10 @@ function readPricingCache() {
 }
 
 function restorePricingCache() {
+  if (channelConfiguredMap[currentChannel] === false) {
+    clearClientSyncCaches();
+    return false;
+  }
   const data = readPricingCache();
   if (!data || data.products.length === 0) return false;
   pricingProducts = data.products;
@@ -690,8 +881,16 @@ pricingBody.addEventListener("click", (e) => {
 function pricingCellText(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return "";
+  if (td.dataset.value != null && td.dataset.value !== "") {
+    return String(td.dataset.value).trim();
+  }
   const input = td.querySelector("input");
   if (input) return String(input.value ?? "").trim();
+  const mine = td.querySelector(".diff-mine");
+  if (mine) {
+    const t = (mine.textContent || "").trim();
+    return !t || t === "—" ? "" : t;
+  }
   const text = (td.textContent || "").trim();
   return !text || text === "—" ? "" : text;
 }
@@ -899,6 +1098,7 @@ const PUSH_PRICE_KEYS = new Set([
 /** Trimite ofertele care difera fata de ultima preluare; DB-ul e sursa valorilor. */
 async function pushToChannel() {
   if (pushing) return;
+  if (warnIfChannelUnconfigured()) return;
   if (!currentData) {
     setStatus("Încarcă întâi comparația.", "error");
     return;
@@ -927,7 +1127,10 @@ async function pushToChannel() {
       }
     );
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      showApiError(data, `HTTP ${res.status}`);
+      return;
+    }
     if (syncInfoBanner) syncInfoBanner.hidden = false;
     await Promise.all([loadDiff(), loadPricing()]);
     setStatus(
@@ -942,7 +1145,7 @@ async function pushToChannel() {
   }
 }
 
-/* ---------- compactare ---------- */
+/* ---------- compactare + fullscreen ---------- */
 
 function setCompact(wrap, btn, on, storageKey) {
   if (!wrap || !btn) return;
@@ -951,6 +1154,29 @@ function setCompact(wrap, btn, on, storageKey) {
   btn.textContent = on ? "Normal" : "Compact";
   try {
     localStorage.setItem(storageKey, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+function setTableFullscreen(on) {
+  if (!pageEl || !btnTableFullscreen) return;
+  pageEl.classList.toggle("is-table-fullscreen", on);
+  btnTableFullscreen.setAttribute("aria-pressed", on ? "true" : "false");
+  btnTableFullscreen.title = on ? "Ieși din toată pagina" : "Tabel pe toată pagina";
+  const label = btnTableFullscreen.querySelector(".btn-fullscreen-label");
+  if (label) label.textContent = on ? "Micșorează" : "Toată pagina";
+  const path = btnTableFullscreen.querySelector("svg path");
+  if (path) {
+    path.setAttribute(
+      "d",
+      on
+        ? "M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
+        : "M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"
+    );
+  }
+  try {
+    localStorage.setItem(TABLE_FULLSCREEN_KEY, on ? "1" : "0");
   } catch {
     /* ignore */
   }
@@ -970,10 +1196,28 @@ function initCompactToggle() {
   });
 }
 
+function initFullscreenToggle() {
+  btnTableFullscreen?.addEventListener("click", () => {
+    setTableFullscreen(!pageEl.classList.contains("is-table-fullscreen"));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pageEl?.classList.contains("is-table-fullscreen")) {
+      setTableFullscreen(false);
+    }
+  });
+  try {
+    if (localStorage.getItem(TABLE_FULLSCREEN_KEY) === "1") {
+      setTableFullscreen(true);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /* ---------- pornire ---------- */
 
 channelSelect.value = currentChannel;
-channelSelect.addEventListener("change", () => {
+channelSelect.addEventListener("change", async () => {
   currentChannel = channelSelect.value || "emag";
   summaryFilter = null;
   try {
@@ -981,10 +1225,14 @@ channelSelect.addEventListener("change", () => {
   } catch {
     /* ignore */
   }
-  restorePricingCache();
-  restoreDiffCache();
-  loadDiff();
-  loadPricing();
+  if (channelConfiguredMap[currentChannel] === false) clearClientSyncCaches();
+  else {
+    restorePricingCache();
+    restoreDiffCache();
+  }
+  await loadDiff();
+  await loadPricing();
+  warnIfChannelUnconfigured();
 });
 btnPull.addEventListener("click", pullFromChannel);
 btnPush.addEventListener("click", pushToChannel);
@@ -1002,8 +1250,16 @@ columns.applyOrder();
 columns.buildMenu();
 columns.applyVisibility();
 initCompactToggle();
+initFullscreenToggle();
 
-restorePricingCache();
-restoreDiffCache();
-loadDiff();
-loadPricing();
+refreshChannelConfigured().then(async () => {
+  if (channelConfiguredMap[currentChannel] === false) {
+    clearClientSyncCaches();
+  } else {
+    restorePricingCache();
+    restoreDiffCache();
+  }
+  await loadDiff();
+  await loadPricing();
+  warnIfChannelUnconfigured();
+});

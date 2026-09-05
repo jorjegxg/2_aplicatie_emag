@@ -12,6 +12,8 @@ const {
 const {
   normalizeChannel,
   saveSnapshot,
+  setChannelRemotes,
+  clearChannelCache,
   upsertListingFromRemote,
   getCatalogRows,
   updateListing,
@@ -32,6 +34,12 @@ const {
   pruneLogs,
 } = require("./logs-db");
 const { ITEMS_PER_PAGE, loadCredentials, authCandidates, authHeader, logAuthAttempt, logAuthResult, savePreferredAuthLabel, emagOrderRead } = require("./emag-client");
+const {
+  publicCredentialsStatus,
+  saveCredentialsPatch,
+  getEmagCreds,
+  getTrendyolCreds,
+} = require("./credentials-store");
 
 const PORT = process.env.PORT || 3000;
 const COMMISSION_FETCH_CONCURRENCY = 5;
@@ -55,6 +63,7 @@ function categoryForPath(urlPath) {
   if (p.startsWith("/api/catalog/product")) return "product-patch";
   if (p.startsWith("/api/orders")) return "orders";
   if (p.startsWith("/api/settings")) return "settings";
+  if (p.startsWith("/api/credentials")) return "credentials";
   return "http";
 }
 
@@ -108,13 +117,16 @@ function sendChannelError(res, err, fallback) {
     category: "channel-error",
     message: err?.message || fallback,
     status,
-    detail: { stack: err?.stack, messages: err?.messages, detail: err?.detail },
+    detail: { stack: err?.stack, messages: err?.messages, detail: err?.detail, code: err?.code },
   });
-  return res.status(status).json({
+  const body = {
     error: err?.message || fallback,
     messages: err?.messages || [],
     detail: err?.detail || undefined,
-  });
+  };
+  if (err?.code) body.code = err.code;
+  if (err?.settingsPath) body.settingsPath = err.settingsPath;
+  return res.status(status).json(body);
 }
 
 async function mapPool(items, limit, fn) {
@@ -201,12 +213,84 @@ app.post("/api/settings", async (req, res) => {
   }
 });
 
+/* ---------------- credentiale marketplace ---------------- */
+
+app.get("/api/credentials", async (_req, res) => {
+  try {
+    return res.json(await publicCredentialsStatus());
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la citire credentiale" });
+  }
+});
+
+app.post("/api/credentials", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const hasEmag = body.emag && typeof body.emag === "object";
+    const hasTrendyol = body.trendyol && typeof body.trendyol === "object";
+    if (!hasEmag && !hasTrendyol) {
+      return res.status(400).json({ error: "Trimite secțiunea emag și/sau trendyol" });
+    }
+
+    if (hasEmag) {
+      const email = String(body.emag.email ?? body.emag.USER_EMAIL ?? "").trim();
+      const password = String(body.emag.password ?? body.emag.ACCOUNT_PASSWORD ?? "").trim();
+      const prev = await getEmagCreds();
+      const nextEmail = email || prev.USER_EMAIL;
+      const nextPassword = password || prev.ACCOUNT_PASSWORD;
+      if (!nextEmail || !nextPassword) {
+        return res.status(400).json({
+          error: "eMAG necesită email și parolă",
+          code: "CREDENTIALS_MISSING",
+          settingsPath: "/settings.html#emag",
+        });
+      }
+    }
+
+    if (hasTrendyol) {
+      const prev = await getTrendyolCreds();
+      const supplierId = String(
+        body.trendyol.supplierId ?? body.trendyol.SUPPLIER_ID ?? ""
+      ).trim();
+      const apiKey = String(body.trendyol.apiKey ?? body.trendyol.API_KEY ?? "").trim();
+      const apiSecret = String(
+        body.trendyol.apiSecret ?? body.trendyol.API_SECRET ?? ""
+      ).trim();
+      const next = {
+        SUPPLIER_ID: supplierId || prev.SUPPLIER_ID,
+        API_KEY: apiKey || prev.API_KEY,
+        API_SECRET: apiSecret || prev.API_SECRET,
+      };
+      if (!next.SUPPLIER_ID || !next.API_KEY || !next.API_SECRET) {
+        return res.status(400).json({
+          error: "Trendyol necesită Supplier ID, API Key și API Secret",
+          code: "CREDENTIALS_MISSING",
+          settingsPath: "/settings.html#trendyol",
+        });
+      }
+    }
+
+    await saveCredentialsPatch({
+      emag: hasEmag ? body.emag : undefined,
+      trendyol: hasTrendyol ? body.trendyol : undefined,
+    });
+    // Credentiale eMAG schimbate → invalideaza oglinda remote din memorie.
+    if (hasEmag) clearChannelCache("emag");
+    return res.json(await publicCredentialsStatus());
+  } catch (err) {
+    console.error(err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvare credentiale" });
+  }
+});
+
 /* ---------------- catalog local (sursa tabelului principal) ---------------- */
 
 app.get("/api/channels", async (_req, res) => {
   try {
+    const listed = await listChannels();
     const channels = await Promise.all(
-      listChannels().map(async (c) => ({
+      listed.map(async (c) => ({
         ...c,
         ...(await getChannelStats(c.id)),
       }))
@@ -236,7 +320,7 @@ app.get("/api/catalog", async (req, res) => {
   }
 });
 
-// Alias pentru compatibilitate — tabelul principal citeste acum din DB, nu din eMAG.
+// Alias: tabel = DB local + oglinda remote eMAG din cache memorie.
 app.get("/api/products", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel);
@@ -304,7 +388,7 @@ app.get("/api/sync/diff", async (req, res) => {
   }
 });
 
-/** Trage toate ofertele de la canal in DB: snapshot + upsert catalog (eMAG SoT). */
+/** Trage oferte de pe canal: eMAG → cache memorie + upsert identitate/local; alte canale → snapshots PG. */
 app.post("/api/sync/pull", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
@@ -315,6 +399,7 @@ app.post("/api/sync/pull", async (req, res) => {
     let updated = 0;
     let total = 0;
     let authUsed = null;
+    const emagRemotes = channelName === "emag" ? [] : null;
 
     while (page <= MAX_PULL_PAGES) {
       const result = await channel.fetchListings({ page });
@@ -322,7 +407,11 @@ app.post("/api/sync/pull", async (req, res) => {
       authUsed = result.authUsed || authUsed;
 
       for (const remote of listings) {
-        await saveSnapshot(channelName, remote);
+        if (emagRemotes) {
+          emagRemotes.push(remote);
+        } else {
+          await saveSnapshot(channelName, remote);
+        }
         const { created: isNew } = await upsertListingFromRemote(channelName, remote);
         if (isNew) created += 1;
         else updated += 1;
@@ -336,6 +425,10 @@ app.post("/api/sync/pull", async (req, res) => {
       total += listings.length;
       if (!result.hasMore || listings.length === 0) break;
       page += 1;
+    }
+
+    if (emagRemotes) {
+      setChannelRemotes("emag", emagRemotes);
     }
 
     const stats = await getChannelStats(channelName);
@@ -539,7 +632,7 @@ app.get("/api/orders", async (req, res) => {
       }
     }
 
-    const creds = loadCredentials();
+    const creds = await loadCredentials();
     const candidates = authCandidates(creds);
     console.log(
       `[auth:orders] ordine încercări:`,
@@ -635,6 +728,13 @@ app.get("/api/orders", async (req, res) => {
     });
   } catch (err) {
     console.error(err.message);
+    if (err?.code === "CREDENTIALS_MISSING") {
+      return res.status(err.status || 400).json({
+        error: err.message,
+        code: err.code,
+        settingsPath: err.settingsPath || "/settings.html#emag",
+      });
+    }
     return res.status(500).json({ error: err.message || "Eroare server" });
   }
 });

@@ -193,7 +193,7 @@ function commissionValueFromPercent(percent, salePrice) {
 
 /** Incearca fiecare combinatie de credentiale pana una nu da 401/403. */
 async function resolveAuth(context, probeFn) {
-  const creds = loadCredentials();
+  const creds = await loadCredentials();
   const candidates = authCandidates(creds);
   console.log(
     `[auth:${context}] ordine încercări:`,

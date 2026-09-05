@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setări — Credentiale</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
+    <script src="logger.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="top-actions">
+        <a href="/settings.html" class="top-action-btn" title="Setări" aria-label="Setări" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </a>
+        <a href="/logs.html" class="top-action-btn" title="Logs" aria-label="Logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6M8 13h8M8 17h5" />
+          </svg>
+        </a>
+        <button
+          type="button"
+          id="btn-theme"
+          class="theme-toggle"
+          aria-pressed="false"
+          title="Comută tema"
+        >
+          <svg class="theme-toggle-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+          <svg class="theme-toggle-icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+          </svg>
+          <span class="theme-toggle-label">Light</span>
+        </button>
+      </div>
+      <header class="header">
+        <nav class="site-nav" aria-label="Navigare">
+          <a href="/">Produse</a>
+          <a href="/vanzari.html">Comenzi</a>
+          <a href="/sync.html">Sincronizare</a>
+          <a href="/logs.html">Logs</a>
+          <a href="/settings.html" aria-current="page">Setări</a>
+        </nav>
+        <h1>Setări credentiale</h1>
+        <p class="subtitle">
+          Credentialele marketplace se salvează local pe server. Parolele nu se reafișează după salvare.
+        </p>
+      </header>
+
+      <p id="status" class="status" role="status"></p>
+
+      <section id="emag" class="cred-section" aria-labelledby="emag-title">
+        <div class="cred-section-head">
+          <h2 id="emag-title">eMAG</h2>
+          <span id="emag-badge" class="cred-badge">—</span>
+        </div>
+        <form id="form-emag" class="cred-form">
+          <label class="field field-wide">
+            <span>Email</span>
+            <input type="email" id="emag-email" name="email" autocomplete="username" required />
+          </label>
+          <label class="field field-wide">
+            <span>Parolă cont</span>
+            <input
+              type="password"
+              id="emag-password"
+              name="password"
+              autocomplete="current-password"
+              placeholder="•••• (neschimbat dacă lași gol)"
+            />
+          </label>
+          <label class="field field-wide">
+            <span>API code <span class="field-hint">(opțional)</span></span>
+            <input
+              type="password"
+              id="emag-api-code"
+              name="apiCode"
+              autocomplete="off"
+              placeholder="•••• (neschimbat dacă lași gol)"
+            />
+          </label>
+          <div class="cred-form-actions">
+            <button type="submit" class="btn" id="btn-save-emag">Salvează eMAG</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="trendyol" class="cred-section" aria-labelledby="trendyol-title">
+        <div class="cred-section-head">
+          <h2 id="trendyol-title">Trendyol</h2>
+          <span id="trendyol-badge" class="cred-badge">—</span>
+        </div>
+        <form id="form-trendyol" class="cred-form">
+          <label class="field field-wide">
+            <span>Supplier ID</span>
+            <input type="text" id="ty-supplier-id" name="supplierId" autocomplete="off" required />
+          </label>
+          <label class="field field-wide">
+            <span>API Key</span>
+            <input
+              type="password"
+              id="ty-api-key"
+              name="apiKey"
+              autocomplete="off"
+              placeholder="•••• (neschimbat dacă lași gol)"
+            />
+          </label>
+          <label class="field field-wide">
+            <span>API Secret</span>
+            <input
+              type="password"
+              id="ty-api-secret"
+              name="apiSecret"
+              autocomplete="off"
+              placeholder="•••• (neschimbat dacă lași gol)"
+            />
+          </label>
+          <div class="cred-form-actions">
+            <button type="submit" class="btn" id="btn-save-trendyol">Salvează Trendyol</button>
+          </div>
+        </form>
+      </section>
+    </div>
+    <script src="settings.js"></script>
+  </body>
+</html>

@@ -51,7 +51,7 @@ function linesFromOrders(orders) {
 }
 
 async function resolveAuth() {
-  const creds = loadCredentials();
+  const creds = await loadCredentials();
   const candidates = authCandidates(creds);
   console.log(
     `[sync:orders] ordine încercări:`,

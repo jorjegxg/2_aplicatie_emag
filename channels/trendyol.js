@@ -16,44 +16,65 @@
  * Update pret/stoc: POST /sapigw/suppliers/{id}/products/price-and-inventory
  *   { items: [{ barcode, quantity, salePrice, listPrice }] }
  * Auth: Basic base64(apiKey:apiSecret) + header `x-agentname`.
- * Credentiale: credentials.json -> { "trendyol": { "SUPPLIER_ID", "API_KEY", "API_SECRET" } }
+ * Credentiale: Setări → Trendyol (SUPPLIER_ID, API_KEY, API_SECRET) în DB criptat
  */
+
+const {
+  isTrendyolConfigured,
+  credentialsMissingError,
+  getTrendyolCreds,
+} = require("../credentials-store");
 
 const id = "trendyol";
 const label = "Trendyol";
 
-const NOT_CONFIGURED = "Trendyol neconfigurat — adaugă secțiunea trendyol în credentials.json";
+async function requireConfigured() {
+  if (!(await isTrendyolConfigured())) {
+    throw credentialsMissingError(
+      "trendyol",
+      "Credentiale Trendyol lipsă. Mergi la Setări (sus-dreapta) și setează Supplier ID, API Key și API Secret."
+    );
+  }
+  return getTrendyolCreds();
+}
 
-function notConfigured() {
-  const err = new Error(NOT_CONFIGURED);
+async function fetchListings() {
+  await requireConfigured();
+  const err = new Error("Trendyol: sync-ul nu e implementat încă");
   err.status = 501;
   throw err;
 }
 
-async function fetchListings() {
-  return notConfigured();
-}
-
 async function pushListings() {
-  return notConfigured();
+  await requireConfigured();
+  const err = new Error("Trendyol: publicarea nu e implementată încă");
+  err.status = 501;
+  throw err;
 }
 
 function buildPushPayload() {
-  return notConfigured();
+  const err = new Error("Trendyol: publicarea nu e implementată încă");
+  err.status = 501;
+  throw err;
 }
 
 async function fetchCommission() {
-  return notConfigured();
+  await requireConfigured();
+  const err = new Error("Trendyol: comisionul nu e implementat încă");
+  err.status = 501;
+  throw err;
 }
 
 async function resolveCommissionAuth() {
-  return notConfigured();
+  await requireConfigured();
+  const err = new Error("Trendyol: comisionul nu e implementat încă");
+  err.status = 501;
+  throw err;
 }
 
 module.exports = {
   id,
   label,
-  configured: false,
   fetchListings,
   pushListings,
   buildPushPayload,

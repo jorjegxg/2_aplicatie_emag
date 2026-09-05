@@ -385,7 +385,9 @@ body {
 }
 
 .page.is-table-fullscreen .header,
-.page.is-table-fullscreen .toolbar-fields {
+.page.is-table-fullscreen .toolbar-fields,
+.page.is-table-fullscreen .sync-summary,
+.page.is-table-fullscreen .filter-status {
   display: none;
 }
 
@@ -1699,6 +1701,7 @@ body.modal-open {
 }
 
 .toolbar-actions #btn-compact-products,
+.toolbar-actions #btn-compact-pricing,
 .sync-section-head .btn-compact {
   margin-left: auto;
 }
@@ -1851,6 +1854,31 @@ button.sync-chip.is-diff.is-active strong {
 #pricing-table td.is-diff {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
   font-weight: 600;
+}
+
+#pricing-table td.is-diff .diff-mine {
+  display: block;
+  font-weight: 600;
+}
+
+#pricing-table td.is-diff .diff-vs {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.table-wrap.is-compact #pricing-table td.is-diff .diff-vs {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table-wrap.is-compact #pricing-table td.is-diff {
+  white-space: normal;
+  max-width: 11rem;
+  vertical-align: top;
 }
 
 /* Compact: un rând, truncate, hover via title */
@@ -2116,3 +2144,82 @@ td.col-pret-cumparare .input-pret-cumparare:focus {
 .logs-filters .field-search input {
   width: 100%;
 }
+
+/* ---------- Setări credentiale ---------- */
+.cred-section {
+  margin: 1.25rem 0 1.75rem;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  max-width: 32rem;
+  scroll-margin-top: 3.5rem;
+}
+
+.cred-section.is-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.cred-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.cred-section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.cred-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface-alt, var(--surface));
+}
+
+.cred-badge.is-ok {
+  color: var(--ok, #1a7f37);
+  border-color: color-mix(in srgb, var(--ok, #1a7f37) 40%, var(--border));
+}
+
+.cred-badge.is-missing {
+  color: var(--danger, #b42318);
+  border-color: color-mix(in srgb, var(--danger, #b42318) 40%, var(--border));
+}
+
+.cred-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.field.field-wide {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.cred-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.status a.status-settings-link {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.status a.status-settings-link:hover {
+  color: var(--accent);
+}
+

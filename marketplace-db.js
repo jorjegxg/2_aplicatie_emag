@@ -1,13 +1,20 @@
 /**
  * Stratul multi-canal peste Postgres.
  *
- * catalog_products      — SURSA ADEVARULUI (produs eMAG: preturi, stoc general, etc.)
- * marketplace_snapshots — oglinda ultimului pull de pe canal
+ * catalog_products      — workspace local eMAG (preturi editate, identitate, pret_cumparare)
+ * marketplace_snapshots — oglinda ultimului pull (doar canale non-eMAG; eMAG → memorie)
  * marketplace_listings  — oferta per canal (eMAG: status/vat/stock/handling/costuri; alte canale SoT)
+ * channel-remote-cache  — oglinda remote eMAG (TTL memorie)
  */
 const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
 const { getLastPriceChangeBulk } = require("./db");
 const { htmlToText, looksLikeHtml } = require("./description-format");
+const {
+  getChannelRemotes,
+  getCacheMeta,
+  setChannelRemotes,
+  clearChannelCache,
+} = require("./channel-remote-cache");
 
 const CHANNELS = ["emag", "trendyol"];
 
@@ -20,15 +27,19 @@ function isEmagSot(channel) {
   return normalizeChannel(channel) === "emag";
 }
 
-/** Coloane pe catalog (nume/descriere), seed doar daca NULL local. */
+/** Coloane pe catalog (nume/descriere), seed doar daca NULL local. Pret/stoc remote → cache. */
 const LOCAL_SEED_CATALOG = [
   { remote: "name", col: "nume" },
   { remote: "description", col: "descriere" },
-  { remote: "sale_price", col: "sale_price" },
-  { remote: "recommended_price", col: "recommended_price" },
-  { remote: "min_sale_price", col: "min_sale_price" },
-  { remote: "max_sale_price", col: "max_sale_price" },
-  { remote: "general_stock", col: "general_stock" },
+];
+
+/** Campuri afisate ca „remote eMAG” — goale daca cache miss. */
+const REMOTE_DISPLAY_KEYS = [
+  "sale_price",
+  "recommended_price",
+  "min_sale_price",
+  "max_sale_price",
+  "general_stock",
 ];
 
 const CHANNEL_OWNED_CATALOG = [
@@ -225,8 +236,15 @@ function catalogToListingShape(row) {
   };
 }
 
+let cleanedEmagSnapshots = false;
+
 async function ensureSchema() {
   await ensurePgSchema();
+  if (!cleanedEmagSnapshots) {
+    // Oglinda eMAG e in memorie; curata snapshot-uri PG orfane (o data per proces).
+    await query("DELETE FROM marketplace_snapshots WHERE channel = 'emag'");
+    cleanedEmagSnapshots = true;
+  }
 }
 
 /** Intai dupa SKU, apoi dupa EAN, apoi dupa nume exact. */
@@ -263,8 +281,11 @@ async function findCatalogProductId(remote) {
 }
 
 async function saveSnapshot(channel, remote) {
-  await ensureSchema();
   const ch = normalizeChannel(channel);
+  // eMAG: oglinda e in channel-remote-cache (setChannelRemotes la final de pull).
+  if (isEmagSot(ch)) return;
+
+  await ensureSchema();
   await query(
     `INSERT INTO marketplace_snapshots
        (channel, external_id, payload_json, name, part_number, ean, brand,
@@ -305,6 +326,26 @@ async function saveSnapshot(channel, remote) {
       new Date().toISOString(),
     ]
   );
+}
+
+/** Normalizeaza remote eMAG la shape-ul folosit de diff (ex-marketplace_snapshots). */
+function remoteToSnapshotShape(remote, fetchedAt) {
+  return {
+    external_id: String(remote.id),
+    name: toTextOrNull(remote.name),
+    part_number: toTextOrNull(remote.part_number),
+    ean: toTextOrNull(remote.ean),
+    brand: toTextOrNull(remote.brand),
+    sale_price: toNumOrNull(remote.sale_price),
+    recommended_price: toNumOrNull(remote.recommended_price),
+    min_sale_price: toNumOrNull(remote.min_sale_price),
+    max_sale_price: toNumOrNull(remote.max_sale_price),
+    general_stock: toNumOrNull(remote.general_stock),
+    status: toNumOrNull(remote.status),
+    vat_id: toNumOrNull(remote.vat_id),
+    currency: toTextOrNull(remote.currency),
+    fetched_at: fetchedAt,
+  };
 }
 
 async function upsertCatalogFromRemote(remote) {
@@ -611,6 +652,13 @@ async function getCatalogRows(channel) {
        ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
     );
     products = rows.map(mapCatalogRowToProduct);
+    // Fara cache fresh: nu servi pret/stoc vechi din DB ca „preț emag”.
+    const cache = getChannelRemotes(ch);
+    if (!cache) {
+      for (const p of products) {
+        for (const key of REMOTE_DISPLAY_KEYS) p[key] = null;
+      }
+    }
   } else {
     const { rows } = await query(
       `SELECT l.*, pf.name AS familie, c.pret_cumparare AS catalog_pret_cumparare, c.cod_produs AS catalog_cod
@@ -1096,12 +1144,27 @@ async function getChannelDiff(channel) {
     locals = rows;
   }
 
-  const { rows: snapshots } = await query(
-    "SELECT * FROM marketplace_snapshots WHERE channel = $1",
-    [ch]
-  );
+  const snapByExt = new Map();
+  let cacheFetchedAt = null;
 
-  const snapByExt = new Map(snapshots.map((s) => [String(s.external_id), s]));
+  if (isEmagSot(ch)) {
+    const cache = getChannelRemotes(ch);
+    if (cache) {
+      cacheFetchedAt = cache.fetchedAt;
+      for (const [ext, remote] of cache.byId) {
+        snapByExt.set(ext, remoteToSnapshotShape(remote, cache.fetchedAt));
+      }
+    }
+  } else {
+    const { rows: snapshots } = await query(
+      "SELECT * FROM marketplace_snapshots WHERE channel = $1",
+      [ch]
+    );
+    for (const s of snapshots) {
+      snapByExt.set(String(s.external_id), s);
+    }
+  }
+
   const matched = [];
   const onlyLocal = [];
 
@@ -1172,7 +1235,7 @@ async function getChannelDiff(channel) {
   const stats = await getChannelStats(ch);
   return {
     channel: ch,
-    last_sync: stats.last_sync,
+    last_sync: stats.last_sync ?? cacheFetchedAt,
     fields: DIFF_FIELDS,
     matched,
     only_local: onlyLocal,
@@ -1190,13 +1253,20 @@ async function getChannelStats(channel) {
       "SELECT COUNT(*)::int AS n FROM catalog_products WHERE emag_offer_id IS NOT NULL"
     );
     listingsCount = rows[0]?.n ?? 0;
-  } else {
-    const { rows } = await query(
-      "SELECT COUNT(*)::int AS n FROM marketplace_listings WHERE channel = $1",
-      [ch]
-    );
-    listingsCount = rows[0]?.n ?? 0;
+    const meta = getCacheMeta(ch);
+    return {
+      channel: ch,
+      listings: listingsCount,
+      snapshots: meta.count,
+      last_sync: meta.fetchedAt,
+    };
   }
+
+  const { rows } = await query(
+    "SELECT COUNT(*)::int AS n FROM marketplace_listings WHERE channel = $1",
+    [ch]
+  );
+  listingsCount = rows[0]?.n ?? 0;
   const { rows: snapRows } = await query(
     "SELECT COUNT(*)::int AS n, MAX(fetched_at) AS last FROM marketplace_snapshots WHERE channel = $1",
     [ch]
@@ -1246,6 +1316,8 @@ module.exports = {
   normalizeChannel,
   ensureSchema,
   saveSnapshot,
+  setChannelRemotes,
+  clearChannelCache,
   upsertListingFromRemote,
   getCatalogRows,
   updateListing,

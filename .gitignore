@@ -1,4 +1,6 @@
+# Legacy — credentialele sunt acum în Postgres (criptate)
 credentials.json
+
 node_modules/
 .env
 *.log
