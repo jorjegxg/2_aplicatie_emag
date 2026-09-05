@@ -725,6 +725,111 @@ td[data-col="images"] {
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--surface);
+  cursor: pointer;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-lightbox[hidden] {
+  display: none;
+}
+
+.image-lightbox-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay);
+}
+
+.image-lightbox-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: min(96vw, 1200px);
+  max-height: 92vh;
+  padding: 2.5rem 3.5rem 2rem;
+}
+
+.image-lightbox-img {
+  display: block;
+  max-width: min(90vw, 1100px);
+  max-height: 85vh;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: 0;
+  right: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.35rem;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.image-lightbox-close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.image-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.image-lightbox-nav:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.image-lightbox-prev {
+  left: 0.15rem;
+}
+
+.image-lightbox-next {
+  right: 0.15rem;
+}
+
+.image-lightbox-counter {
+  position: absolute;
+  bottom: 0.15rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .product-image-thumb .btn-delete-image {

@@ -464,7 +464,7 @@ function imagesCellHtml(images) {
     .map(
       (img) =>
         `<span class="product-image-thumb" data-image-id="${escapeHtml(img.id)}">
-          <img src="${escapeHtml(img.url)}" alt="" loading="lazy" />
+          <img src="${escapeHtml(img.url)}" alt="" loading="lazy" title="Mărește" />
           <button type="button" class="btn-delete-image" data-image-id="${escapeHtml(img.id)}" aria-label="Șterge poza">×</button>
         </span>`
     )
@@ -851,11 +851,115 @@ tbody.addEventListener("change", (e) => {
   schedulePersistPretCumparare(tr.dataset.offerId, next);
 });
 
+const imageLightbox = document.createElement("div");
+imageLightbox.id = "image-lightbox";
+imageLightbox.className = "image-lightbox";
+imageLightbox.hidden = true;
+imageLightbox.innerHTML = `
+  <div class="image-lightbox-overlay" data-lightbox-close></div>
+  <div class="image-lightbox-stage" role="dialog" aria-modal="true" aria-label="Imagine produs">
+    <button type="button" class="image-lightbox-close" data-lightbox-close aria-label="Închide">×</button>
+    <button type="button" class="image-lightbox-nav image-lightbox-prev" data-lightbox-prev aria-label="Anterior">‹</button>
+    <img class="image-lightbox-img" alt="" />
+    <button type="button" class="image-lightbox-nav image-lightbox-next" data-lightbox-next aria-label="Următor">›</button>
+    <p class="image-lightbox-counter" hidden></p>
+  </div>`;
+document.body.appendChild(imageLightbox);
+
+const lightboxImg = imageLightbox.querySelector(".image-lightbox-img");
+const lightboxCounter = imageLightbox.querySelector(".image-lightbox-counter");
+const lightboxPrev = imageLightbox.querySelector("[data-lightbox-prev]");
+const lightboxNext = imageLightbox.querySelector("[data-lightbox-next]");
+
+let lightboxUrls = [];
+let lightboxIndex = 0;
+
+function updateImageLightbox() {
+  lightboxImg.src = lightboxUrls[lightboxIndex] || "";
+  const multi = lightboxUrls.length > 1;
+  lightboxPrev.hidden = !multi;
+  lightboxNext.hidden = !multi;
+  if (multi) {
+    lightboxCounter.hidden = false;
+    lightboxCounter.textContent = `${lightboxIndex + 1} / ${lightboxUrls.length}`;
+  } else {
+    lightboxCounter.hidden = true;
+  }
+}
+
+function openImageLightbox(urls, index) {
+  lightboxUrls = urls;
+  lightboxIndex = index;
+  updateImageLightbox();
+  imageLightbox.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeImageLightbox() {
+  if (imageLightbox.hidden) return;
+  imageLightbox.hidden = true;
+  document.body.classList.remove("modal-open");
+  lightboxImg.removeAttribute("src");
+  lightboxUrls = [];
+  lightboxIndex = 0;
+}
+
+function stepImageLightbox(delta) {
+  if (lightboxUrls.length < 2) return;
+  lightboxIndex =
+    (lightboxIndex + delta + lightboxUrls.length) % lightboxUrls.length;
+  updateImageLightbox();
+}
+
+function openImageLightboxFromThumb(img) {
+  const thumbsRoot = img.closest(".product-images-thumbs");
+  if (!thumbsRoot) return;
+  const imgs = [...thumbsRoot.querySelectorAll(".product-image-thumb img")];
+  const index = imgs.indexOf(img);
+  if (index < 0) return;
+  openImageLightbox(
+    imgs.map((el) => el.currentSrc || el.src),
+    index
+  );
+}
+
+imageLightbox.addEventListener("click", (e) => {
+  if (e.target.closest("[data-lightbox-close]")) {
+    closeImageLightbox();
+    return;
+  }
+  if (e.target.closest("[data-lightbox-prev]")) {
+    stepImageLightbox(-1);
+    return;
+  }
+  if (e.target.closest("[data-lightbox-next]")) {
+    stepImageLightbox(1);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (imageLightbox.hidden) return;
+  if (e.key === "Escape") {
+    closeImageLightbox();
+    e.stopImmediatePropagation();
+    return;
+  }
+  if (e.key === "ArrowLeft") stepImageLightbox(-1);
+  if (e.key === "ArrowRight") stepImageLightbox(1);
+});
+
 tbody.addEventListener("click", (e) => {
   const btn = e.target.closest("button.btn-delete-image");
-  if (!btn) return;
-  e.preventDefault();
-  void handleProductImageDelete(btn);
+  if (btn) {
+    e.preventDefault();
+    void handleProductImageDelete(btn);
+    return;
+  }
+  const thumbImg = e.target.closest(".product-image-thumb img");
+  if (thumbImg) {
+    e.preventDefault();
+    openImageLightboxFromThumb(thumbImg);
+  }
 });
 
 async function handleProductImagesSelected(input) {
