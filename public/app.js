@@ -40,8 +40,7 @@ const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
 const TABLE_FULLSCREEN_KEY = "emag-table-fullscreen";
 const COMPACT_PRODUCTS_KEY = "emag-compact-products";
-/* Pagina de produse: canalul eMAG; datele stau in catalog_products (SoT).
-   Canalul se alege in pagina Sincronizare. */
+/* Pagina de produse: editor peste DB-ul local; datele stau in catalog_products (SoT). */
 const LISTING_CHANNEL = "emag";
 
 let currentPage = 1;
@@ -51,7 +50,6 @@ let loadedProducts = [];
 let loading = false;
 let savingSettings = false;
 let exporting = false;
-let lastSyncAt = null;
 let savedSettingsSnapshot = null;
 let sortCol = null;
 let sortDir = "asc";
@@ -367,7 +365,7 @@ function updateDirtyStatus() {
   const dirtyCount = tbody.querySelectorAll("tr.is-price-dirty").length;
   if (dirtyCount === 0) return;
   setStatus(
-    `${dirtyCount} ${dirtyCount === 1 ? "produs" : "produse"} cu modificări nepublicate — publică din pagina Sincronizare.`,
+    `${dirtyCount} ${dirtyCount === 1 ? "produs" : "produse"} cu modificări nesalvate pe canal.`,
     "loading"
   );
 }
@@ -748,15 +746,6 @@ function renderProducts(products, append) {
   updateToolbarTotals();
 }
 
-function formatSyncStamp(iso) {
-  if (!iso) return "niciodată";
-  try {
-    return new Date(iso).toLocaleString("ro-RO");
-  } catch {
-    return String(iso);
-  }
-}
-
 async function loadProducts() {
   if (loading) return;
   loading = true;
@@ -768,24 +757,15 @@ async function loadProducts() {
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
 
     loadedProducts = Array.isArray(data.products) ? data.products : [];
-    lastSyncAt = data.last_sync || null;
     currentPage = 1;
     hasMore = false;
     btnMore.hidden = true;
 
     renderProducts(loadedProducts, false);
-    if (!lastSyncAt) {
-      setStatus(
-        loadedProducts.length === 0
-          ? "Nimic în DB — preia produsele din pagina Sincronizare."
-          : `${loadedProducts.length} produse în DB, dar niciodată sincronizate — preia produsele din pagina Sincronizare ca să completezi nume, preț și stoc.`,
-        "error"
-      );
+    if (loadedProducts.length === 0) {
+      setStatus("Nimic în baza de date.", "error");
     } else {
-      setStatus(
-        `${loadedProducts.length} produse din DB — ultima sincronizare: ${formatSyncStamp(lastSyncAt)}`,
-        "ok"
-      );
+      setStatus(`${loadedProducts.length} produse din baza de date`, "ok");
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");

@@ -27,19 +27,19 @@ function isEmagSot(channel) {
   return normalizeChannel(channel) === "emag";
 }
 
-/** Coloane pe catalog (nume/descriere), seed doar daca NULL local. Pret/stoc remote → cache. */
+/** Coloane pe catalog (nume/descriere), seed doar daca NULL local. */
 const LOCAL_SEED_CATALOG = [
   { remote: "name", col: "nume" },
   { remote: "description", col: "descriere" },
 ];
 
-/** Campuri afisate ca „remote eMAG” — goale daca cache miss. */
-const REMOTE_DISPLAY_KEYS = [
-  "sale_price",
-  "recommended_price",
-  "min_sale_price",
-  "max_sale_price",
-  "general_stock",
+/** Pret/stoc venite de la canal — se scriu si la update, nu doar la insert. */
+const REMOTE_PRICE_CATALOG = [
+  { remote: "sale_price", col: "sale_price", num: true },
+  { remote: "recommended_price", col: "recommended_price", num: true },
+  { remote: "min_sale_price", col: "min_sale_price", num: true },
+  { remote: "max_sale_price", col: "max_sale_price", num: true },
+  { remote: "general_stock", col: "general_stock", num: true },
 ];
 
 const CHANNEL_OWNED_CATALOG = [
@@ -385,6 +385,11 @@ async function upsertCatalogFromRemote(remote) {
         params.push(coerceRemoteField(spec, remote));
         return `${spec.col} = $${params.length}`;
       }),
+      ...REMOTE_PRICE_CATALOG.map((spec) => {
+        params.push(coerceRemoteField(spec, remote));
+        // Valoarea remote castiga; daca lipseste, pastram ce e in DB.
+        return `${spec.col} = COALESCE($${params.length}::numeric, ${spec.col})`;
+      }),
       ...LOCAL_SEED_CATALOG.map((spec) => {
         params.push(coerceRemoteField(spec, remote));
         return `${spec.col} = COALESCE(${spec.col}, $${params.length})`;
@@ -652,13 +657,6 @@ async function getCatalogRows(channel) {
        ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
     );
     products = rows.map(mapCatalogRowToProduct);
-    // Fara cache fresh: nu servi pret/stoc vechi din DB ca „preț emag”.
-    const cache = getChannelRemotes(ch);
-    if (!cache) {
-      for (const p of products) {
-        for (const key of REMOTE_DISPLAY_KEYS) p[key] = null;
-      }
-    }
   } else {
     const { rows } = await query(
       `SELECT l.*, pf.name AS familie, c.pret_cumparare AS catalog_pret_cumparare, c.cod_produs AS catalog_cod

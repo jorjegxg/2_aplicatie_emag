@@ -307,6 +307,7 @@ app.get("/api/catalog", async (req, res) => {
     const channel = normalizeChannel(req.query.channel);
     const products = await getCatalogRows(channel);
     const stats = await getChannelStats(channel);
+    res.set("Cache-Control", "no-store");
     return res.json({
       channel,
       count: products.length,
@@ -320,12 +321,13 @@ app.get("/api/catalog", async (req, res) => {
   }
 });
 
-// Alias: tabel = DB local + oglinda remote eMAG din cache memorie.
+// Alias: tabel = DB local brut (catalog_products), fara gate de cache.
 app.get("/api/products", async (req, res) => {
   try {
     const channel = normalizeChannel(req.query.channel);
     const products = await getCatalogRows(channel);
     const stats = await getChannelStats(channel);
+    res.set("Cache-Control", "no-store");
     return res.json({
       page: 1,
       itemsPerPage: products.length,
