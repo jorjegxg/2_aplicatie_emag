@@ -458,7 +458,32 @@ function pnkCell(product) {
   return product.part_number_key ? escapeHtml(product.part_number_key) : "—";
 }
 
+function imagesCellHtml(images) {
+  const list = Array.isArray(images) ? images : [];
+  const thumbs = list
+    .map(
+      (img) =>
+        `<span class="product-image-thumb" data-image-id="${escapeHtml(img.id)}">
+          <img src="${escapeHtml(img.url)}" alt="" loading="lazy" />
+          <button type="button" class="btn-delete-image" data-image-id="${escapeHtml(img.id)}" aria-label="Șterge poza">×</button>
+        </span>`
+    )
+    .join("");
+  return `<div class="product-images-cell">
+    <div class="product-images-thumbs">${thumbs}</div>
+    <label class="product-images-add">
+      <span>+ Poze</span>
+      <input type="file" class="input-product-images" accept="image/jpeg,image/png,image/webp,image/gif" multiple />
+    </label>
+  </div>`;
+}
 
+function updateImagesCell(tr, images) {
+  const td = tr.querySelector('td[data-col="images"]');
+  if (!td) return;
+  td.innerHTML = imagesCellHtml(images);
+  td.dataset.count = String(Array.isArray(images) ? images.length : 0);
+}
 
 function rowHtml(product, index) {
   const currency = product.currency || "RON";
@@ -498,10 +523,16 @@ function rowHtml(product, index) {
   const handlingJson = escapeHtml(
     JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
   );
+  const images = Array.isArray(product.images) ? product.images : [];
+  const productIdAttr =
+    product.product_id != null && product.product_id !== ""
+      ? ` data-product-id="${escapeHtml(product.product_id)}"`
+      : "";
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
+    images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${images.length}">${imagesCellHtml(images)}</td>`,
     description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
@@ -516,7 +547,7 @@ function rowHtml(product, index) {
     ean: `<td data-col="ean"${cellClass("ean")}>${eanCell(product)}</td>`,
     pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}" data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -549,6 +580,9 @@ function getCellSortValue(tr, col) {
   }
   if (col === "index" || col === "id") {
     return parseSortNumber(td.textContent);
+  }
+  if (col === "images") {
+    return parseSortNumber(td.dataset.count ?? "0");
   }
 
   const text = (td.textContent || "").trim();
@@ -611,6 +645,9 @@ function getCellFilterText(tr, col) {
   if (col === "prp" || col === "pret_minim" || col === "pret_maxim") {
     return String(td.dataset.value ?? "").trim();
   }
+  if (col === "images") {
+    return String(td.dataset.count ?? "0");
+  }
 
   const text = (td.textContent || "").trim();
   if (!text || text === "—") return "";
@@ -655,7 +692,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="16">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="17">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -711,7 +748,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="16">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="17">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
     updateToolbarTotals();
     return;
@@ -769,7 +806,7 @@ async function loadProducts() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="16">${escapeHtml(
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="17">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   } finally {
@@ -784,6 +821,12 @@ async function loadProducts() {
 
 /** Pretul de cumparare se editeaza doar dupa confirmare explicita. */
 tbody.addEventListener("change", (e) => {
+  const imagesInput = e.target.closest("input.input-product-images");
+  if (imagesInput) {
+    void handleProductImagesSelected(imagesInput);
+    return;
+  }
+
   const input = e.target.closest("input.input-pret-cumparare");
   if (!input) return;
   const tr = input.closest("tr[data-offer-id]");
@@ -807,6 +850,74 @@ tbody.addEventListener("change", (e) => {
   updateToolbarTotals();
   schedulePersistPretCumparare(tr.dataset.offerId, next);
 });
+
+tbody.addEventListener("click", (e) => {
+  const btn = e.target.closest("button.btn-delete-image");
+  if (!btn) return;
+  e.preventDefault();
+  void handleProductImageDelete(btn);
+});
+
+async function handleProductImagesSelected(input) {
+  const tr = input.closest("tr[data-offer-id]");
+  const productId = tr?.dataset.productId;
+  const files = [...(input.files || [])];
+  input.value = "";
+  if (!tr || !productId) {
+    setStatus("Produs fără product_id — nu pot salva poze.", "error");
+    return;
+  }
+  if (!files.length) return;
+
+  const form = new FormData();
+  for (const f of files) form.append("images", f);
+
+  setStatus("Se încarcă pozele…", "loading");
+  try {
+    const res = await fetch(`/api/catalog/product/${encodeURIComponent(productId)}/images`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+    updateImagesCell(tr, data.all || data.images || []);
+    const offerId = tr.dataset.offerId;
+    const cached = loadedProducts.find(
+      (p) => String(p.id) === String(offerId)
+    );
+    if (cached) cached.images = data.all || data.images || [];
+    setStatus("Poze salvate.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la upload poze", "error");
+  }
+}
+
+async function handleProductImageDelete(btn) {
+  const tr = btn.closest("tr[data-offer-id]");
+  const productId = tr?.dataset.productId;
+  const imageId = btn.dataset.imageId;
+  if (!tr || !productId || !imageId) return;
+  if (!window.confirm("Ștergi această poză?")) return;
+
+  setStatus("Se șterge poza…", "loading");
+  try {
+    const res = await fetch(
+      `/api/catalog/product/${encodeURIComponent(productId)}/images/${encodeURIComponent(imageId)}`,
+      { method: "DELETE" }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+    updateImagesCell(tr, data.all || []);
+    const offerId = tr.dataset.offerId;
+    const cached = loadedProducts.find(
+      (p) => String(p.id) === String(offerId)
+    );
+    if (cached) cached.images = data.all || [];
+    setStatus("Poză ștearsă.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la ștergere poză", "error");
+  }
+}
 
 tbody.addEventListener("focusin", (e) => {
   const nameInput = e.target.closest("textarea.input-name");

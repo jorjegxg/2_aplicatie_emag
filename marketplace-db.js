@@ -9,6 +9,7 @@
 const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
 const { getLastPriceChangeBulk } = require("./db");
 const { htmlToText, looksLikeHtml } = require("./description-format");
+const { listByProductIds } = require("./product-images");
 const {
   getChannelRemotes,
   getCacheMeta,
@@ -602,6 +603,7 @@ function mapCatalogRowToProduct(r) {
       ],
     ean: r.ean || "",
     characteristics: r.characteristics || "",
+    images: [],
   };
 }
 
@@ -642,6 +644,7 @@ function mapListingRowToProduct(r) {
       ],
     ean: r.ean || "",
     characteristics: r.characteristics || "",
+    images: [],
   };
 }
 
@@ -674,6 +677,14 @@ async function getCatalogRows(channel) {
   for (const p of products) {
     const lc = lastChanges[p.id];
     p.pret_emag_last_change = lc ? lc.recorded_at : null;
+  }
+
+  const imageMap = await listByProductIds(
+    products.map((p) => p.product_id).filter((id) => id != null)
+  );
+  for (const p of products) {
+    const pid = Number(p.product_id);
+    p.images = Number.isFinite(pid) ? imageMap.get(pid) || [] : [];
   }
   return products;
 }

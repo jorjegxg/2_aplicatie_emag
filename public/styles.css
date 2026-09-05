@@ -692,6 +692,91 @@ td[data-col="name"] .input-name:focus {
   border-color: var(--accent);
 }
 
+td.col-images,
+td[data-col="images"] {
+  min-width: 9rem;
+  vertical-align: middle;
+}
+
+.product-images-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.product-images-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.product-image-thumb {
+  position: relative;
+  display: inline-block;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.product-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.product-image-thumb .btn-delete-image {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.product-image-thumb .btn-delete-image:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}
+
+.product-images-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted, var(--text));
+  cursor: pointer;
+  user-select: none;
+}
+
+.product-images-add input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.product-images-add span {
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0.15rem 0.4rem;
+}
+
+.product-images-add:hover span {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 td.col-description .input-description,
 td[data-col="description"] .input-description {
   display: block;

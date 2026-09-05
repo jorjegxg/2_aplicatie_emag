@@ -6,3 +6,4 @@ node_modules/
 *.log
 data/*.db
 data/*.db.bak-*
+uploads/

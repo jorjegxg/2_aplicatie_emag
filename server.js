@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const multer = require("multer");
 const XLSX = require("xlsx");
 const {
   getSettings,
@@ -25,6 +26,16 @@ const {
   lookupCatalogPretCumparare,
   ensureSchema,
 } = require("./marketplace-db");
+const {
+  UPLOAD_ROOT,
+  MAX_BYTES,
+  ALLOWED_MIME,
+  ensureUploadDirs,
+  addImages,
+  deleteImage,
+  reorder: reorderImages,
+  listForProduct,
+} = require("./product-images");
 const { getChannel, listChannels } = require("./channels");
 const {
   log,
@@ -50,6 +61,19 @@ const app = express();
 app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
 
+ensureUploadDirs();
+const uploadImages = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_BYTES, files: 20 },
+  fileFilter(_req, file, cb) {
+    const mime = String(file.mimetype || "").toLowerCase();
+    if (!ALLOWED_MIME.has(mime)) {
+      return cb(new Error(`Tip fisier neacceptat: ${mime || "unknown"}`));
+    }
+    cb(null, true);
+  },
+});
+
 /** Categoria de log derivata din calea API, pentru filtrarea din /logs.html. */
 function categoryForPath(urlPath) {
   const p = urlPath.split("?")[0];
@@ -59,6 +83,7 @@ function categoryForPath(urlPath) {
   if (p.startsWith("/api/products/fetch-commission")) return "commission";
   if (p.startsWith("/api/products/export")) return "export";
   if (p.includes("/history")) return "history";
+  if (p.startsWith("/api/catalog/product") && p.includes("/images")) return "product-images";
   if (p.startsWith("/api/catalog/listing")) return "listing-patch";
   if (p.startsWith("/api/catalog/product")) return "product-patch";
   if (p.startsWith("/api/orders")) return "orders";
@@ -91,6 +116,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(UPLOAD_ROOT));
 
 function httpStatusFor(err) {
   const s = Number(err?.status);
@@ -374,6 +400,56 @@ app.patch("/api/catalog/product/:productId", async (req, res) => {
     console.error("[product:patch]", err.message);
     logCaught("product-patch", err);
     return res.status(400).json({ error: err.message || "Eroare la salvare produs" });
+  }
+});
+
+app.post(
+  "/api/catalog/product/:productId/images",
+  (req, res, next) => {
+    uploadImages.array("images", 20)(req, res, (err) => {
+      if (!err) return next();
+      const status = err.code === "LIMIT_FILE_SIZE" ? 400 : 400;
+      return res.status(status).json({ error: err.message || "Upload esuat" });
+    });
+  },
+  async (req, res) => {
+    try {
+      const images = await addImages(req.params.productId, req.files || []);
+      return res.json({ ok: true, images, all: await listForProduct(req.params.productId) });
+    } catch (err) {
+      console.error("[product:images:post]", err.message);
+      logCaught("product-images", err);
+      const status = Number(err.status) || 400;
+      return res.status(status).json({ error: err.message || "Eroare la upload poze" });
+    }
+  }
+);
+
+app.delete("/api/catalog/product/:productId/images/:imageId", async (req, res) => {
+  try {
+    await deleteImage(req.params.productId, req.params.imageId);
+    return res.json({
+      ok: true,
+      all: await listForProduct(req.params.productId),
+    });
+  } catch (err) {
+    console.error("[product:images:delete]", err.message);
+    logCaught("product-images", err);
+    const status = Number(err.status) || 400;
+    return res.status(status).json({ error: err.message || "Eroare la stergere poza" });
+  }
+});
+
+app.patch("/api/catalog/product/:productId/images/order", async (req, res) => {
+  try {
+    const imageIds = req.body?.image_ids;
+    const images = await reorderImages(req.params.productId, imageIds);
+    return res.json({ ok: true, images });
+  } catch (err) {
+    console.error("[product:images:order]", err.message);
+    logCaught("product-images", err);
+    const status = Number(err.status) || 400;
+    return res.status(status).json({ error: err.message || "Eroare la reordonare poze" });
   }
 });
 
