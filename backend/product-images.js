@@ -3,6 +3,8 @@
  * URL public rămâne /uploads/products/<stored_name> (proxy din server.js).
  */
 const crypto = require("crypto");
+const http = require("http");
+const https = require("https");
 const {
   S3Client,
   PutObjectCommand,
@@ -73,6 +75,7 @@ function mapRow(r) {
     mime_type: r.mime_type || "",
     byte_size: r.byte_size != null ? Number(r.byte_size) : null,
     sort_order: Number(r.sort_order) || 0,
+    source_url: r.source_url || null,
     created_at:
       r.created_at instanceof Date
         ? r.created_at.toISOString()
@@ -387,6 +390,193 @@ async function reorder(productId, imageIds) {
   return listForProduct(pid);
 }
 
+/* ---------------- import poze din URL extern (eMAG) ---------------- */
+
+// Pozele de pe CDN-ul eMAG pot depasi limita de upload manual (5 MB).
+const MAX_REMOTE_BYTES = 15 * 1024 * 1024;
+const REMOTE_TIMEOUT_MS = 20000;
+const MAX_REDIRECTS = 3;
+
+function mimeFromUrl(url) {
+  const clean = String(url || "").split("?")[0].toLowerCase();
+  if (/\.jpe?g$/.test(clean)) return "image/jpeg";
+  if (/\.png$/.test(clean)) return "image/png";
+  if (/\.webp$/.test(clean)) return "image/webp";
+  if (/\.gif$/.test(clean)) return "image/gif";
+  return "";
+}
+
+/**
+ * Descarca o imagine dintr-un URL public.
+ * @returns {Promise<{ buffer: Buffer, mime: string }>}
+ */
+function downloadImage(url, redirectsLeft = MAX_REDIRECTS) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(String(url));
+    } catch {
+      reject(new Error(`URL invalid: ${url}`));
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      reject(new Error(`Protocol neacceptat: ${parsed.protocol}`));
+      return;
+    }
+
+    const lib = parsed.protocol === "https:" ? https : http;
+    const req = lib.request(
+      parsed,
+      { method: "GET", headers: { "User-Agent": "aplicatie-emag/1.0" } },
+      (res) => {
+        const status = res.statusCode || 0;
+
+        if (status >= 300 && status < 400 && res.headers.location) {
+          res.resume();
+          if (redirectsLeft <= 0) {
+            reject(new Error("Prea multe redirect-uri"));
+            return;
+          }
+          const next = new URL(res.headers.location, parsed).toString();
+          downloadImage(next, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+
+        if (status < 200 || status >= 300) {
+          res.resume();
+          reject(new Error(`HTTP ${status}`));
+          return;
+        }
+
+        const declared = Number(res.headers["content-length"]);
+        if (Number.isFinite(declared) && declared > MAX_REMOTE_BYTES) {
+          res.destroy();
+          reject(new Error(`Imagine prea mare (${declared} bytes)`));
+          return;
+        }
+
+        const headerMime = String(res.headers["content-type"] || "")
+          .split(";")[0]
+          .trim()
+          .toLowerCase();
+        const mime = ALLOWED_MIME.has(headerMime)
+          ? headerMime
+          : mimeFromUrl(parsed.pathname);
+        if (!ALLOWED_MIME.has(mime)) {
+          res.destroy();
+          reject(new Error(`Tip continut neacceptat: ${headerMime || "necunoscut"}`));
+          return;
+        }
+
+        const chunks = [];
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_REMOTE_BYTES) {
+            res.destroy(new Error(`Imagine prea mare (> ${MAX_REMOTE_BYTES} bytes)`));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => resolve({ buffer: Buffer.concat(chunks), mime }));
+        res.on("error", reject);
+      }
+    );
+
+    req.setTimeout(REMOTE_TIMEOUT_MS, () => {
+      req.destroy(new Error("timeout descarcare imagine"));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/**
+ * Sterge pozele provenite din sursa externa (source_url NOT NULL) si le descarca
+ * din nou de la URL-urile date. Uploadurile manuale (source_url NULL) raman intacte.
+ * @param {number|string} productId
+ * @param {string[]} urls
+ * @returns {Promise<{ deleted: number, added: object[], failed: {url: string, error: string}[] }>}
+ */
+async function replaceRemoteImages(productId, urls) {
+  await ensureSchema();
+  await ensureBucket();
+  const pid = Number(productId);
+  if (!Number.isFinite(pid) || pid <= 0) {
+    const err = new Error("product_id invalid");
+    err.status = 400;
+    throw err;
+  }
+
+  const list = [
+    ...new Set(
+      (Array.isArray(urls) ? urls : [])
+        .map((u) => String(u || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  // 1. sterge pozele externe existente (S3 intai, apoi DB — ca in deleteImage)
+  const { rows: old } = await query(
+    `SELECT id, stored_name FROM product_images
+     WHERE product_id = $1 AND source_url IS NOT NULL`,
+    [pid]
+  );
+  for (const row of old) {
+    await removeObject(row.stored_name);
+    await query(`DELETE FROM product_images WHERE id = $1`, [row.id]);
+  }
+
+  // 2. descarca si urca pozele noi, dupa pozele manuale ramase
+  const { rows: maxRows } = await query(
+    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images WHERE product_id = $1`,
+    [pid]
+  );
+  let nextOrder = Number(maxRows[0]?.max_ord) + 1;
+  if (!Number.isFinite(nextOrder) || nextOrder < 0) nextOrder = 0;
+
+  const added = [];
+  const failed = [];
+
+  for (const url of list) {
+    let storedName = null;
+    try {
+      const { buffer, mime } = await downloadImage(url);
+      storedName = makeStoredName(mime);
+      await putObject(storedName, buffer, mime);
+      const { rows } = await query(
+        `INSERT INTO product_images
+           (product_id, stored_name, original_name, mime_type, byte_size, sort_order, source_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, product_id, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at`,
+        [
+          pid,
+          storedName,
+          decodeURIComponent(new URL(url).pathname.split("/").pop() || "") || null,
+          mime,
+          buffer.length,
+          nextOrder,
+          url,
+        ]
+      );
+      added.push(mapRow(rows[0]));
+      nextOrder += 1;
+    } catch (err) {
+      // obiect scris pe S3 dar fara rand in DB -> curata, nu lasa orfani
+      if (storedName) {
+        try {
+          await removeObject(storedName);
+        } catch {
+          /* ignore */
+        }
+      }
+      failed.push({ url, error: err.message });
+    }
+  }
+
+  return { deleted: old.length, added, failed };
+}
+
 module.exports = {
   MAX_BYTES,
   ALLOWED_MIME,
@@ -402,4 +592,7 @@ module.exports = {
   getObjectStream,
   objectExists,
   objectKey,
+  downloadImage,
+  replaceRemoteImages,
+  MAX_REMOTE_BYTES,
 };
