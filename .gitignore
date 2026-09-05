@@ -4,6 +4,6 @@ credentials.json
 node_modules/
 .env
 *.log
-data/*.db
-data/*.db.bak-*
-uploads/
+backend/data/*.db
+backend/data/*.db.bak*
+backend/uploads/

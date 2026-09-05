@@ -93,7 +93,7 @@ function categoryForPath(urlPath) {
 
 // Logheaza fiecare apel /api/*, mai putin rutele paginii de logs (altfel se auto-logheaza in bucla).
 app.use((req, res, next) => {
-  if (!req.path.startsWith("/api/") || req.path.startsWith("/api/logs")) return next();
+  if (!req.path.startsWith("/api/") || req.path.startsWith("/api/logs") || req.path === "/api/health") return next();
   const startedAt = Date.now();
   res.on("finish", () => {
     void log({
@@ -114,7 +114,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+// Health check pentru containerul back (nu atinge DB/S3).
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 /** Proxy poze din MinIO/S3 — UI păstrează URL-uri relative /uploads/products/... */
 app.get("/uploads/products/:storedName", async (req, res) => {

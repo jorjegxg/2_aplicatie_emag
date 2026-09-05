@@ -1,0 +1,17 @@
+# Dev: cod montat de pe host, restart automat la salvare.
+# Compose aplica acest fisier automat pentru `docker compose up`.
+# Pentru productie: docker compose -f docker-compose.yml up -d
+services:
+  back:
+    command: node --watch server.js
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+
+  front:
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro

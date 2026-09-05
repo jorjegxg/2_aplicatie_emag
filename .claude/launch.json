@@ -3,9 +3,8 @@
   "configurations": [
     {
       "name": "aplicatie-emag",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
-      "port": 3000
+      "url": "http://localhost:8080",
+      "port": 8080
     }
   ]
 }

@@ -3,8 +3,14 @@ const path = require("path");
 const { Pool } = require("pg");
 
 function loadEnvFile() {
-  const envPath = path.join(__dirname, ".env");
-  if (!fs.existsSync(envPath)) return;
+  // .env sta in radacina repo-ului (un nivel peste backend/); in container lipseste
+  // complet si variabilele vin din docker compose.
+  const candidates = [
+    path.join(__dirname, ".env"),
+    path.join(__dirname, "..", ".env"),
+  ];
+  const envPath = candidates.find((p) => fs.existsSync(p));
+  if (!envPath) return;
   const text = fs.readFileSync(envPath, "utf8");
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -82,7 +88,7 @@ async function setSchemaVersion(client, version) {
   );
 }
 
-async function runMigrations(client) {
+async function runMigrations(client, { fresh = false } = {}) {
   let version = await getSchemaVersion(client);
   const migrationsDir = path.join(__dirname, "sql", "migrations");
   if (!fs.existsSync(migrationsDir)) {
@@ -94,6 +100,18 @@ async function runMigrations(client) {
     .readdirSync(migrationsDir)
     .filter((f) => /^\d+_.*\.sql$/i.test(f))
     .sort();
+
+  // Pe o baza noua, schema.sql a creat deja forma finala. Migratiile vechi
+  // presupun schema veche (ex. 005 sterge coloana `familie`, care nu mai exista)
+  // si ar crapa - le sarim si marcam versiunea la ultima migratie.
+  if (fresh) {
+    const latest = files.reduce((max, f) => {
+      const n = Number(f.split("_")[0]);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, SCHEMA_VERSION);
+    await setSchemaVersion(client, latest);
+    return;
+  }
 
   for (const file of files) {
     const fileVersion = Number(file.split("_")[0]);
@@ -117,8 +135,12 @@ async function ensureSchema() {
     const schemaPath = path.join(__dirname, "sql", "schema.sql");
     const sql = fs.readFileSync(schemaPath, "utf8");
     await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `SELECT to_regclass('public.app_meta') IS NULL AS fresh`
+      );
+      const fresh = rows[0]?.fresh === true;
       await client.query(sql);
-      await runMigrations(client);
+      await runMigrations(client, { fresh });
     });
     schemaReady = true;
   })();
