@@ -34,7 +34,7 @@ loadEnvFile();
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgres://emag:emag@127.0.0.1:5432/emag";
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 12;
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
