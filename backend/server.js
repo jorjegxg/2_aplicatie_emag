@@ -51,6 +51,13 @@ const {
   getEmagCreds,
   getTrendyolCreds,
 } = require("./credentials-store");
+const {
+  isAuthEnabled,
+  requireAppAuth,
+  authStatusHandler,
+  authLoginHandler,
+  authLogoutHandler,
+} = require("./app-auth");
 
 const PORT = process.env.PORT || 3000;
 const COMMISSION_FETCH_CONCURRENCY = 5;
@@ -60,6 +67,12 @@ const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
 app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
+
+// Parola de acces la aplicație (APP_PASSWORD). Cookie httpOnly, reținut ~1 an.
+app.get("/api/auth/status", authStatusHandler);
+app.post("/api/auth/login", authLoginHandler);
+app.post("/api/auth/logout", authLogoutHandler);
+app.use(requireAppAuth);
 
 const uploadImages = multer({
   storage: multer.memoryStorage(),
@@ -1002,6 +1015,13 @@ async function start() {
   await ensureSchema();
   await ensureBucket();
   await pruneLogs(14);
+  if (isAuthEnabled()) {
+    console.log("[auth] APP_PASSWORD setat — accesul necesită autentificare");
+  } else {
+    console.warn(
+      "[auth] APP_PASSWORD lipsește din .env — aplicația e deschisă fără parolă"
+    );
+  }
   app.listen(PORT, () => {
     console.log(`Server pornit: http://localhost:${PORT}`);
   });

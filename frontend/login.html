@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Autentificare</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
+    <script src="auth.js"></script>
+  </head>
+  <body class="login-body">
+    <main class="login-shell">
+      <form id="login-form" class="login-card" autocomplete="on">
+        <h1 class="login-title">Acces aplicație</h1>
+        <p class="login-sub">Introdu parola. Va rămâne reținută pe acest browser.</p>
+        <label class="field login-field">
+          <span>Parolă</span>
+          <input
+            type="password"
+            id="login-password"
+            name="password"
+            autocomplete="current-password"
+            required
+            autofocus
+            placeholder="Parola"
+          />
+        </label>
+        <p id="login-error" class="login-error" hidden></p>
+        <button type="submit" id="login-submit" class="btn login-submit">
+          Intră
+        </button>
+      </form>
+    </main>
+    <script>
+      (function () {
+        var form = document.getElementById("login-form");
+        var input = document.getElementById("login-password");
+        var errEl = document.getElementById("login-error");
+        var btn = document.getElementById("login-submit");
+
+        function nextUrl() {
+          var params = new URLSearchParams(window.location.search);
+          var next = params.get("next") || "/";
+          if (!next.startsWith("/") || next.startsWith("//")) return "/";
+          if (/^\/login\.html/i.test(next)) return "/";
+          return next;
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          errEl.hidden = true;
+          errEl.textContent = "";
+          btn.disabled = true;
+          fetch("/api/auth/login", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: input.value }),
+          })
+            .then(function (res) {
+              return res.json().then(function (data) {
+                return { ok: res.ok, data: data || {} };
+              });
+            })
+            .then(function (result) {
+              if (!result.ok) {
+                errEl.textContent = result.data.error || "Parolă greșită";
+                errEl.hidden = false;
+                btn.disabled = false;
+                input.select();
+                return;
+              }
+              window.location.replace(nextUrl());
+            })
+            .catch(function () {
+              errEl.textContent = "Nu am putut contacta serverul.";
+              errEl.hidden = false;
+              btn.disabled = false;
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

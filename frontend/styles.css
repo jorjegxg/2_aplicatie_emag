@@ -2413,3 +2413,76 @@ td.col-pret-cumparare .input-pret-cumparare:focus {
   color: var(--accent);
 }
 
+/* ---------- Auth gate + login ---------- */
+html.auth-pending body {
+  visibility: hidden;
+}
+
+.login-body {
+  min-height: 100vh;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, var(--glow-1), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, var(--glow-2), transparent 50%),
+    var(--bg);
+}
+
+.login-shell {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.25rem;
+  box-sizing: border-box;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.5rem 1.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px var(--shadow-2);
+}
+
+.login-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.login-sub {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.login-field {
+  width: 100%;
+}
+
+.login-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.login-error {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.login-submit {
+  margin-top: 0.25rem;
+  width: 100%;
+  justify-content: center;
+}
+
+
