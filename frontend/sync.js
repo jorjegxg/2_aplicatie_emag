@@ -289,7 +289,9 @@ async function pullFromChannel() {
       return;
     }
     setStatus(
-      `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
+      data.cache_only
+        ? `Preluate ${data.count} oferte în cache (comparație) — catalogul local neschimbat.`
+        : `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
       "ok"
     );
     await Promise.all([loadDiff(), loadPricing()]);
@@ -1270,7 +1272,7 @@ const PUSH_PRICE_KEYS = new Set([
   "general_stock",
 ]);
 
-/** Trimite ofertele care difera fata de ultima preluare; DB-ul e sursa valorilor. */
+/** Trimite ofertele care difera fata de ultima preluare; catalogul e sursa prețurilor. */
 async function pushToChannel() {
   if (pushing) return;
   if (warnIfChannelUnconfigured()) return;

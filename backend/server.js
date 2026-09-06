@@ -12,13 +12,13 @@ const {
 } = require("./db");
 const {
   normalizeChannel,
-  saveSnapshot,
   setChannelRemotes,
   clearChannelCache,
   upsertListingFromRemote,
   getCatalogRows,
   updateListing,
   getListings,
+  getChannelRemotes,
   updateProduct,
   getChannelDiff,
   getChannelStats,
@@ -500,18 +500,19 @@ app.get("/api/sync/diff", async (req, res) => {
   }
 });
 
-/** Trage oferte de pe canal: eMAG → cache memorie + upsert identitate/local; alte canale → snapshots PG. */
+/** Trage oferte: oglinda remote merge mereu in cache; canalele non-eMAG fac si upsert listings. */
 app.post("/api/sync/pull", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
     const channel = getChannel(channelName);
+    const emagCacheOnly = channelName === "emag";
 
     let page = 1;
     let created = 0;
     let updated = 0;
     let total = 0;
     let authUsed = null;
-    const emagRemotes = channelName === "emag" ? [] : null;
+    const remotes = [];
 
     while (page <= MAX_PULL_PAGES) {
       const result = await channel.fetchListings({ page });
@@ -519,14 +520,12 @@ app.post("/api/sync/pull", async (req, res) => {
       authUsed = result.authUsed || authUsed;
 
       for (const remote of listings) {
-        if (emagRemotes) {
-          emagRemotes.push(remote);
-        } else {
-          await saveSnapshot(channelName, remote);
+        remotes.push(remote);
+        if (!emagCacheOnly) {
+          const { created: isNew } = await upsertListingFromRemote(channelName, remote);
+          if (isNew) created += 1;
+          else updated += 1;
         }
-        const { created: isNew } = await upsertListingFromRemote(channelName, remote);
-        if (isNew) created += 1;
-        else updated += 1;
         try {
           await recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
         } catch (histErr) {
@@ -539,13 +538,13 @@ app.post("/api/sync/pull", async (req, res) => {
       page += 1;
     }
 
-    if (emagRemotes) {
-      setChannelRemotes("emag", emagRemotes);
-    }
+    setChannelRemotes(channelName, remotes);
 
     const stats = await getChannelStats(channelName);
     console.log(
-      `[sync-pull] ${channelName}: ${total} oferte (${created} noi, ${updated} actualizate)`
+      emagCacheOnly
+        ? `[sync-pull] ${channelName}: ${total} oferte în cache (fără scriere catalog)`
+        : `[sync-pull] ${channelName}: ${total} oferte (${created} noi, ${updated} actualizate)`
     );
     return res.json({
       ok: true,
@@ -553,6 +552,7 @@ app.post("/api/sync/pull", async (req, res) => {
       count: total,
       created,
       updated,
+      cache_only: emagCacheOnly,
       pages: page,
       authUsed,
       last_sync: stats.last_sync,
@@ -564,13 +564,13 @@ app.post("/api/sync/pull", async (req, res) => {
   }
 });
 
-/** Trimite catre canal ofertele cerute, cu valorile din DB. */
+/** Trimite catre canal: eMAG = catalog SoT + status/vat/handling din cache; alte canale = DB listings. */
 app.post("/api/products/sync-prices", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
     const channel = getChannel(channelName);
 
-    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din DB.
+    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din DB (catalog / listings).
     const includeContent = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
     const ids = rawOffers
@@ -584,7 +584,19 @@ app.post("/api/products/sync-prices", async (req, res) => {
 
     const listings = await getListings(channelName, ids);
     if (listings.length === 0) {
-      return res.status(404).json({ error: "Ofertele nu există în DB — sincronizează cu canalul" });
+      return res.status(404).json({
+        error:
+          channelName === "emag"
+            ? "Ofertele nu există în catalog — leagă emag_offer_id pe produs"
+            : "Ofertele nu există în DB — sincronizează cu canalul",
+      });
+    }
+
+    const emagCache = channelName === "emag" ? getChannelRemotes("emag") : null;
+    if (channelName === "emag" && !emagCache) {
+      return res.status(400).json({
+        error: "Lipsește oglinda eMAG din memorie — preia întâi ofertele de la marketplace",
+      });
     }
 
     const offers = [];
@@ -593,6 +605,26 @@ app.post("/api/products/sync-prices", async (req, res) => {
         l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
           ? Number(l.pret_minim_override)
           : l.min_sale_price;
+
+      if (channelName === "emag") {
+        const remote = emagCache.byId.get(String(l.external_id));
+        const merged = channel.mergeLocalWithRemoteCache(
+          {
+            id: l.external_id,
+            name: l.name,
+            description: l.description,
+            sale_price: l.sale_price,
+            recommended_price: l.recommended_price,
+            min_sale_price: effectiveMin,
+            max_sale_price: l.max_sale_price,
+            general_stock: l.general_stock,
+          },
+          remote
+        );
+        offers.push(channel.buildPushPayload(merged, { includeContent }));
+        continue;
+      }
+
       offers.push(
         channel.buildPushPayload({
           id: l.external_id,

@@ -357,7 +357,7 @@ function buildPushPayload(listing, { includeContent = false } = {}) {
 
   if (id == null || sale_price == null) {
     throw invalid(
-      `Oferta ${id ?? "?"}: lipsește prețul de vânzare — preia întâi ofertele de la eMAG`
+      `Oferta ${id ?? "?"}: lipsește prețul de vânzare — completează-l în catalog`
     );
   }
   if (status == null || vat_id == null) {
@@ -389,6 +389,46 @@ function buildPushPayload(listing, { includeContent = false } = {}) {
   if (min_sale_price != null) payload.min_sale_price = min_sale_price;
   if (max_sale_price != null) payload.max_sale_price = max_sale_price;
   return payload;
+}
+
+/**
+ * Catalog SoT (prețuri/stoc) + oglinda remote din cache (status/vat/handling/warehouses).
+ * Cantitatea trimisă = general_stock din catalog; structura depozitelor din cache.
+ */
+function mergeLocalWithRemoteCache(local, remote) {
+  const id = local?.id ?? remote?.id;
+  if (!remote) {
+    const err = new Error(
+      `Oferta ${id ?? "?"}: lipsește oglinda remote — preia întâi ofertele de la eMAG`
+    );
+    err.status = 400;
+    throw err;
+  }
+  const qty = Number(local?.general_stock);
+  const safeQty = Number.isFinite(qty) ? qty : 0;
+  let stock;
+  if (Array.isArray(remote.stock) && remote.stock.length > 0) {
+    stock = remote.stock.map((s, i) => ({
+      warehouse_id: Number(s.warehouse_id) || 1,
+      value: i === 0 ? safeQty : 0,
+    }));
+  } else {
+    stock = [{ warehouse_id: 1, value: safeQty }];
+  }
+  return {
+    id,
+    name: local?.name,
+    description: local?.description,
+    sale_price: local?.sale_price,
+    recommended_price: local?.recommended_price,
+    min_sale_price: local?.min_sale_price,
+    max_sale_price: local?.max_sale_price,
+    general_stock: safeQty,
+    status: remote.status,
+    vat_id: remote.vat_id,
+    handling_time: remote.handling_time,
+    stock,
+  };
 }
 
 /** Comision estimat per oferta. -> { procentaj, commission_value } */
@@ -437,6 +477,7 @@ module.exports = {
   fetchListings,
   pushListings,
   buildPushPayload,
+  mergeLocalWithRemoteCache,
   fetchCommission,
   resolveCommissionAuth,
   resolveAuth,

@@ -50,7 +50,7 @@
         </nav>
         <h1>Sincronizare marketplace</h1>
         <p class="subtitle">
-          Prețurile și marja pe canalul selectat, plus datele mele comparate cu ce a raportat marketplace-ul la ultima preluare.
+          Prețurile și marja pe canalul selectat, plus datele mele din catalog comparate cu oglinda marketplace (eMAG: cache memorie la preluare).
         </p>
         <p id="sync-info-banner" class="sync-info-banner" hidden role="status">
           Marketplace-ului îi pot lua 5–10 minute să înregistreze schimbarea.
@@ -66,7 +66,7 @@
               <option value="trendyol">Trendyol</option>
             </select>
           </label>
-          <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în baza de date locală">
+          <button type="button" id="btn-pull" class="btn btn-secondary" title="Descarcă ofertele de la marketplace în cache pentru comparație (nu modifică catalogul local)">
             Preia de la marketplace
           </button>
           <button type="button" id="btn-push" class="btn" title="Trimite pe canal prețurile și stocul produselor care diferă de ultima preluare">

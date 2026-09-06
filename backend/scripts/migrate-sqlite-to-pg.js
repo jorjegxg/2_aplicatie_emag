@@ -24,7 +24,6 @@ const TABLES = [
   "products",
   "catalog_products",
   "marketplace_listings",
-  "marketplace_snapshots",
   "product_pret_emag_history",
   "order_line_history",
   "app_logs",
