@@ -215,7 +215,7 @@ async function mapOrderProduct(product) {
     status: product.status ?? null,
     currency: product.currency || "RON",
     pret_cumparare: await lookupCatalogPretCumparare(part_number, name),
-    alte_costuri: costs?.alte_costuri ?? null,
+    transport_override: costs?.transport_override ?? null,
     procentaj_emag: costs?.procentaj_emag ?? null,
     commission_value: costs?.commission_value ?? null,
     commission_fetched_at: costs?.commission_fetched_at ?? null,

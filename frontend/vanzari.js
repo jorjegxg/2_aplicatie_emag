@@ -108,8 +108,8 @@ function alteFromProcentaj(procentaj, pretCumparare) {
 }
 
 function resolveAlteCosturi(product) {
-  if (product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri))) {
-    return Number(product.alte_costuri);
+  if (product.transport_override != null && Number.isFinite(Number(product.transport_override))) {
+    return Number(product.transport_override);
   }
   const pctRaw = inputProcentajAlte?.value;
   if (pctRaw == null || pctRaw === "") return DEFAULT_ALTE_COSTURI;

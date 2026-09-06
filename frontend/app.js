@@ -55,13 +55,14 @@ let sortCol = null;
 let sortDir = "asc";
 
 function migrateLegacyCostCols(cols) {
-  const OLD = new Set(["pret_transport", "procentaj_alte_costuri"]);
+  const OLD = new Set(["procentaj_alte_costuri"]);
+  const RENAMED = new Set(["pret_transport", "alte_costuri"]);
   const out = [];
   let insertedAlte = false;
   for (const c of cols) {
-    if (c === "pret_transport") {
-      if (!insertedAlte && !out.includes("alte_costuri")) {
-        out.push("alte_costuri");
+    if (RENAMED.has(c)) {
+      if (!insertedAlte && !out.includes("transport_override")) {
+        out.push("transport_override");
         insertedAlte = true;
       }
       continue;
@@ -218,7 +219,7 @@ function hasAlteOverride(tr) {
 }
 
 function syncAlteCosturiCell(tr, alteCosturi) {
-  const alteCell = tr.querySelector("td[data-col='alte_costuri']");
+  const alteCell = tr.querySelector("td[data-col='transport_override']");
   if (!alteCell) return;
   const input = alteCell.querySelector("input.input-alte-costuri");
   const resetBtn = alteCell.querySelector("button.btn-reset-alte");
@@ -492,9 +493,9 @@ function rowHtml(product, index) {
   const cellClass = (col, extra = "") => columns.cellClass(col, extra);
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
   const hasOverride =
-    product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri));
+    product.transport_override != null && Number.isFinite(Number(product.transport_override));
   const alte = hasOverride
-    ? Number(product.alte_costuri)
+    ? Number(product.transport_override)
     : alteFromProcentaj(getGlobalProcentajAlte() ?? "", pretCumparare);
   const alteInputVal =
     alte == null || !Number.isFinite(Number(alte)) ? "" : Number(alte);
@@ -538,7 +539,7 @@ function rowHtml(product, index) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-pret-cumparare")}><input type="number" class="input-pret-cumparare" min="0" step="0.01" value="${escapeHtml(pretCumparare)}" /></td>`,
-    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
+    transport_override: `<td data-col="transport_override"${cellClass("transport_override", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
@@ -557,7 +558,7 @@ function getCellSortValue(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return null;
 
-  if (col === "pret_emag" || col === "alte_costuri" || col === "pret_minim") {
+  if (col === "pret_emag" || col === "transport_override" || col === "pret_minim") {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
@@ -627,7 +628,7 @@ function getCellFilterText(tr, col) {
 
   if (
     col === "pret_emag" ||
-    col === "alte_costuri" ||
+    col === "transport_override" ||
     col === "pret_minim" ||
     col === "pret_cumparare" ||
     col === "stoc"
@@ -731,11 +732,11 @@ function sortProductsTable() {
 function applyCostOverrideToProduct(product, override) {
   if (!override) return product;
   const next = { ...product };
-  if ("alte_costuri" in override) {
-    next.alte_costuri =
-      override.alte_costuri == null || !Number.isFinite(Number(override.alte_costuri))
+  if ("transport_override" in override) {
+    next.transport_override =
+      override.transport_override == null || !Number.isFinite(Number(override.transport_override))
         ? null
-        : Number(override.alte_costuri);
+        : Number(override.transport_override);
   }
   return next;
 }
@@ -1166,7 +1167,7 @@ function patchLoadedProduct(id, fields) {
 }
 
 function schedulePersistAlteCosturi(offerId, value) {
-  schedulePersistListing(offerId, { alte_costuri: numOrNull(value) }, "alte-costuri");
+  schedulePersistListing(offerId, { transport_override: numOrNull(value) }, "alte-costuri");
 }
 
 function schedulePersistPretCumparare(offerId, value) {
@@ -1229,7 +1230,7 @@ const EXPORT_NUMERIC_COLS = new Set([
   "id",
   "id_familie",
   "pret_cumparare",
-  "alte_costuri",
+  "transport_override",
   "pret_emag",
   "prp",
   "pret_minim",

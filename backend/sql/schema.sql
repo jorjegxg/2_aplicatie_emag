@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS catalog_products (
   max_sale_price NUMERIC(12, 4),
   general_stock NUMERIC(12, 3),
   currency TEXT,
+  transport_override NUMERIC(12, 4),
   created_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ
 );
@@ -110,7 +111,6 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
   handling_time_json JSONB,
   status INTEGER,
   vat_id INTEGER,
-  alte_costuri NUMERIC(12, 4),
   pret_minim_override NUMERIC(12, 4),
   procentaj_emag NUMERIC(8, 4),
   commission_value NUMERIC(12, 4),

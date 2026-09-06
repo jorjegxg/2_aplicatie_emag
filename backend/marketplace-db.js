@@ -84,9 +84,8 @@ async function ensureProductFamily(idFamilie, familie, client) {
   );
 }
 
-/** Costuri/comision pe listings (nu pe catalog). */
+/** Comision pe listings (nu pe catalog). */
 const LISTING_COST_FIELDS = [
-  "alte_costuri",
   "procentaj_emag",
   "commission_value",
   "commission_fetched_at",
@@ -95,7 +94,6 @@ const LISTING_COST_FIELDS = [
 /** Catalog + familie + override-uri locale din marketplace_listings (eMAG). */
 const SQL_CATALOG_WITH_FAMILIE = `
   SELECT c.*, pf.name AS familie,
-         ml.alte_costuri,
          ml.pret_minim_override,
          ml.procentaj_emag,
          ml.commission_value,
@@ -230,7 +228,7 @@ function mapCatalogRowToProduct(r) {
     min_sale_price: toNumOrNull(r.min_sale_price),
     max_sale_price: toNumOrNull(r.max_sale_price),
     pret_cumparare: toNumOrNull(r.pret_cumparare),
-    alte_costuri: toNumOrNull(r.alte_costuri),
+    transport_override: toNumOrNull(r.transport_override),
     pret_minim_override: toNumOrNull(r.pret_minim_override),
     procentaj_emag: toNumOrNull(r.procentaj_emag),
     commission_value: toNumOrNull(r.commission_value),
@@ -286,7 +284,7 @@ const LISTING_EDITABLE = {
   min_sale_price: toNumOrNull,
   max_sale_price: toNumOrNull,
   general_stock: toNumOrNull,
-  alte_costuri: toNumOrNull,
+  transport_override: toNumOrNull,
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
@@ -299,7 +297,7 @@ const LISTING_EDITABLE = {
   vat_id: toNumOrNull,
 };
 
-/** Map API field names → catalog columns (fără oferta/costuri — pe listings). */
+/** Map API field names → catalog columns (comisionul si pret_minim raman pe listings). */
 const LISTING_TO_CATALOG_COL = {
   name: "nume",
   description: "descriere",
@@ -308,6 +306,7 @@ const LISTING_TO_CATALOG_COL = {
   min_sale_price: "min_sale_price",
   max_sale_price: "max_sale_price",
   general_stock: "general_stock",
+  transport_override: "transport_override",
 };
 
 async function setListingPretCumparare(channel, externalId, value) {
@@ -442,6 +441,7 @@ const PRODUCT_EDITABLE = {
   max_sale_price: toNumOrNull,
   general_stock: toNumOrNull,
   currency: toTextOrNull,
+  transport_override: toNumOrNull,
 };
 
 const PRODUCT_LISTING_EDITABLE = {
@@ -698,7 +698,7 @@ async function getListingCosts(channel, externalId) {
   const row = await getListing(channel, externalId);
   if (!row) return null;
   return {
-    alte_costuri: row.alte_costuri ?? null,
+    transport_override: row.transport_override ?? null,
     procentaj_emag: row.procentaj_emag ?? null,
     commission_value: row.commission_value ?? null,
     commission_fetched_at: row.commission_fetched_at ?? null,

@@ -29,19 +29,19 @@ const TABLES = [
   "app_logs",
 ];
 
-/** Override-uri SQLite vechi → coloane pe marketplace_listings. */
+/** Override-uri SQLite vechi → coloane pe catalog_products / marketplace_listings. */
 async function mergeLegacyOverrides(sqlite) {
   if (tableExists(sqlite, "product_alte_costuri")) {
     const rows = sqlite.prepare("SELECT offer_id, alte_costuri FROM product_alte_costuri").all();
     for (const r of rows) {
       await query(
-        `UPDATE marketplace_listings
-         SET alte_costuri = COALESCE(alte_costuri, $1)
-         WHERE channel = 'emag' AND external_id = $2`,
+        `UPDATE catalog_products
+         SET transport_override = COALESCE(transport_override, $1)
+         WHERE emag_offer_id = $2`,
         [r.alte_costuri, String(r.offer_id)]
       );
     }
-    console.log(`  merge product_alte_costuri → listings: ${rows.length}`);
+    console.log(`  merge product_alte_costuri → catalog: ${rows.length}`);
   }
   if (tableExists(sqlite, "product_pret_minim")) {
     const rows = sqlite.prepare("SELECT offer_id, pret_minim FROM product_pret_minim").all();

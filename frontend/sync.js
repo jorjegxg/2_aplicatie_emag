@@ -467,15 +467,16 @@ function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
   return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
 }
 
-/** pret_transport (vechi) → alte_costuri; evita drop din sync-column-order. */
+/** pret_transport / alte_costuri (vechi) → transport_override; evita drop din sync-column-order. */
 function migrateLegacyCostCols(cols) {
-  const OLD = new Set(["pret_transport", "procentaj_alte_costuri"]);
+  const OLD = new Set(["procentaj_alte_costuri"]);
+  const RENAMED = new Set(["pret_transport", "alte_costuri"]);
   const out = [];
   let insertedAlte = false;
   for (const c of cols) {
-    if (c === "pret_transport") {
-      if (!insertedAlte && !out.includes("alte_costuri")) {
-        out.push("alte_costuri");
+    if (RENAMED.has(c)) {
+      if (!insertedAlte && !out.includes("transport_override")) {
+        out.push("transport_override");
         insertedAlte = true;
       }
       continue;
@@ -522,8 +523,8 @@ function globalPct(key) {
 function rowCosts(product) {
   const pretCumparare = product.pret_cumparare ?? "";
   const alte =
-    product.alte_costuri != null && Number.isFinite(Number(product.alte_costuri))
-      ? Number(product.alte_costuri)
+    product.transport_override != null && Number.isFinite(Number(product.transport_override))
+      ? Number(product.transport_override)
       : alteFromProcentaj(globalPct("procentaj_alte_costuri") ?? "", pretCumparare);
   return { pretCumparare, alte };
 }
@@ -655,7 +656,7 @@ function pricingRowHtml(product, index) {
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
       "pret_cumparare"
     )}>${formatPrice(pretCumparare, currency)}</td>`,
-    alte_costuri: `<td data-col="alte_costuri"${cellClass("alte_costuri")}>${formatPrice(
+    transport_override: `<td data-col="transport_override"${cellClass("transport_override")}>${formatPrice(
       alte,
       currency
     )}</td>`,
@@ -1188,7 +1189,7 @@ const NUMERIC_PRICING_COLS = new Set([
   "id",
   "id_familie",
   "pret_cumparare",
-  "alte_costuri",
+  "transport_override",
   "pret_emag",
   "prp",
   "pret_minim",
