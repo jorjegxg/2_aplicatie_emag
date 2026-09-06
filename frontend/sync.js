@@ -864,17 +864,192 @@ pricingBody.addEventListener("click", (e) => {
   }
 
   const resetBtn = e.target.closest("button.btn-reset-emag-pct");
-  if (!resetBtn) return;
-  const tr = resetBtn.closest("tr[data-offer-id]");
-  const product = findProduct(tr?.dataset.offerId);
-  if (!product) return;
-  const input = tr.querySelector("input.input-procentaj-emag");
-  if (input) input.value = String(DEFAULT_PROcentaj_EMAG);
-  product.procentaj_emag = null;
-  syncCommissionCell(tr);
-  refreshPricingRow(tr, product);
-  schedulePersistListing(product.id, { procentaj_emag: null }, "procentaj-emag");
+  if (resetBtn) {
+    const tr = resetBtn.closest("tr[data-offer-id]");
+    const product = findProduct(tr?.dataset.offerId);
+    if (!product) return;
+    const input = tr.querySelector("input.input-procentaj-emag");
+    if (input) input.value = String(DEFAULT_PROcentaj_EMAG);
+    product.procentaj_emag = null;
+    syncCommissionCell(tr);
+    refreshPricingRow(tr, product);
+    schedulePersistListing(product.id, { procentaj_emag: null }, "procentaj-emag");
+    return;
+  }
+
+  const td = e.target.closest("td[data-col]");
+  if (td && !e.target.closest("button, input, a, label")) {
+    cellTextTip?.toggleFromCell(td);
+  }
 });
+
+/* ---------- tip text complet pe celule trunchiate ---------- */
+
+function isCellOverflowing(td) {
+  if (!td) return false;
+  return td.scrollWidth > td.clientWidth + 1 || td.scrollHeight > td.clientHeight + 1;
+}
+
+function cellFullText(td) {
+  if (!td) return "";
+  const fromTitle = (td.getAttribute("title") || td.dataset.fullText || "").trim();
+  if (fromTitle) return fromTitle;
+  return (td.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function cellShownText(td) {
+  return (td?.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function shouldShowCellTip(td) {
+  if (!td) return false;
+  if (isCellOverflowing(td)) return true;
+  const full = cellFullText(td);
+  if (!full || full === "—") return false;
+  return full !== cellShownText(td);
+}
+
+function createCellTextTip() {
+  let tip = document.getElementById("cell-text-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "cell-text-tip";
+    tip.className = "cell-text-tip";
+    tip.hidden = true;
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+  }
+
+  let pinned = false;
+  let activeTd = null;
+  let hoverTimer = null;
+
+  function positionTip(anchor) {
+    const rect = anchor.getBoundingClientRect();
+    tip.hidden = false;
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+    if (left < 8) left = 8;
+    if (top + tipH > window.innerHeight - 8) top = rect.top - tipH - 6;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function show(td, { pin = false } = {}) {
+    if (!shouldShowCellTip(td)) return false;
+    const text = cellFullText(td);
+    if (!text || text === "—") return false;
+
+    tip.textContent = text;
+    activeTd = td;
+    pinned = pin;
+    tip.classList.toggle("is-pinned", pin);
+    positionTip(td);
+    return true;
+  }
+
+  function hide({ force = false } = {}) {
+    if (pinned && !force) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+    tip.hidden = true;
+    tip.textContent = "";
+    tip.classList.remove("is-pinned");
+    pinned = false;
+    activeTd = null;
+  }
+
+  function stashNativeTitle(td) {
+    if (td.title) {
+      td.dataset.fullText = td.title;
+      td.removeAttribute("title");
+    }
+  }
+
+  function restoreNativeTitle(td) {
+    if (td?.dataset.fullText && !td.getAttribute("title")) {
+      td.setAttribute("title", td.dataset.fullText);
+    }
+  }
+
+  function markOverflow(td) {
+    if (!td || !td.matches("td[data-col]")) return;
+    td.classList.toggle("is-cell-overflow", isCellOverflowing(td));
+  }
+
+  pricingBody.addEventListener("mouseover", (e) => {
+    const td = e.target.closest("td[data-col]");
+    if (!td || td === activeTd) return;
+    if (e.target.closest("button, input, a, label")) return;
+    markOverflow(td);
+    if (!shouldShowCellTip(td)) return;
+
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      if (pinned) return;
+      stashNativeTitle(td);
+      show(td, { pin: false });
+    }, 280);
+  });
+
+  pricingBody.addEventListener("mouseout", (e) => {
+    const td = e.target.closest("td[data-col]");
+    if (!td) return;
+    const related = e.relatedTarget;
+    if (related && td.contains(related)) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+    if (!pinned) {
+      hide({ force: true });
+      restoreNativeTitle(td);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!pinned) return;
+    if (tip.contains(e.target)) return;
+    if (activeTd && activeTd.contains(e.target)) return;
+    const prev = activeTd;
+    hide({ force: true });
+    restoreNativeTitle(prev);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const prev = activeTd;
+    hide({ force: true });
+    restoreNativeTitle(prev);
+  });
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (!tip.hidden && activeTd) positionTip(activeTd);
+    },
+    true
+  );
+
+  return {
+    toggleFromCell(td) {
+      if (!td) return;
+      if (pinned && activeTd === td) {
+        hide({ force: true });
+        restoreNativeTitle(td);
+        return;
+      }
+      stashNativeTitle(td);
+      if (!show(td, { pin: true })) {
+        restoreNativeTitle(td);
+      }
+    },
+    hide,
+  };
+}
+
+let cellTextTip = null;
 
 /* ---------- filtrare + sortare ---------- */
 
@@ -1251,6 +1426,7 @@ columns.buildMenu();
 columns.applyVisibility();
 initCompactToggle();
 initFullscreenToggle();
+cellTextTip = createCellTextTip();
 
 refreshChannelConfigured().then(async () => {
   if (channelConfiguredMap[currentChannel] === false) {

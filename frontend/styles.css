@@ -2485,4 +2485,36 @@ html.auth-pending body {
   justify-content: center;
 }
 
+/* Tooltip text complet pentru celule trunchiate (click / hover) */
+.cell-text-tip {
+  position: fixed;
+  z-index: 1200;
+  max-width: min(28rem, calc(100vw - 1rem));
+  max-height: min(50vh, 18rem);
+  overflow: auto;
+  padding: 0.55rem 0.75rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px var(--shadow-2);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.cell-text-tip.is-pinned {
+  pointer-events: auto;
+}
+
+.cell-text-tip[hidden] {
+  display: none;
+}
+
+#pricing-table td.is-cell-overflow {
+  cursor: zoom-in;
+}
+
 
