@@ -2,7 +2,7 @@
  * Stratul multi-canal peste Postgres.
  *
  * catalog_products      — SoT local eMAG (preturi, identitate, pret_cumparare); nu se umple din pull
- * marketplace_listings  — eMAG: doar override-uri locale (costuri, pret_minim); alte canale SoT
+ * marketplace_listings  — override-uri locale eMAG (costuri, comision, pret_minim)
  * channel-remote-cache  — oglinda remote a canalului (TTL memorie; pull + push status/vat/handling)
  */
 const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
@@ -23,35 +23,12 @@ function normalizeChannel(channel) {
   return CHANNELS.includes(c) ? c : "emag";
 }
 
-function isEmagSot(channel) {
-  return normalizeChannel(channel) === "emag";
+/** Persistenta e doar pe eMAG (catalog SoT + override-uri locale). */
+function assertEmagSot(channel) {
+  const ch = normalizeChannel(channel);
+  if (ch !== "emag") throw new Error(`Canal nesuportat: ${ch}`);
+  return ch;
 }
-
-/** Coloane pe catalog — legacy; eMAG pull nu mai scrie pe catalog. */
-const LOCAL_SEED_FIELDS = [
-  "name",
-  "description",
-  "sale_price",
-  "recommended_price",
-  "min_sale_price",
-  "max_sale_price",
-  "general_stock",
-  "stock_json",
-];
-
-const CHANNEL_OWNED_FIELDS = [
-  "part_number",
-  "part_number_key",
-  "brand",
-  "ean",
-  "id_familie",
-  "characteristics",
-  "estimated_stock",
-  "handling_time_json",
-  "status",
-  "vat_id",
-  "currency",
-];
 
 function toNumOrNull(v) {
   if (v == null || v === "") return null;
@@ -236,122 +213,6 @@ function remoteToSnapshotShape(remote, fetchedAt) {
   };
 }
 
-async function upsertListingFromRemoteLegacy(channel, remote) {
-  const ch = normalizeChannel(channel);
-  const ext = String(remote.id);
-  const now = new Date().toISOString();
-
-  const { rows: existingRows } = await query(
-    "SELECT id, product_id FROM marketplace_listings WHERE channel = $1 AND external_id = $2",
-    [ch, ext]
-  );
-  const existing = existingRows[0];
-
-  const channelValues = {
-    part_number: toTextOrNull(remote.part_number),
-    part_number_key: toTextOrNull(remote.part_number_key),
-    brand: toTextOrNull(remote.brand),
-    ean: toTextOrNull(remote.ean),
-    id_familie: toNumOrNull(remote.id_familie),
-    characteristics: toTextOrNull(remote.characteristics),
-    estimated_stock: toNumOrNull(remote.estimated_stock),
-    handling_time_json: jsonOrNull(remote.handling_time),
-    status: toNumOrNull(remote.status),
-    vat_id: toNumOrNull(remote.vat_id),
-    currency: toTextOrNull(remote.currency),
-  };
-
-  await ensureProductFamily(channelValues.id_familie, remote.familie);
-
-  if (!existing) {
-    await query(
-      `INSERT INTO marketplace_listings
-         (channel, external_id, product_id, part_number, part_number_key, name, description,
-          brand, ean, id_familie, characteristics,
-          sale_price, recommended_price, min_sale_price, max_sale_price,
-          general_stock, estimated_stock, stock_json, handling_time_json,
-          status, vat_id, currency, created_at, updated_at)
-       VALUES
-         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
-      [
-        ch,
-        ext,
-        await findCatalogProductId(remote),
-        channelValues.part_number,
-        channelValues.part_number_key,
-        toTextOrNull(remote.name),
-        toTextOrNull(remote.description),
-        channelValues.brand,
-        channelValues.ean,
-        channelValues.id_familie,
-        channelValues.characteristics,
-        toNumOrNull(remote.sale_price),
-        toNumOrNull(remote.recommended_price),
-        toNumOrNull(remote.min_sale_price),
-        toNumOrNull(remote.max_sale_price),
-        toNumOrNull(remote.general_stock),
-        channelValues.estimated_stock,
-        jsonOrNull(remote.stock),
-        channelValues.handling_time_json,
-        channelValues.status,
-        channelValues.vat_id,
-        channelValues.currency,
-        now,
-        now,
-      ]
-    );
-    return { created: true };
-  }
-
-  const seedValues = {
-    name: toTextOrNull(remote.name),
-    description: toTextOrNull(remote.description),
-    sale_price: toNumOrNull(remote.sale_price),
-    recommended_price: toNumOrNull(remote.recommended_price),
-    min_sale_price: toNumOrNull(remote.min_sale_price),
-    max_sale_price: toNumOrNull(remote.max_sale_price),
-    general_stock: toNumOrNull(remote.general_stock),
-    stock_json: jsonOrNull(remote.stock),
-  };
-
-  const params = [];
-  const sets = [
-    ...CHANNEL_OWNED_FIELDS.map((f) => {
-      params.push(channelValues[f]);
-      return `${f} = $${params.length}`;
-    }),
-    ...LOCAL_SEED_FIELDS.map((f) => {
-      params.push(seedValues[f]);
-      return `${f} = COALESCE(${f}, $${params.length})`;
-    }),
-  ];
-  params.push(now, ch, ext);
-  await query(
-    `UPDATE marketplace_listings SET ${sets.join(", ")}, updated_at = $${params.length - 2}
-     WHERE channel = $${params.length - 1} AND external_id = $${params.length}`,
-    params
-  );
-
-  if (existing.product_id == null) {
-    const productId = await findCatalogProductId(remote);
-    if (productId != null) {
-      await query("UPDATE marketplace_listings SET product_id = $1 WHERE id = $2", [
-        productId,
-        existing.id,
-      ]);
-    }
-  }
-  return { created: false };
-}
-
-async function upsertListingFromRemote(channel, remote) {
-  await ensureSchema();
-  // eMAG: pull scrie doar în channel-remote-cache; catalogul rămâne SoT local.
-  if (isEmagSot(channel)) return { created: false };
-  return upsertListingFromRemoteLegacy(channel, remote);
-}
-
 function mapCatalogRowToProduct(r) {
   return {
     id: Number(r.emag_offer_id) || r.emag_offer_id,
@@ -390,71 +251,16 @@ function mapCatalogRowToProduct(r) {
   };
 }
 
-function mapListingRowToProduct(r) {
-  return {
-    id: Number(r.external_id) || r.external_id,
-    channel: r.channel,
-    product_id: r.product_id,
-    name: r.name || "",
-    description: r.description || "",
-    brand: r.brand || "",
-    part_number: r.part_number || "",
-    part_number_key: r.part_number_key || "",
-    id_familie: r.id_familie ?? null,
-    familie: r.familie || "",
-    sale_price: toNumOrNull(r.sale_price),
-    recommended_price: toNumOrNull(r.recommended_price),
-    min_sale_price: toNumOrNull(r.min_sale_price),
-    max_sale_price: toNumOrNull(r.max_sale_price),
-    pret_cumparare: toNumOrNull(r.catalog_pret_cumparare),
-    alte_costuri: toNumOrNull(r.alte_costuri),
-    pret_minim_override: toNumOrNull(r.pret_minim_override),
-    procentaj_emag: toNumOrNull(r.procentaj_emag),
-    commission_value: toNumOrNull(r.commission_value),
-    commission_fetched_at:
-      r.commission_fetched_at instanceof Date
-        ? r.commission_fetched_at.toISOString()
-        : r.commission_fetched_at ?? null,
-    currency: r.currency || "RON",
-    general_stock: toNumOrNull(r.general_stock),
-    estimated_stock: toNumOrNull(r.estimated_stock),
-    status: r.status,
-    vat_id: r.vat_id ?? null,
-    handling_time: parseJson(r.handling_time_json, [{ warehouse_id: 1, value: 0 }]),
-    stock:
-      parseJson(r.stock_json, null) || [
-        { warehouse_id: 1, value: Number(r.general_stock) || 0 },
-      ],
-    ean: r.ean || "",
-    characteristics: r.characteristics || "",
-    images: [],
-  };
-}
-
 async function getCatalogRows(channel) {
   await ensureSchema();
-  const ch = normalizeChannel(channel);
+  assertEmagSot(channel);
 
-  let products;
-  if (isEmagSot(ch)) {
-    const { rows } = await query(
-      `${SQL_CATALOG_WITH_FAMILIE}
-       WHERE c.emag_offer_id IS NOT NULL
-       ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
-    );
-    products = rows.map(mapCatalogRowToProduct);
-  } else {
-    const { rows } = await query(
-      `SELECT l.*, pf.name AS familie, c.pret_cumparare AS catalog_pret_cumparare, c.cod_produs AS catalog_cod
-       FROM marketplace_listings l
-       LEFT JOIN product_families pf ON pf.id = l.id_familie
-       LEFT JOIN catalog_products c ON c.id = l.product_id
-       WHERE l.channel = $1
-       ORDER BY CAST(NULLIF(l.external_id, '') AS BIGINT) ASC NULLS LAST`,
-      [ch]
-    );
-    products = rows.map(mapListingRowToProduct);
-  }
+  const { rows } = await query(
+    `${SQL_CATALOG_WITH_FAMILIE}
+     WHERE c.emag_offer_id IS NOT NULL
+     ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
+  );
+  const products = rows.map(mapCatalogRowToProduct);
 
   const lastChanges = await getLastPriceChangeBulk(products.map((p) => p.id));
   for (const p of products) {
@@ -506,47 +312,17 @@ const LISTING_TO_CATALOG_COL = {
 
 async function setListingPretCumparare(channel, externalId, value) {
   await ensureSchema();
+  assertEmagSot(channel);
   const price = toNumOrNull(value);
   const now = new Date().toISOString();
 
-  if (isEmagSot(channel)) {
-    const listing = await getListing(channel, externalId);
-    if (!listing) throw new Error("Listing inexistent");
-    await query(
-      "UPDATE catalog_products SET pret_cumparare = $1, updated_at = $2 WHERE id = $3",
-      [price, now, listing.product_id]
-    );
-    return listing.product_id;
-  }
-
   const listing = await getListing(channel, externalId);
   if (!listing) throw new Error("Listing inexistent");
-
-  let productId = listing.product_id;
-  if (productId == null) {
-    productId = await findCatalogProductId(listing);
-    if (productId == null) {
-      const cod = toTextOrNull(listing.part_number);
-      const nume = toTextOrNull(listing.name) || cod;
-      const { rows } = await query(
-        `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id`,
-        [cod, nume, price, now, now]
-      );
-      productId = Number(rows[0].id);
-    }
-    await query(
-      "UPDATE marketplace_listings SET product_id = $1, updated_at = $2 WHERE id = $3",
-      [productId, now, listing.id]
-    );
-  }
-
   await query(
     "UPDATE catalog_products SET pret_cumparare = $1, updated_at = $2 WHERE id = $3",
-    [price, now, productId]
+    [price, now, listing.product_id]
   );
-  return productId;
+  return listing.product_id;
 }
 
 async function updateListingEmag(externalId, fields) {
@@ -618,107 +394,35 @@ async function updateListingEmag(externalId, fields) {
   return getListing("emag", ext);
 }
 
-async function updateListingLegacy(channel, externalId, fields) {
-  const ch = normalizeChannel(channel);
-  const ext = String(externalId ?? "").trim();
-  if (!ext) throw new Error("external_id invalid");
-
-  const now = new Date().toISOString();
-  await query(
-    `INSERT INTO marketplace_listings (channel, external_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (channel, external_id) DO NOTHING`,
-    [ch, ext, now, now]
-  );
-
-  if (Object.prototype.hasOwnProperty.call(fields, "pret_cumparare")) {
-    await setListingPretCumparare(ch, ext, fields.pret_cumparare);
-  }
-
-  const payload = {};
-  for (const [key, coerce] of Object.entries(LISTING_EDITABLE)) {
-    if (Object.prototype.hasOwnProperty.call(fields, key)) {
-      payload[key] = coerce(fields[key]);
-    }
-  }
-  if (Array.isArray(fields.stock)) {
-    payload.stock_json = jsonOrNull(fields.stock);
-    payload.general_stock = fields.stock.reduce(
-      (sum, s) => sum + (Number(s?.value) || 0),
-      0
-    );
-  }
-  if (Array.isArray(fields.handling_time)) {
-    payload.handling_time_json = jsonOrNull(fields.handling_time);
-  }
-
-  const keys = Object.keys(payload);
-  if (keys.length === 0) return getListing(ch, ext);
-
-  const params = [];
-  const sets = keys.map((k) => {
-    params.push(payload[k]);
-    return `${k} = $${params.length}`;
-  });
-  params.push(now, ch, ext);
-  await query(
-    `UPDATE marketplace_listings SET ${sets.join(", ")}, updated_at = $${params.length - 2}
-     WHERE channel = $${params.length - 1} AND external_id = $${params.length}`,
-    params
-  );
-
-  return getListing(ch, ext);
-}
-
 async function updateListing(channel, externalId, fields) {
   await ensureSchema();
-  if (isEmagSot(channel)) return updateListingEmag(externalId, fields);
-  return updateListingLegacy(channel, externalId, fields);
+  assertEmagSot(channel);
+  return updateListingEmag(externalId, fields);
 }
 
 async function getListing(channel, externalId) {
   await ensureSchema();
+  assertEmagSot(channel);
   const ext = String(externalId);
-  if (isEmagSot(channel)) {
-    const { rows } = await query(
-      `${SQL_CATALOG_WITH_FAMILIE} WHERE c.emag_offer_id = $1 LIMIT 1`,
-      [ext]
-    );
-    return catalogToListingShape(rows[0] || null);
-  }
   const { rows } = await query(
-    `SELECT l.*, pf.name AS familie
-     FROM marketplace_listings l
-     LEFT JOIN product_families pf ON pf.id = l.id_familie
-     WHERE l.channel = $1 AND l.external_id = $2`,
-    [normalizeChannel(channel), ext]
+    `${SQL_CATALOG_WITH_FAMILIE} WHERE c.emag_offer_id = $1 LIMIT 1`,
+    [ext]
   );
-  return rows[0] || null;
+  return catalogToListingShape(rows[0] || null);
 }
 
 async function getListings(channel, externalIds) {
   await ensureSchema();
-  const ch = normalizeChannel(channel);
+  assertEmagSot(channel);
   const ids = [...new Set((externalIds || []).map((v) => String(v)).filter(Boolean))];
   if (ids.length === 0) return [];
 
-  if (isEmagSot(ch)) {
-    const { rows } = await query(
-      `${SQL_CATALOG_WITH_FAMILIE}
-       WHERE c.emag_offer_id = ANY($1::text[])`,
-      [ids]
-    );
-    return rows.map(catalogToListingShape);
-  }
-
   const { rows } = await query(
-    `SELECT l.*, pf.name AS familie
-     FROM marketplace_listings l
-     LEFT JOIN product_families pf ON pf.id = l.id_familie
-     WHERE l.channel = $1 AND l.external_id = ANY($2::text[])`,
-    [ch, ids]
+    `${SQL_CATALOG_WITH_FAMILIE}
+     WHERE c.emag_offer_id = ANY($1::text[])`,
+    [ids]
   );
-  return rows;
+  return rows.map(catalogToListingShape);
 }
 
 const PRODUCT_EDITABLE = {
@@ -877,35 +581,20 @@ function valuesDiffer(type, mine, theirs) {
 
 async function getChannelDiff(channel) {
   await ensureSchema();
-  const ch = normalizeChannel(channel);
+  const ch = assertEmagSot(channel);
 
-  let locals;
-  if (isEmagSot(ch)) {
-    const { rows } = await query(
-      `SELECT c.*, pf.name AS familie,
-              c.cod_produs AS catalog_cod, c.id AS product_id,
-              c.emag_offer_id AS external_id, c.nume AS name,
-              ml.pret_minim_override
-       FROM catalog_products c
-       LEFT JOIN product_families pf ON pf.id = c.id_familie
-       LEFT JOIN marketplace_listings ml
-         ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
-       WHERE c.emag_offer_id IS NOT NULL
-       ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
-    );
-    locals = rows;
-  } else {
-    const { rows } = await query(
-      `SELECT l.*, pf.name AS familie, c.cod_produs AS catalog_cod
-       FROM marketplace_listings l
-       LEFT JOIN product_families pf ON pf.id = l.id_familie
-       LEFT JOIN catalog_products c ON c.id = l.product_id
-       WHERE l.channel = $1
-       ORDER BY CAST(NULLIF(l.external_id, '') AS BIGINT) ASC NULLS LAST`,
-      [ch]
-    );
-    locals = rows;
-  }
+  const { rows: locals } = await query(
+    `SELECT c.*, pf.name AS familie,
+            c.cod_produs AS catalog_cod, c.id AS product_id,
+            c.emag_offer_id AS external_id, c.nume AS name,
+            ml.pret_minim_override
+     FROM catalog_products c
+     LEFT JOIN product_families pf ON pf.id = c.id_familie
+     LEFT JOIN marketplace_listings ml
+       ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
+     WHERE c.emag_offer_id IS NOT NULL
+     ORDER BY CAST(NULLIF(c.emag_offer_id, '') AS BIGINT) ASC NULLS LAST`
+  );
 
   const snapByExt = new Map();
   let cacheFetchedAt = null;
@@ -969,21 +658,13 @@ async function getChannelDiff(channel) {
     fetched_at: s.fetched_at,
   }));
 
-  const unlinked = isEmagSot(ch)
-    ? locals
-        .filter((l) => !l.cod_produs && !l.catalog_cod)
-        .map((l) => ({
-          external_id: l.external_id,
-          part_number: l.part_number,
-          name: l.name,
-        }))
-    : locals
-        .filter((l) => l.product_id == null)
-        .map((l) => ({
-          external_id: l.external_id,
-          part_number: l.part_number,
-          name: l.name,
-        }));
+  const unlinked = locals
+    .filter((l) => !l.cod_produs && !l.catalog_cod)
+    .map((l) => ({
+      external_id: l.external_id,
+      part_number: l.part_number,
+      name: l.name,
+    }));
 
   const stats = await getChannelStats(ch);
   return {
@@ -999,20 +680,11 @@ async function getChannelDiff(channel) {
 
 async function getChannelStats(channel) {
   await ensureSchema();
-  const ch = normalizeChannel(channel);
-  let listingsCount = 0;
-  if (isEmagSot(ch)) {
-    const { rows } = await query(
-      "SELECT COUNT(*)::int AS n FROM catalog_products WHERE emag_offer_id IS NOT NULL"
-    );
-    listingsCount = rows[0]?.n ?? 0;
-  } else {
-    const { rows } = await query(
-      "SELECT COUNT(*)::int AS n FROM marketplace_listings WHERE channel = $1",
-      [ch]
-    );
-    listingsCount = rows[0]?.n ?? 0;
-  }
+  const ch = assertEmagSot(channel);
+  const { rows } = await query(
+    "SELECT COUNT(*)::int AS n FROM catalog_products WHERE emag_offer_id IS NOT NULL"
+  );
+  const listingsCount = rows[0]?.n ?? 0;
   const meta = getCacheMeta(ch);
   return {
     channel: ch,
@@ -1061,7 +733,6 @@ module.exports = {
   setChannelRemotes,
   getChannelRemotes,
   clearChannelCache,
-  upsertListingFromRemote,
   getCatalogRows,
   updateListing,
   getListing,

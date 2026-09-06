@@ -1,16 +1,21 @@
 /**
  * Adaptor canal Trendyol — schelet. Nu face inca apeluri HTTP reale.
  *
+ * Persistenta locala e doar pe eMAG (catalog_products + override-uri pe
+ * marketplace_listings). Nu exista inca stocare pentru ofertele Trendyol, deci
+ * apelurile de listings/diff pe acest canal raspund "Canal nesuportat"; maparea
+ * de mai jos e doar pentru viitorul model de date.
+ *
  * Mapare planificata (Trendyol Marketplace API, /sapigw/suppliers/{id}/products):
- *   barcode        -> external_id      (ID-ul ofertei la Trendyol)
- *   stockCode      -> part_number      (SKU-ul meu; se leaga de catalog_products.cod_produs)
- *   productMainId  -> part_number_key  (gruparea variantelor)
- *   title          -> name
- *   description    -> description
- *   salePrice      -> sale_price
- *   listPrice      -> recommended_price
- *   quantity       -> general_stock / stock[0].value
- *   vatRate        -> vat_id
+ *   barcode        -> id oferta
+ *   stockCode      -> SKU (se leaga de catalog_products.cod_produs)
+ *   productMainId  -> gruparea variantelor
+ *   title          -> nume
+ *   description    -> descriere
+ *   salePrice      -> pret vanzare
+ *   listPrice      -> pret recomandat
+ *   quantity       -> stoc
+ *   vatRate        -> TVA
  *   brand          -> brand
  *   approved       -> status (1 = activ)
  * Update pret/stoc: POST /sapigw/suppliers/{id}/products/price-and-inventory

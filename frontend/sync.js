@@ -289,9 +289,7 @@ async function pullFromChannel() {
       return;
     }
     setStatus(
-      data.cache_only
-        ? `Preluate ${data.count} oferte în cache (comparație) — catalogul local neschimbat.`
-        : `Preluate ${data.count} oferte (${data.created} noi, ${data.updated} actualizate).`,
+      `Preluate ${data.count} oferte în cache (comparație) — catalogul local neschimbat.`,
       "ok"
     );
     await Promise.all([loadDiff(), loadPricing()]);

@@ -14,7 +14,6 @@ const {
   normalizeChannel,
   setChannelRemotes,
   clearChannelCache,
-  upsertListingFromRemote,
   getCatalogRows,
   updateListing,
   getListings,
@@ -500,16 +499,13 @@ app.get("/api/sync/diff", async (req, res) => {
   }
 });
 
-/** Trage oferte: oglinda remote merge mereu in cache; canalele non-eMAG fac si upsert listings. */
+/** Trage oferte: oglinda remote merge in cache; catalogul local ramane neatins. */
 app.post("/api/sync/pull", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
     const channel = getChannel(channelName);
-    const emagCacheOnly = channelName === "emag";
 
     let page = 1;
-    let created = 0;
-    let updated = 0;
     let total = 0;
     let authUsed = null;
     const remotes = [];
@@ -521,11 +517,6 @@ app.post("/api/sync/pull", async (req, res) => {
 
       for (const remote of listings) {
         remotes.push(remote);
-        if (!emagCacheOnly) {
-          const { created: isNew } = await upsertListingFromRemote(channelName, remote);
-          if (isNew) created += 1;
-          else updated += 1;
-        }
         try {
           await recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
         } catch (histErr) {
@@ -542,17 +533,13 @@ app.post("/api/sync/pull", async (req, res) => {
 
     const stats = await getChannelStats(channelName);
     console.log(
-      emagCacheOnly
-        ? `[sync-pull] ${channelName}: ${total} oferte în cache (fără scriere catalog)`
-        : `[sync-pull] ${channelName}: ${total} oferte (${created} noi, ${updated} actualizate)`
+      `[sync-pull] ${channelName}: ${total} oferte în cache (fără scriere catalog)`
     );
     return res.json({
       ok: true,
       channel: channelName,
       count: total,
-      created,
-      updated,
-      cache_only: emagCacheOnly,
+      cache_only: true,
       pages: page,
       authUsed,
       last_sync: stats.last_sync,
@@ -564,13 +551,13 @@ app.post("/api/sync/pull", async (req, res) => {
   }
 });
 
-/** Trimite catre canal: eMAG = catalog SoT + status/vat/handling din cache; alte canale = DB listings. */
+/** Trimite catre canal: catalog SoT + status/vat/handling din oglinda remote. */
 app.post("/api/products/sync-prices", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
     const channel = getChannel(channelName);
 
-    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din DB (catalog / listings).
+    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din catalog.
     const includeContent = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
     const ids = rawOffers
@@ -585,15 +572,12 @@ app.post("/api/products/sync-prices", async (req, res) => {
     const listings = await getListings(channelName, ids);
     if (listings.length === 0) {
       return res.status(404).json({
-        error:
-          channelName === "emag"
-            ? "Ofertele nu există în catalog — leagă emag_offer_id pe produs"
-            : "Ofertele nu există în DB — sincronizează cu canalul",
+        error: "Ofertele nu există în catalog — leagă emag_offer_id pe produs",
       });
     }
 
-    const emagCache = channelName === "emag" ? getChannelRemotes("emag") : null;
-    if (channelName === "emag" && !emagCache) {
+    const emagCache = getChannelRemotes("emag");
+    if (!emagCache) {
       return res.status(400).json({
         error: "Lipsește oglinda eMAG din memorie — preia întâi ofertele de la marketplace",
       });
@@ -606,27 +590,9 @@ app.post("/api/products/sync-prices", async (req, res) => {
           ? Number(l.pret_minim_override)
           : l.min_sale_price;
 
-      if (channelName === "emag") {
-        const remote = emagCache.byId.get(String(l.external_id));
-        const merged = channel.mergeLocalWithRemoteCache(
-          {
-            id: l.external_id,
-            name: l.name,
-            description: l.description,
-            sale_price: l.sale_price,
-            recommended_price: l.recommended_price,
-            min_sale_price: effectiveMin,
-            max_sale_price: l.max_sale_price,
-            general_stock: l.general_stock,
-          },
-          remote
-        );
-        offers.push(channel.buildPushPayload(merged, { includeContent }));
-        continue;
-      }
-
-      offers.push(
-        channel.buildPushPayload({
+      const remote = emagCache.byId.get(String(l.external_id));
+      const merged = channel.mergeLocalWithRemoteCache(
+        {
           id: l.external_id,
           name: l.name,
           description: l.description,
@@ -635,22 +601,10 @@ app.post("/api/products/sync-prices", async (req, res) => {
           min_sale_price: effectiveMin,
           max_sale_price: l.max_sale_price,
           general_stock: l.general_stock,
-          stock:
-            l.stock_json == null
-              ? null
-              : typeof l.stock_json === "object"
-                ? l.stock_json
-                : JSON.parse(l.stock_json),
-          handling_time:
-            l.handling_time_json == null
-              ? null
-              : typeof l.handling_time_json === "object"
-                ? l.handling_time_json
-                : JSON.parse(l.handling_time_json),
-          status: l.status,
-          vat_id: l.vat_id,
-        }, { includeContent })
+        },
+        remote
       );
+      offers.push(channel.buildPushPayload(merged, { includeContent }));
     }
 
     const result = await channel.pushListings(offers);
