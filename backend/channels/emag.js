@@ -134,10 +134,18 @@ async function productOfferSave(auth, offers) {
     JSON.stringify(
       offers.map((o) => ({
         id: o.id,
+        has_name: o.name != null && o.name !== "",
         name: o.name,
+        description_len:
+          o.description != null && o.description !== ""
+            ? String(o.description).length
+            : 0,
         sale_price: o.sale_price,
+        has_recommended_price: o.recommended_price != null,
         recommended_price: o.recommended_price,
+        has_min_sale_price: o.min_sale_price != null,
         min_sale_price: o.min_sale_price,
+        has_max_sale_price: o.max_sale_price != null,
         max_sale_price: o.max_sale_price,
         status: o.status,
         vat_id: o.vat_id,
@@ -292,6 +300,9 @@ async function fetchListings({ page = 1 } = {}) {
   };
 }
 
+/** Loturi mici la save — batch-uri mari (~50+) au dat HTTP 504. */
+const PUSH_CHUNK_SIZE = 15;
+
 /** Trimite ofertele catre eMAG. -> { count, authUsed, messages } */
 async function pushListings(offers) {
   if (!Array.isArray(offers) || offers.length === 0) {
@@ -299,43 +310,76 @@ async function pushListings(offers) {
   }
   console.log(`[sync-prices] start — ${offers.length} oferte de updatat pe eMAG`);
 
-  let result = null;
-  const { label: authUsed } = await resolveAuth("sync-prices", async (auth) => {
-    const { response, json, text } = await productOfferSave(auth, offers);
-    if (response.status === 401 || response.status === 403) {
-      return { status: response.status, ok: false, detail: text };
+  const chunks = [];
+  for (let i = 0; i < offers.length; i += PUSH_CHUNK_SIZE) {
+    chunks.push(offers.slice(i, i + PUSH_CHUNK_SIZE));
+  }
+
+  let authUsed = null;
+  const allMessages = [];
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    console.log(
+      `[sync-prices] lot ${ci + 1}/${chunks.length} — ${chunk.length} oferte`
+    );
+    let result = null;
+    const { label } = await resolveAuth("sync-prices", async (auth) => {
+      const { response, json, text } = await productOfferSave(auth, chunk);
+      if (response.status === 401 || response.status === 403) {
+        return { status: response.status, ok: false, detail: text };
+      }
+      if (!json) {
+        return {
+          status: response.status,
+          ok: false,
+          detail: `Răspuns invalid de la eMAG: ${text.slice(0, 300)}`,
+        };
+      }
+      if (json.isError) {
+        return {
+          status: 502,
+          ok: false,
+          detail: "eMAG a returnat eroare la salvare prețuri",
+          messages: json.messages || [],
+        };
+      }
+      result = json;
+      return { status: response.status, ok: true };
+    });
+    authUsed = label;
+    if (Array.isArray(result?.messages) && result.messages.length) {
+      allMessages.push(...result.messages);
     }
-    if (!json) {
-      return {
-        status: response.status,
-        ok: false,
-        detail: `Răspuns invalid de la eMAG: ${text.slice(0, 300)}`,
-      };
-    }
-    if (json.isError) {
-      return {
-        status: 502,
-        ok: false,
-        detail: "eMAG a returnat eroare la salvare prețuri",
-        messages: json.messages || [],
-      };
-    }
-    result = json;
-    return { status: response.status, ok: true };
-  });
+  }
 
   console.log(
-    `[sync-prices] OK — updatate ${offers.length} oferte pe eMAG (auth=${authUsed})`,
+    `[sync-prices] OK — updatate ${offers.length} oferte pe eMAG (auth=${authUsed}, loturi=${chunks.length})`,
     offers.map((o) => ({ id: o.id, sale_price: o.sale_price }))
   );
-  return { count: offers.length, authUsed, messages: result?.messages || [] };
+  return { count: offers.length, authUsed, messages: allMessages };
 }
 
 /**
  * Construieste payload-ul de push din valorile mele. Arunca daca lipsesc campuri.
- * includeContent = true adauga nume + descriere (declanseaza re-moderare pe eMAG).
+ * Schelet obligatoriu eMAG: id, status, vat_id, sale_price, stock, handling_time.
+ * Optionale (PRP/min/max/name/description) doar daca flag-ul corespunzator e true.
+ * Compat: includeContent = true ⇒ name + description.
  */
-function buildPushPayload(listing, { includeContent = false } = {}) {
+function buildPushPayload(
+  listing,
+  {
+    includeContent = false,
+    includeName = false,
+    includeDescription = false,
+    includeRecommendedPrice = false,
+    includeMinSalePrice = false,
+    includeMaxSalePrice = false,
+    // includeSalePrice / includeStock: informative (sale_price+stock mereu in schelet)
+    includeSalePrice: _includeSalePrice = false,
+    includeStock: _includeStock = false,
+  } = {}
+) {
   const toNum = (v) => {
     if (v == null || v === "") return null;
     const n = Number(v);
@@ -363,7 +407,14 @@ function buildPushPayload(listing, { includeContent = false } = {}) {
   if (status == null || vat_id == null) {
     throw invalid(`Oferta ${id}: lipsesc status sau vat_id — preia întâi ofertele de la eMAG`);
   }
-  if (recommended_price != null && recommended_price <= sale_price) {
+
+  const wantName = includeContent || includeName;
+  const wantDescription = includeContent || includeDescription;
+  const wantPrp = includeRecommendedPrice;
+  const wantMin = includeMinSalePrice;
+  const wantMax = includeMaxSalePrice;
+
+  if (wantPrp && recommended_price != null && recommended_price <= sale_price) {
     throw invalid(
       `Oferta ${id}: PRP (${recommended_price}) trebuie să fie mai mare decât pretul de vânzare (${sale_price})`
     );
@@ -377,17 +428,17 @@ function buildPushPayload(listing, { includeContent = false } = {}) {
     handling_time: normalizeHandlingTime(listing?.handling_time),
     stock: normalizeStock(listing?.stock, listing?.general_stock),
   };
-  if (includeContent) {
+  if (wantName) {
     const name = typeof listing?.name === "string" ? listing.name.trim() : "";
     if (name) payload.name = name;
-    if (listing?.description != null) {
-      const description = textToHtml(listing.description);
-      if (description) payload.description = description;
-    }
   }
-  if (recommended_price != null) payload.recommended_price = recommended_price;
-  if (min_sale_price != null) payload.min_sale_price = min_sale_price;
-  if (max_sale_price != null) payload.max_sale_price = max_sale_price;
+  if (wantDescription && listing?.description != null) {
+    const description = textToHtml(listing.description);
+    if (description) payload.description = description;
+  }
+  if (wantPrp && recommended_price != null) payload.recommended_price = recommended_price;
+  if (wantMin && min_sale_price != null) payload.min_sale_price = min_sale_price;
+  if (wantMax && max_sale_price != null) payload.max_sale_price = max_sale_price;
   return payload;
 }
 

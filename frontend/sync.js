@@ -609,24 +609,50 @@ function rowPctEmag(product) {
 
 /**
  * Ce s-ar trimite pe canal pentru o singura oferta, sau null daca nu difera nimic.
- * Diferentele decid doar DACA se publica randul; odata publicat se trimite tot
- * ce avem local (preturi, stoc, nume, descriere) — la fel pe rand si in bloc.
+ * Flag-urile marcheaza campurile care diferă vs oglinda eMAG; valorile vin din catalog.
  */
 function pushableOffer(offerId) {
   const row = matchedDiffRow(offerId);
   if (!row) return null;
-  const changed = (row.fields || []).filter((f) => f.differs);
-  const hasPrice = changed.some((f) => PUSH_PRICE_KEYS.has(f.key));
-  const hasContent = changed.some((f) => PUSH_CONTENT_KEYS.has(f.key));
-  if (!hasPrice && !hasContent) return null;
-  return { id: row.external_id, includeContent: true };
+  const changed = new Set((row.fields || []).filter((f) => f.differs).map((f) => f.key));
+  if (changed.size === 0) return null;
+  return {
+    id: row.external_id,
+    includeName: changed.has("name"),
+    includeDescription: changed.has("description"),
+    includeSalePrice: changed.has("sale_price"),
+    includeRecommendedPrice: changed.has("recommended_price"),
+    includeMinSalePrice: changed.has("min_sale_price"),
+    includeMaxSalePrice: changed.has("max_sale_price"),
+    includeStock: changed.has("general_stock"),
+  };
+}
+
+const PUSH_FIELD_LABELS = {
+  includeSalePrice: "preț",
+  includeRecommendedPrice: "PRP",
+  includeMinSalePrice: "preț min",
+  includeMaxSalePrice: "preț max",
+  includeStock: "stoc",
+  includeName: "nume",
+  includeDescription: "descriere",
+};
+
+/** Eticheta scurta pentru ce se publica pe o oferta (campurile care diferă). */
+function pushContentLabel(offer) {
+  if (!offer) return "";
+  const parts = [];
+  for (const [flag, label] of Object.entries(PUSH_FIELD_LABELS)) {
+    if (offer[flag]) parts.push(label);
+  }
+  return parts.length ? parts.join(" + ") : "nimic";
 }
 
 /** Butonul de publicare pe rand: activ doar cand randul chiar are ce trimite. */
 function pushCellHtml(product, cellClass) {
   const offer = pushableOffer(product.id);
   const title = offer
-    ? "Publică pe canal tot rândul: prețuri, stoc, nume și descriere"
+    ? `Publică pe canal doar acest rând: ${pushContentLabel(offer)}`
     : "Nimic de publicat — rândul nu diferă față de ultima preluare";
   return `<td data-col="push"${cellClass("push", "col-push")}><button type="button" class="btn-push-row" data-offer-id="${escapeHtml(
     product.id
@@ -1431,16 +1457,24 @@ btnClearFilters?.addEventListener("click", clearAllFilters);
 
 /* ---------- publicare pe canal ---------- */
 
-const PUSH_PRICE_KEYS = new Set([
-  "sale_price",
-  "recommended_price",
-  "min_sale_price",
-  "max_sale_price",
-  "general_stock",
-]);
-
-/** Campurile de continut: o diferenta aici e motiv de publicare (trimise oricum). */
-const PUSH_CONTENT_KEYS = new Set(["name", "description"]);
+/** Rezumat campuri pentru o lista de oferte. */
+function pushOffersContentLabel(offers) {
+  const union = {
+    includeSalePrice: false,
+    includeRecommendedPrice: false,
+    includeMinSalePrice: false,
+    includeMaxSalePrice: false,
+    includeStock: false,
+    includeName: false,
+    includeDescription: false,
+  };
+  for (const o of offers) {
+    for (const key of Object.keys(union)) {
+      if (o[key]) union[key] = true;
+    }
+  }
+  return pushContentLabel(union);
+}
 
 /** Trimite pe canal lista de oferte data si reincarca tabelul. */
 async function sendOffers(offers, { startMsg, okMsg, button }) {
@@ -1493,9 +1527,10 @@ async function pushToChannel() {
     return;
   }
 
+  const contentLabel = pushOffersContentLabel(offers);
   await sendOffers(offers, {
-    startMsg: `Se publică ${offers.length} oferte (cu nume/descriere)…`,
-    okMsg: `Trimise ${offers.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+    startMsg: `Se publică ${offers.length} oferte (${contentLabel})…`,
+    okMsg: `Trimise ${offers.length} oferte pe ${currentChannel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
   });
 }
 
@@ -1512,9 +1547,10 @@ async function pushSingleOffer(offerId, button) {
     setStatus(`Nimic de publicat pentru oferta ${offerId}.`, "ok");
     return;
   }
+  const contentLabel = pushContentLabel(offer);
   await sendOffers([offer], {
-    startMsg: `Se publică oferta ${offerId} (cu nume/descriere)…`,
-    okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+    startMsg: `Se publică oferta ${offerId} (${contentLabel})…`,
+    okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
     button,
   });
 }

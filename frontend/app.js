@@ -1034,6 +1034,24 @@ tbody.addEventListener("focusin", (e) => {
   if (descriptionInput) autosizeDescriptionTextarea(descriptionInput);
 });
 
+tbody.addEventListener("focusout", (e) => {
+  const nameInput = e.target.closest("textarea.input-name");
+  if (nameInput) {
+    const tr = nameInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    schedulePersistName(tr.dataset.offerId, nameInput.value, { immediate: true });
+    return;
+  }
+  const descriptionInput = e.target.closest("textarea.input-description");
+  if (descriptionInput) {
+    const tr = descriptionInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    schedulePersistDescription(tr.dataset.offerId, descriptionInput.value, {
+      immediate: true,
+    });
+  }
+});
+
 tbody.addEventListener("input", (e) => {
   const alteInput = e.target.closest("input.input-alte-costuri");
   if (alteInput) {
@@ -1191,12 +1209,17 @@ function schedulePersistStock(offerId, stockArr) {
   schedulePersistListing(offerId, { stock: stockArr }, "stoc");
 }
 
-function schedulePersistName(offerId, value) {
-  schedulePersistListing(offerId, { name: String(value ?? "") }, "nume");
+function schedulePersistName(offerId, value, opts) {
+  schedulePersistListing(offerId, { name: String(value ?? "") }, "nume", opts);
 }
 
-function schedulePersistDescription(offerId, value) {
-  schedulePersistListing(offerId, { description: String(value ?? "") }, "descriere");
+function schedulePersistDescription(offerId, value, opts) {
+  schedulePersistListing(
+    offerId,
+    { description: String(value ?? "") },
+    "descriere",
+    opts
+  );
 }
 
 /** Preturile derivate (PRP/min/max) se recalculeaza in UI — le salvez odata cu pretul. */

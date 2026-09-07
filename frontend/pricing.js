@@ -289,34 +289,47 @@
   /**
    * Debounce per (oferta, camp) — ultima valoare tastata castiga.
    * getChannel() e citit la momentul salvarii, nu la creare.
+   * Al 4-lea arg `{ immediate: true }` anuleaza debounce-ul (ex. blur).
    */
   function createPersister({ getChannel, onSaved, onError }) {
     const timers = new Map();
-    return function schedulePersistListing(offerId, fields, label) {
+
+    async function persistNow(id, fields, label) {
+      try {
+        await patchListing(getChannel(), id, fields);
+        if (onSaved) onSaved(id, fields);
+      } catch (err) {
+        console.error(`[${label || "listing"}] salvare eșuată:`, err.message);
+        if (global.AppLogger) {
+          global.AppLogger.log({
+            level: "error",
+            category: "listing-patch",
+            message: `Salvare eșuată pentru ${id}: ${err.message}`,
+            detail: { offerId: id, fields, stack: err.stack },
+          });
+        }
+        if (onError) onError(err);
+      }
+    }
+
+    return function schedulePersistListing(offerId, fields, label, opts) {
       const id = String(offerId ?? "");
       if (!id) return;
       const key = `${id}:${Object.keys(fields).sort().join(",")}`;
       const prev = timers.get(key);
       if (prev) clearTimeout(prev);
+      timers.delete(key);
+
+      if (opts && opts.immediate) {
+        void persistNow(id, fields, label);
+        return;
+      }
+
       timers.set(
         key,
-        setTimeout(async () => {
+        setTimeout(() => {
           timers.delete(key);
-          try {
-            await patchListing(getChannel(), id, fields);
-            if (onSaved) onSaved(id, fields);
-          } catch (err) {
-            console.error(`[${label || "listing"}] salvare eșuată:`, err.message);
-            if (global.AppLogger) {
-              global.AppLogger.log({
-                level: "error",
-                category: "listing-patch",
-                message: `Salvare eșuată pentru ${id}: ${err.message}`,
-                detail: { offerId: id, fields, stack: err.stack },
-              });
-            }
-            if (onError) onError(err);
-          }
+          void persistNow(id, fields, label);
         }, 300)
       );
     };

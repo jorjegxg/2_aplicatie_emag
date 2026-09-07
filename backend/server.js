@@ -572,19 +572,47 @@ app.post("/api/products/sync-prices", async (req, res) => {
   try {
     const channel = getChannel(channelName);
 
-    // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din catalog.
-    // `includeContent` global ori `includeContent` per oferta marcheaza ofertele
-    // pentru care se trimit si nume/descriere (eMAG le retrimite prin documentatie).
+    // Frontend-ul trimite id-urile + flag-uri per câmp care diferă; valorile = catalog.
+    // Compat: includeContent global/per-ofertă ⇒ name+description.
     const includeContentAll = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
-    const contentIds = new Set();
+    const contentFlagsById = new Map();
     const ids = [];
+
+    const emptyFlags = () => ({
+      includeName: false,
+      includeDescription: false,
+      includeSalePrice: false,
+      includeRecommendedPrice: false,
+      includeMinSalePrice: false,
+      includeMaxSalePrice: false,
+      includeStock: false,
+    });
+
     for (const o of rawOffers) {
       const isObj = o && typeof o === "object";
       const id = String((isObj ? o.id : o) ?? "").trim();
       if (!id) continue;
       ids.push(id);
-      if (includeContentAll || (isObj && o.includeContent === true)) contentIds.add(id);
+      if (!isObj) {
+        const flags = emptyFlags();
+        if (includeContentAll) {
+          flags.includeName = true;
+          flags.includeDescription = true;
+        }
+        contentFlagsById.set(id, flags);
+        continue;
+      }
+      const both = includeContentAll || o.includeContent === true;
+      contentFlagsById.set(id, {
+        includeName: both || o.includeName === true,
+        includeDescription: both || o.includeDescription === true,
+        includeSalePrice: o.includeSalePrice === true,
+        includeRecommendedPrice: o.includeRecommendedPrice === true,
+        includeMinSalePrice: o.includeMinSalePrice === true,
+        includeMaxSalePrice: o.includeMaxSalePrice === true,
+        includeStock: o.includeStock === true,
+      });
     }
 
     if (ids.length === 0) {
@@ -626,11 +654,8 @@ app.post("/api/products/sync-prices", async (req, res) => {
         },
         remote
       );
-      offers.push(
-        channel.buildPushPayload(merged, {
-          includeContent: contentIds.has(String(l.external_id)),
-        })
-      );
+      const flags = contentFlagsById.get(String(l.external_id)) || emptyFlags();
+      offers.push(channel.buildPushPayload(merged, flags));
     }
 
     const result = await channel.pushListings(offers);
