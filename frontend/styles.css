@@ -50,6 +50,10 @@
   --tint-green-soft: #f0fdf4;
   --rule-green: #16a34a;
 
+  --tint-purple: #f3e8ff;
+  --tint-purple-hover: #e9d5ff;
+  --rule-purple: #9333ea;
+
   --tint-yellow: #fef08a;
   --tint-yellow-soft: #fef9c3;
   --rule-yellow: #ca8a04;
@@ -129,6 +133,10 @@
   --tint-green-hover2: #235c37;
   --tint-green-soft: #0f2418;
   --rule-green: #2ea043;
+
+  --tint-purple: #33204a;
+  --tint-purple-hover: #452b63;
+  --rule-purple: #c084fc;
 
   --tint-yellow: #453811;
   --tint-yellow-soft: #2e260c;
@@ -462,6 +470,11 @@ thead tr:not(.filter-row) th[data-src="calc"] {
   box-shadow: inset 0 -2px 0 var(--rule-green);
 }
 
+thead tr:not(.filter-row) th[data-src="listing"] {
+  background: var(--tint-purple);
+  box-shadow: inset 0 -2px 0 var(--rule-purple);
+}
+
 thead tr:not(.filter-row) th[data-src="channel"]:hover {
   background: var(--tint-blue-hover);
 }
@@ -472,6 +485,10 @@ thead tr:not(.filter-row) th[data-src="db"]:hover {
 
 thead tr:not(.filter-row) th[data-src="calc"]:hover {
   background: var(--tint-green-hover);
+}
+
+thead tr:not(.filter-row) th[data-src="listing"]:hover {
+  background: var(--tint-purple-hover);
 }
 
 .filter-row th {
@@ -1239,6 +1256,11 @@ td.col-procentaj-profit.pct-2 {
   box-shadow: inset 3px 0 0 var(--rule-green);
 }
 
+.col-menu-item[data-src="listing"] {
+  background: var(--tint-purple);
+  box-shadow: inset 3px 0 0 var(--rule-purple);
+}
+
 .col-menu-item.is-dragging {
   opacity: 0.45;
 }
@@ -1294,6 +1316,10 @@ td.col-procentaj-profit.pct-2 {
 
 .col-menu-item[data-src="calc"]:hover {
   background: var(--tint-green-hover);
+}
+
+.col-menu-item[data-src="listing"]:hover {
+  background: var(--tint-purple-hover);
 }
 
 .col-menu input {
@@ -2012,6 +2038,18 @@ button.sync-chip.is-diff.is-active strong {
 
 .sync-table td.sync-theirs {
   border-right: 1px solid var(--border);
+}
+
+/* Coloanele din catalogul local (data-src="db"): tint discret pe celule, ca
+   diferentele (is-diff) sa ramana totusi cele mai vizibile. */
+#pricing-table tbody td.is-src-db:not(.is-diff) {
+  background: color-mix(in srgb, var(--tint-amber) 55%, transparent);
+}
+
+/* Override-uri locale pe oferta (marketplace_listings) — alta culoare decat
+   catalogul local, ca sa se distinga cele doua surse din DB. */
+#pricing-table tbody td.is-src-listing:not(.is-diff) {
+  background: color-mix(in srgb, var(--tint-purple) 55%, transparent);
 }
 
 .sync-table td.is-diff,

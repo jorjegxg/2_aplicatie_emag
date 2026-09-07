@@ -674,6 +674,15 @@ function pushCellHtml(product, cellClass) {
   )}">⬆</button></td>`;
 }
 
+/* Celulele care vin din baza locala primesc un tint, ca sa se vada dintr-o
+   privire ce e al nostru si ce e de pe canal: `db` = catalog_products,
+   `listing` = override-uri pe oferta din marketplace_listings. */
+const SRC_CELL_CLASS = { db: " is-src-db", listing: " is-src-listing" };
+
+function srcClass(col) {
+  return SRC_CELL_CLASS[columns.sources[col]] || "";
+}
+
 function pricingRowHtml(product, index) {
   const currency = product.currency || "RON";
   const { pretCumparare, alte } = rowCosts(product);
@@ -704,7 +713,7 @@ function pricingRowHtml(product, index) {
     return "";
   };
   const cellClass = (col, extra = "") =>
-    columns.cellClass(col, `${extra}${colDiff(col)}`.trim());
+    columns.cellClass(col, `${extra}${colDiff(col)}${srcClass(col)}`.trim());
 
   // Fara produs local nu exista unde salva comisionul → doar afisare.
   const commissionCell = product.has_local === false
