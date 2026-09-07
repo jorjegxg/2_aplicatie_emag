@@ -599,6 +599,35 @@ function rowPctEmag(product) {
     : DEFAULT_PROcentaj_EMAG;
 }
 
+/**
+ * Ce s-ar trimite pe canal pentru o singura oferta, sau null daca nu difera nimic.
+ * Aceleasi reguli ca la publicarea in bloc.
+ */
+function pushableOffer(offerId) {
+  const row = matchedDiffRow(offerId);
+  if (!row) return null;
+  const changed = (row.fields || []).filter((f) => f.differs);
+  const hasPrice = changed.some((f) => PUSH_PRICE_KEYS.has(f.key));
+  const hasContent = changed.some((f) => PUSH_CONTENT_KEYS.has(f.key));
+  if (!hasPrice && !hasContent) return null;
+  return { id: row.external_id, includeContent: hasContent };
+}
+
+/** Butonul de publicare pe rand: activ doar cand randul chiar are ce trimite. */
+function pushCellHtml(product, cellClass) {
+  const offer = pushableOffer(product.id);
+  const title = offer
+    ? offer.includeContent
+      ? "Publică pe canal prețurile/stocul și numele/descrierea acestui produs"
+      : "Publică pe canal prețurile și stocul acestui produs"
+    : "Nimic de publicat — rândul nu diferă față de ultima preluare";
+  return `<td data-col="push"${cellClass("push", "col-push")}><button type="button" class="btn-push-row" data-offer-id="${escapeHtml(
+    product.id
+  )}"${offer ? "" : " disabled"} title="${escapeHtml(title)}" aria-label="${escapeHtml(
+    title
+  )}">⬆</button></td>`;
+}
+
 function pricingRowHtml(product, index) {
   const currency = product.currency || "RON";
   const { pretCumparare, alte } = rowCosts(product);
@@ -772,6 +801,8 @@ function pricingRowHtml(product, index) {
     )}><button type="button" class="btn-history" data-offer-id="${escapeHtml(
       product.id
     )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
+
+    push: pushCellHtml(product, cellClass),
   };
 
   const rowCls = [
@@ -940,6 +971,12 @@ pricingBody.addEventListener("input", (e) => {
 });
 
 pricingBody.addEventListener("click", (e) => {
+  const pushBtn = e.target.closest("button.btn-push-row");
+  if (pushBtn) {
+    pushSingleOffer(pushBtn.dataset.offerId, pushBtn);
+    return;
+  }
+
   const historyBtn = e.target.closest("button.btn-history");
   if (historyBtn) {
     const product = findProduct(historyBtn.dataset.offerId);
@@ -1357,38 +1394,12 @@ const PUSH_PRICE_KEYS = new Set([
 /** Campurile de continut: se trimit doar pentru ofertele unde chiar difera. */
 const PUSH_CONTENT_KEYS = new Set(["name", "description"]);
 
-/** Trimite ofertele care difera fata de ultima preluare; catalogul e sursa prețurilor. */
-async function pushToChannel() {
-  if (pushing) return;
-  if (warnIfChannelUnconfigured()) return;
-  if (!currentData) {
-    setStatus("Încarcă întâi comparația.", "error");
-    return;
-  }
-  const offers = [];
-  let contentCount = 0;
-  for (const m of currentData.matched) {
-    const changed = (m.fields || []).filter((f) => f.differs);
-    const hasPrice = changed.some((f) => PUSH_PRICE_KEYS.has(f.key));
-    const hasContent = changed.some((f) => PUSH_CONTENT_KEYS.has(f.key));
-    if (!hasPrice && !hasContent) continue;
-    if (hasContent) contentCount += 1;
-    offers.push({ id: m.external_id, includeContent: hasContent });
-  }
-  if (offers.length === 0) {
-    setStatus("Nimic de publicat — nicio diferență de preț, stoc sau conținut.", "ok");
-    return;
-  }
-  const ids = offers.map((o) => o.id);
-
+/** Trimite pe canal lista de oferte data si reincarca tabelul. */
+async function sendOffers(offers, { startMsg, okMsg, button }) {
   pushing = true;
   btnPush.disabled = true;
-  setStatus(
-    contentCount > 0
-      ? `Se publică ${ids.length} oferte (din care ${contentCount} cu nume/descriere)…`
-      : `Se publică ${ids.length} oferte…`,
-    "loading"
-  );
+  if (button) button.disabled = true;
+  setStatus(startMsg, "loading");
   try {
     const res = await fetch(
       `/api/products/sync-prices?channel=${encodeURIComponent(currentChannel)}`,
@@ -1405,16 +1416,64 @@ async function pushToChannel() {
     }
     if (syncInfoBanner) syncInfoBanner.hidden = false;
     await Promise.all([loadDiff(), loadPricing()]);
-    setStatus(
-      `Trimise ${ids.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
-      "ok"
-    );
+    setStatus(okMsg, "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la publicare", "error");
   } finally {
     pushing = false;
     btnPush.disabled = false;
+    if (button && button.isConnected) button.disabled = false;
   }
+}
+
+/** Trimite ofertele care difera fata de ultima preluare; catalogul e sursa prețurilor. */
+async function pushToChannel() {
+  if (pushing) return;
+  if (warnIfChannelUnconfigured()) return;
+  if (!currentData) {
+    setStatus("Încarcă întâi comparația.", "error");
+    return;
+  }
+  const offers = [];
+  let contentCount = 0;
+  for (const m of currentData.matched) {
+    const offer = pushableOffer(m.external_id);
+    if (!offer) continue;
+    if (offer.includeContent) contentCount += 1;
+    offers.push(offer);
+  }
+  if (offers.length === 0) {
+    setStatus("Nimic de publicat — nicio diferență de preț, stoc sau conținut.", "ok");
+    return;
+  }
+
+  await sendOffers(offers, {
+    startMsg:
+      contentCount > 0
+        ? `Se publică ${offers.length} oferte (din care ${contentCount} cu nume/descriere)…`
+        : `Se publică ${offers.length} oferte…`,
+    okMsg: `Trimise ${offers.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+  });
+}
+
+/** Publică un singur rând din tabel. */
+async function pushSingleOffer(offerId, button) {
+  if (pushing) return;
+  if (warnIfChannelUnconfigured()) return;
+  if (!currentData) {
+    setStatus("Încarcă întâi comparația.", "error");
+    return;
+  }
+  const offer = pushableOffer(offerId);
+  if (!offer) {
+    setStatus(`Nimic de publicat pentru oferta ${offerId}.`, "ok");
+    return;
+  }
+  await sendOffers([offer], {
+    startMsg: `Se publică oferta ${offerId}…`,
+    okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+    button,
+  });
 }
 
 /* ---------- compactare + fullscreen ---------- */
