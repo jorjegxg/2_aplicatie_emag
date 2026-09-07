@@ -609,7 +609,8 @@ function rowPctEmag(product) {
 
 /**
  * Ce s-ar trimite pe canal pentru o singura oferta, sau null daca nu difera nimic.
- * Aceleasi reguli ca la publicarea in bloc.
+ * Diferentele decid doar DACA se publica randul; odata publicat se trimite tot
+ * ce avem local (preturi, stoc, nume, descriere) — la fel pe rand si in bloc.
  */
 function pushableOffer(offerId) {
   const row = matchedDiffRow(offerId);
@@ -618,16 +619,14 @@ function pushableOffer(offerId) {
   const hasPrice = changed.some((f) => PUSH_PRICE_KEYS.has(f.key));
   const hasContent = changed.some((f) => PUSH_CONTENT_KEYS.has(f.key));
   if (!hasPrice && !hasContent) return null;
-  return { id: row.external_id, includeContent: hasContent };
+  return { id: row.external_id, includeContent: true };
 }
 
 /** Butonul de publicare pe rand: activ doar cand randul chiar are ce trimite. */
 function pushCellHtml(product, cellClass) {
   const offer = pushableOffer(product.id);
   const title = offer
-    ? offer.includeContent
-      ? "Publică pe canal prețurile/stocul și numele/descrierea acestui produs"
-      : "Publică pe canal prețurile și stocul acestui produs"
+    ? "Publică pe canal tot rândul: prețuri, stoc, nume și descriere"
     : "Nimic de publicat — rândul nu diferă față de ultima preluare";
   return `<td data-col="push"${cellClass("push", "col-push")}><button type="button" class="btn-push-row" data-offer-id="${escapeHtml(
     product.id
@@ -1440,7 +1439,7 @@ const PUSH_PRICE_KEYS = new Set([
   "general_stock",
 ]);
 
-/** Campurile de continut: se trimit doar pentru ofertele unde chiar difera. */
+/** Campurile de continut: o diferenta aici e motiv de publicare (trimise oricum). */
 const PUSH_CONTENT_KEYS = new Set(["name", "description"]);
 
 /** Trimite pe canal lista de oferte data si reincarca tabelul. */
@@ -1484,11 +1483,9 @@ async function pushToChannel() {
     return;
   }
   const offers = [];
-  let contentCount = 0;
   for (const m of currentData.matched) {
     const offer = pushableOffer(m.external_id);
     if (!offer) continue;
-    if (offer.includeContent) contentCount += 1;
     offers.push(offer);
   }
   if (offers.length === 0) {
@@ -1497,10 +1494,7 @@ async function pushToChannel() {
   }
 
   await sendOffers(offers, {
-    startMsg:
-      contentCount > 0
-        ? `Se publică ${offers.length} oferte (din care ${contentCount} cu nume/descriere)…`
-        : `Se publică ${offers.length} oferte…`,
+    startMsg: `Se publică ${offers.length} oferte (cu nume/descriere)…`,
     okMsg: `Trimise ${offers.length} oferte pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
   });
 }
@@ -1519,7 +1513,7 @@ async function pushSingleOffer(offerId, button) {
     return;
   }
   await sendOffers([offer], {
-    startMsg: `Se publică oferta ${offerId}…`,
+    startMsg: `Se publică oferta ${offerId} (cu nume/descriere)…`,
     okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
     button,
   });
