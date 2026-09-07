@@ -573,12 +573,19 @@ app.post("/api/products/sync-prices", async (req, res) => {
     const channel = getChannel(channelName);
 
     // Frontend-ul trimite doar id-urile; valorile de adevar sunt cele din catalog.
-    const includeContent = req.body?.includeContent === true;
+    // `includeContent` global ori `includeContent` per oferta marcheaza ofertele
+    // pentru care se trimit si nume/descriere (eMAG le retrimite prin documentatie).
+    const includeContentAll = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
-    const ids = rawOffers
-      .map((o) => (o && typeof o === "object" ? o.id : o))
-      .map((v) => String(v ?? "").trim())
-      .filter(Boolean);
+    const contentIds = new Set();
+    const ids = [];
+    for (const o of rawOffers) {
+      const isObj = o && typeof o === "object";
+      const id = String((isObj ? o.id : o) ?? "").trim();
+      if (!id) continue;
+      ids.push(id);
+      if (includeContentAll || (isObj && o.includeContent === true)) contentIds.add(id);
+    }
 
     if (ids.length === 0) {
       return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
@@ -619,7 +626,11 @@ app.post("/api/products/sync-prices", async (req, res) => {
         },
         remote
       );
-      offers.push(channel.buildPushPayload(merged, { includeContent }));
+      offers.push(
+        channel.buildPushPayload(merged, {
+          includeContent: contentIds.has(String(l.external_id)),
+        })
+      );
     }
 
     const result = await channel.pushListings(offers);

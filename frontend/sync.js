@@ -381,6 +381,8 @@ const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
 
 /** Diff API key → coloană din tabelul Prețuri și marjă. */
 const DIFF_KEY_TO_COL = {
+  name: "name",
+  description: "description",
   sale_price: "pret_emag",
   recommended_price: "prp",
   min_sale_price: "pret_minim",
@@ -433,6 +435,26 @@ function diffFieldForCol(offerId, col) {
   if (!key) return null;
   const field = (row.fields || []).find((f) => f.key === key);
   return field && field.differs ? field : null;
+}
+
+/**
+ * Celula de text (nume/descriere): pe canal e valoarea principala, iar cea locala
+ * apare ca badge secundar doar cand difera.
+ */
+function textCellWithDiff(offerId, col, theirsRaw) {
+  const theirsText = theirsRaw == null || theirsRaw === "" ? "—" : String(theirsRaw);
+  const field = diffFieldForCol(offerId, col);
+  const dataVal =
+    theirsRaw != null && theirsRaw !== "" ? ` data-value="${escapeHtml(theirsRaw)}"` : "";
+  if (!field) {
+    return { html: escapeHtml(theirsText) || "—", title: titleAttr(theirsText), dataVal };
+  }
+  const mineText = field.mine == null || field.mine === "" ? "—" : String(field.mine);
+  const tip = `Marketplace: ${theirsText}\nLocal (Produse): ${mineText}`;
+  const html = `<span class="diff-mine">${escapeHtml(theirsText)}</span><span class="diff-vs diff-vs-text">Local: ${escapeHtml(
+    mineText
+  )}</span>`;
+  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
 }
 
 /** Celulă cu valoare locală + marketplace + Δ când diferă. */
@@ -632,8 +654,8 @@ function pricingRowHtml(product, index) {
     ? generalStock
     : stockSumFromArr(product.stock);
 
-  const nameText = product.name || "—";
-  const descText = product.description || "—";
+  const nameDiff = textCellWithDiff(product.id, "name", product.name);
+  const descDiff = textCellWithDiff(product.id, "description", product.description);
   const pretEmagText = formatPrice(product.sale_price, currency);
   const prpText = formatPrice(product.recommended_price, currency);
   const pretMinimText = formatPrice(pretMinim, currency);
@@ -688,13 +710,13 @@ function pricingRowHtml(product, index) {
     familie: `<td data-col="familie"${cellClass("familie")}${titleAttr(product.familie)}>${
       escapeHtml(product.familie) || "—"
     }</td>`,
-    name: `<td data-col="name"${cellClass("name", "col-name")}${titleAttr(nameText)}>${
-      escapeHtml(product.name) || "—"
-    }</td>`,
+    name: `<td data-col="name"${cellClass("name", "col-name")}${nameDiff.dataVal}${
+      nameDiff.title
+    }>${nameDiff.html}</td>`,
     description: `<td data-col="description"${cellClass(
       "description",
       "col-description-ro"
-    )}${titleAttr(descText)}>${escapeHtml(product.description) || "—"}</td>`,
+    )}${descDiff.dataVal}${descDiff.title}>${descDiff.html}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
       "pret_cumparare"
     )}>${formatPrice(pretCumparare, currency)}</td>`,
@@ -1332,6 +1354,9 @@ const PUSH_PRICE_KEYS = new Set([
   "general_stock",
 ]);
 
+/** Campurile de continut: se trimit doar pentru ofertele unde chiar difera. */
+const PUSH_CONTENT_KEYS = new Set(["name", "description"]);
+
 /** Trimite ofertele care difera fata de ultima preluare; catalogul e sursa prețurilor. */
 async function pushToChannel() {
   if (pushing) return;
@@ -1340,27 +1365,37 @@ async function pushToChannel() {
     setStatus("Încarcă întâi comparația.", "error");
     return;
   }
-  const ids = currentData.matched
-    .filter((m) => m.fields.some((f) => f.differs && PUSH_PRICE_KEYS.has(f.key)))
-    .map((m) => m.external_id);
-  if (ids.length === 0) {
-    setStatus("Nimic de publicat — nicio diferență de preț sau stoc.", "ok");
+  const offers = [];
+  let contentCount = 0;
+  for (const m of currentData.matched) {
+    const changed = (m.fields || []).filter((f) => f.differs);
+    const hasPrice = changed.some((f) => PUSH_PRICE_KEYS.has(f.key));
+    const hasContent = changed.some((f) => PUSH_CONTENT_KEYS.has(f.key));
+    if (!hasPrice && !hasContent) continue;
+    if (hasContent) contentCount += 1;
+    offers.push({ id: m.external_id, includeContent: hasContent });
+  }
+  if (offers.length === 0) {
+    setStatus("Nimic de publicat — nicio diferență de preț, stoc sau conținut.", "ok");
     return;
   }
+  const ids = offers.map((o) => o.id);
 
   pushing = true;
   btnPush.disabled = true;
-  setStatus(`Se publică ${ids.length} oferte…`, "loading");
+  setStatus(
+    contentCount > 0
+      ? `Se publică ${ids.length} oferte (din care ${contentCount} cu nume/descriere)…`
+      : `Se publică ${ids.length} oferte…`,
+    "loading"
+  );
   try {
     const res = await fetch(
       `/api/products/sync-prices?channel=${encodeURIComponent(currentChannel)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          offers: ids.map((id) => ({ id })),
-          includeContent: false,
-        }),
+        body: JSON.stringify({ offers }),
       }
     );
     const data = await res.json();

@@ -196,6 +196,7 @@ function remoteToSnapshotShape(remote, fetchedAt) {
   return {
     external_id: String(remote.id),
     name: toTextOrNull(remote.name),
+    description: toPlainTextOrNull(remote.description),
     part_number: toTextOrNull(remote.part_number),
     ean: toTextOrNull(remote.ean),
     brand: toTextOrNull(remote.brand),
@@ -560,6 +561,8 @@ async function upsertCatalogProducts(items) {
 }
 
 const DIFF_FIELDS = [
+  { key: "name", label: "Nume", type: "text" },
+  { key: "description", label: "Descriere", type: "text" },
   { key: "sale_price", label: "Preț vânzare", type: "number" },
   { key: "recommended_price", label: "PRP", type: "number" },
   { key: "min_sale_price", label: "Preț minim", type: "number" },
@@ -576,7 +579,22 @@ function valuesDiffer(type, mine, theirs) {
     if (!Number.isFinite(a) || !Number.isFinite(b)) return String(mine) !== String(theirs);
     return Math.abs(a - b) > 0.005;
   }
-  return String(mine).trim() !== String(theirs).trim();
+  return normalizeText(mine) !== normalizeText(theirs);
+}
+
+/** Text comparabil: spatii colapsate + trim, ca sa nu raporteze diferente cosmetice. */
+function normalizeText(v) {
+  return String(v).replace(/\s+/g, " ").trim();
+}
+
+/** Valoarea locala pentru un camp de diff: overrides + coloanele RO din catalog. */
+function localDiffValue(local, key) {
+  if (key === "min_sale_price") {
+    return local.pret_minim_override ?? local.min_sale_price ?? null;
+  }
+  if (key === "name") return toTextOrNull(local.name ?? local.nume);
+  if (key === "description") return toPlainTextOrNull(local.descriere);
+  return local[key] ?? null;
 }
 
 async function getChannelDiff(channel) {
@@ -625,10 +643,7 @@ async function getChannelDiff(channel) {
     }
     snapByExt.delete(ext);
     const fields = DIFF_FIELDS.map((f) => {
-      const mine =
-        f.key === "min_sale_price"
-          ? (l.pret_minim_override ?? l.min_sale_price ?? null)
-          : (l[f.key] ?? null);
+      const mine = localDiffValue(l, f.key);
       const theirs = snap[f.key] ?? null;
       return {
         key: f.key,

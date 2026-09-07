@@ -2068,9 +2068,19 @@ button.sync-chip.is-diff.is-active strong {
   white-space: nowrap;
 }
 
+/* Nume/descriere: badge-ul local se incadreaza in coloana, nu forteaza latimea. */
+#pricing-table td.is-diff .diff-vs-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .table-wrap.is-compact #pricing-table td.is-diff .diff-vs {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.table-wrap.is-compact #pricing-table td.is-diff .diff-vs-text {
+  white-space: nowrap;
 }
 
 .table-wrap.is-compact #pricing-table td.is-diff {
