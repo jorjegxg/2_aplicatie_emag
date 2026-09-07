@@ -1,7 +1,11 @@
-/* Comparatie: valorile mele din DB vs oglinda remote (eMAG = cache memorie TTL). */
+/*
+ * Tabelul afiseaza ce e pe canalul selectat: coloanele marcate data-src="channel"
+ * vin din oglinda remote (cache memorie umplut de "Preia de la marketplace"),
+ * iar cele data-src="db"/calc din catalogul local.
+ */
 
 const CHANNEL_KEY = "marketplace-channel";
-const PRICING_CACHE_KEY = "sync-pricing-cache-v1";
+const PRICING_CACHE_KEY = "sync-pricing-cache-v2";
 const DIFF_CACHE_KEY = "sync-diff-cache-v1";
 
 const channelSelect = document.getElementById("channel-select");
@@ -467,6 +471,41 @@ function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
   return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
 }
 
+/**
+ * Celula unei coloane de canal: valoarea de pe marketplace e cea principala,
+ * iar valoarea locala apare ca badge secundar doar cand difera.
+ */
+function channelCellWithDiff(offerId, col, theirsText, currency, theirsRaw) {
+  const field = diffFieldForCol(offerId, col);
+  const dataVal =
+    theirsRaw != null && theirsRaw !== ""
+      ? ` data-value="${escapeHtml(theirsRaw)}"`
+      : "";
+  if (!field) {
+    return { html: theirsText, title: titleAttr(theirsText), dataVal };
+  }
+
+  const isStock = field.key === "general_stock";
+  const mineText = isStock
+    ? field.mine == null || field.mine === ""
+      ? "—"
+      : String(field.mine)
+    : formatPrice(field.mine, currency);
+  const mineNum = Number(field.mine);
+  const theirsNum = Number(field.theirs);
+  let deltaText = "";
+  if (!isStock && Number.isFinite(mineNum) && Number.isFinite(theirsNum)) {
+    const d = mineNum - theirsNum;
+    const sign = d > 0 ? "+" : "";
+    deltaText = ` · Δ ${sign}${d.toFixed(2)}`;
+  }
+  const tip = `Marketplace: ${theirsText} · Local (Produse): ${mineText}${deltaText}`;
+  const html = `<span class="diff-mine">${theirsText}</span><span class="diff-vs">Local: ${escapeHtml(
+    mineText
+  )}${escapeHtml(deltaText)}</span>`;
+  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
+}
+
 /** pret_transport / alte_costuri (vechi) → transport_override; evita drop din sync-column-order. */
 function migrateLegacyCostCols(cols) {
   const OLD = new Set(["procentaj_alte_costuri"]);
@@ -502,6 +541,8 @@ const columns = window.TableColumns.create({
 const PRICING_COL_COUNT = columns.defaultOrder.length;
 
 let pricingProducts = [];
+let remoteCached = false;
+let remoteFetchedAt = null;
 let settings = {};
 let pricingSortCol = null;
 let pricingSortDir = "asc";
@@ -568,7 +609,10 @@ function pricingRowHtml(product, index) {
   const cellClass = (col, extra = "") =>
     columns.cellClass(col, `${extra}${colDiff(col)}`.trim());
 
-  const commissionCell = isFetched
+  // Fara produs local nu exista unde salva comisionul → doar afisare.
+  const commissionCell = product.has_local === false
+    ? `<td data-col="procentaj_emag"${cellClass("procentaj_emag", "col-procentaj-emag")}>—</td>`
+    : isFetched
     ? `<td data-col="procentaj_emag"${cellClass(
         "procentaj_emag",
         "col-procentaj-emag"
@@ -580,11 +624,9 @@ function pricingRowHtml(product, index) {
         "col-procentaj-emag"
       )}>${procentajEmagInputHtml(pct, hasOverride)}</td>`;
 
-  const pretMinim =
-    product.pret_minim_override != null &&
-    Number.isFinite(Number(product.pret_minim_override))
-      ? Number(product.pret_minim_override)
-      : product.min_sale_price;
+  // Coloanele de canal arata valorile de pe marketplace; override-ul local
+  // ramane doar in badge-ul de diferenta.
+  const pretMinim = product.min_sale_price;
   const generalStock = Number(product.general_stock);
   const stoc = Number.isFinite(generalStock)
     ? generalStock
@@ -605,28 +647,28 @@ function pricingRowHtml(product, index) {
     currency,
     product.sale_price
   );
-  const prpDiff = priceCellWithDiff(
+  const prpDiff = channelCellWithDiff(
     product.id,
     "prp",
     prpText,
     currency,
     product.recommended_price
   );
-  const pretMinimDiff = priceCellWithDiff(
+  const pretMinimDiff = channelCellWithDiff(
     product.id,
     "pret_minim",
     pretMinimText,
     currency,
     pretMinim
   );
-  const pretMaximDiff = priceCellWithDiff(
+  const pretMaximDiff = channelCellWithDiff(
     product.id,
     "pret_maxim",
     pretMaximText,
     currency,
     product.max_sale_price
   );
-  const stocDiff = priceCellWithDiff(
+  const stocDiff = channelCellWithDiff(
     product.id,
     "stoc",
     escapeHtml(stocText),
@@ -710,7 +752,13 @@ function pricingRowHtml(product, index) {
     )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
   };
 
-  const rowClass = diffKeys.size > 0 ? ' class="has-diff"' : "";
+  const rowCls = [
+    diffKeys.size > 0 ? "has-diff" : "",
+    product.has_local === false ? "is-remote-only" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const rowClass = rowCls ? ` class="${rowCls}"` : "";
   return `<tr data-offer-id="${escapeHtml(product.id)}"${rowClass}>
     ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
@@ -719,7 +767,12 @@ function pricingRowHtml(product, index) {
 function renderPricing() {
   thPretCanal.textContent = CHANNEL_PRICE_LABELS[currentChannel] || "Preț canal";
   if (!pricingProducts.length) {
-    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">Niciun produs în DB pentru canalul selectat.</td></tr>`;
+    const msg = remoteCached
+      ? `Nicio ofertă pe ${currentChannel} la ultima preluare.`
+      : `Nicio preluare de la ${currentChannel} încă — apasă „Preia de la marketplace".`;
+    pricingBody.innerHTML = `<tr class="empty-row"><td colspan="${PRICING_COL_COUNT}">${escapeHtml(
+      msg
+    )}</td></tr>`;
     updateFilterStatus(0, 0);
     return;
   }
@@ -757,15 +810,17 @@ function refreshPricingRow(tr, product) {
 
 async function loadPricing() {
   try {
-    const [settingsRes, catalogRes] = await Promise.all([
+    const [settingsRes, viewRes] = await Promise.all([
       fetch("/api/settings"),
-      fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`),
+      fetch(`/api/sync/channel-view?channel=${encodeURIComponent(currentChannel)}`),
     ]);
     const settingsData = await settingsRes.json();
-    const catalog = await catalogRes.json();
-    if (!catalogRes.ok) throw new Error(catalog.error || `HTTP ${catalogRes.status}`);
+    const view = await viewRes.json();
+    if (!viewRes.ok) throw new Error(view.error || `HTTP ${viewRes.status}`);
     settings = settingsRes.ok ? settingsData : {};
-    pricingProducts = Array.isArray(catalog.products) ? catalog.products : [];
+    remoteCached = view.cached === true;
+    remoteFetchedAt = view.fetched_at || null;
+    pricingProducts = Array.isArray(view.products) ? view.products : [];
     savePricingCache();
     renderPricing();
   } catch (err) {
@@ -784,6 +839,8 @@ function savePricingCache() {
         channel: currentChannel,
         products: pricingProducts,
         settings,
+        cached: remoteCached,
+        fetchedAt: remoteFetchedAt,
         savedAt: new Date().toISOString(),
       })
     );
@@ -798,6 +855,8 @@ function readPricingCache() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !Array.isArray(data.products) || data.channel !== currentChannel) return null;
+    // Fara marca de preluare cache-ul e dinaintea trecerii pe datele de canal.
+    if (!data.fetchedAt) return null;
     return data;
   } catch {
     return null;
@@ -812,6 +871,8 @@ function restorePricingCache() {
   const data = readPricingCache();
   if (!data || data.products.length === 0) return false;
   pricingProducts = data.products;
+  remoteCached = data.cached === true;
+  remoteFetchedAt = data.fetchedAt || null;
   settings = data.settings && typeof data.settings === "object" ? data.settings : {};
   renderPricing();
   const when = data.savedAt ? new Date(data.savedAt).toLocaleString("ro-RO") : "";

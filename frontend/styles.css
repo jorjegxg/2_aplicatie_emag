@@ -2007,6 +2007,14 @@ button.sync-chip.is-diff.is-active strong {
   border-left: 3px solid var(--warn);
 }
 
+/* Ofertă prezentă pe canal, dar fără produs în catalogul local. */
+#pricing-table tr.is-remote-only td:first-child {
+  border-left: 3px solid var(--muted);
+}
+#pricing-table tr.is-remote-only {
+  opacity: 0.85;
+}
+
 /* Prețuri și marjă: fără tinturi decorative — doar is-diff / has-diff */
 #pricing-table thead tr:not(.filter-row) th[data-src],
 #pricing-table thead tr:not(.filter-row) th[data-src]:hover,

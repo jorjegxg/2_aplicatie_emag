@@ -678,6 +678,89 @@ async function getChannelDiff(channel) {
   };
 }
 
+/**
+ * Randurile pentru pagina de sincronizare: coloanele marcate `data-src="channel"`
+ * vin din oglinda remote a canalului (cache memorie, umplut de /api/sync/pull),
+ * iar cele `data-src="db"` / `calc` din catalogul local. Iterez peste cache, deci
+ * pagina arata exact ce e pe canal, inclusiv oferte fara corespondent local.
+ */
+function remoteToViewRow(remote) {
+  const fam = remote.familie ?? remote.family_name ?? "";
+  return {
+    id: remote.id,
+    name: toTextOrNull(remote.name) || "",
+    description: toTextOrNull(remote.description) || "",
+    brand: toTextOrNull(remote.brand) || "",
+    part_number: toTextOrNull(remote.part_number) || "",
+    part_number_key: toTextOrNull(remote.part_number_key) || "",
+    id_familie: remote.id_familie ?? null,
+    familie: fam || "",
+    ean: toTextOrNull(remote.ean) || "",
+    remote_sale_price: toNumOrNull(remote.sale_price),
+    recommended_price: toNumOrNull(remote.recommended_price),
+    min_sale_price: toNumOrNull(remote.min_sale_price),
+    max_sale_price: toNumOrNull(remote.max_sale_price),
+    general_stock: toNumOrNull(remote.general_stock),
+    stock: Array.isArray(remote.stock) ? remote.stock : [],
+    status: toNumOrNull(remote.status),
+    vat_id: toNumOrNull(remote.vat_id),
+    currency: toTextOrNull(remote.currency) || "RON",
+    characteristics: toTextOrNull(remote.characteristics) || "",
+  };
+}
+
+async function getChannelViewRows(channel) {
+  await ensureSchema();
+  const ch = normalizeChannel(channel);
+
+  const cache = getChannelRemotes(ch);
+  if (!cache) {
+    return { channel: ch, cached: false, fetched_at: null, count: 0, products: [] };
+  }
+
+  // Partea locala (db/calc) exista deocamdata doar pentru eMAG.
+  const localByExt = new Map();
+  if (ch === "emag") {
+    for (const p of await getCatalogRows(ch)) localByExt.set(String(p.id), p);
+  }
+
+  const products = [];
+  for (const [ext, remote] of cache.byId) {
+    const view = remoteToViewRow(remote);
+    const local = localByExt.get(String(ext)) || null;
+    products.push({
+      ...view,
+      channel: ch,
+      has_local: Boolean(local),
+      product_id: local ? local.product_id : null,
+      sale_price: local ? local.sale_price : null,
+      pret_cumparare: local ? local.pret_cumparare : null,
+      transport_override: local ? local.transport_override : null,
+      pret_minim_override: local ? local.pret_minim_override : null,
+      procentaj_emag: local ? local.procentaj_emag : null,
+      commission_value: local ? local.commission_value : null,
+      commission_fetched_at: local ? local.commission_fetched_at : null,
+      pret_emag_last_change: local ? local.pret_emag_last_change : null,
+      images: local ? local.images : [],
+    });
+  }
+
+  products.sort((a, b) => {
+    const na = Number(a.id);
+    const nb = Number(b.id);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  return {
+    channel: ch,
+    cached: true,
+    fetched_at: cache.fetchedAt,
+    count: products.length,
+    products,
+  };
+}
+
 async function getChannelStats(channel) {
   await ensureSchema();
   const ch = assertEmagSot(channel);
@@ -740,6 +823,7 @@ module.exports = {
   updateProduct,
   upsertCatalogProducts,
   getChannelDiff,
+  getChannelViewRows,
   getChannelStats,
   getListingCosts,
   lookupCatalogPretCumparare,

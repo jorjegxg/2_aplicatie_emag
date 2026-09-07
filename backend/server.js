@@ -18,6 +18,7 @@ const {
   updateListing,
   getListings,
   getChannelRemotes,
+  getChannelViewRows,
   updateProduct,
   getChannelDiff,
   getChannelStats,
@@ -496,6 +497,20 @@ app.get("/api/sync/diff", async (req, res) => {
     console.error("[diff]", err.message);
     logCaught("sync-diff", err);
     return res.status(500).json({ error: err.message || "Eroare la comparare" });
+  }
+});
+
+/** Ce e pe canal (din oglinda remote in memorie) + partea locala pentru costuri/marja. */
+app.get("/api/sync/channel-view", async (req, res) => {
+  try {
+    const channel = normalizeChannel(req.query.channel);
+    const data = await getChannelViewRows(channel);
+    res.set("Cache-Control", "no-store");
+    return res.json(data);
+  } catch (err) {
+    console.error("[channel-view]", err.message);
+    logCaught("sync-channel-view", err);
+    return res.status(500).json({ error: err.message || "Eroare la citirea ofertelor de pe canal" });
   }
 });
 
