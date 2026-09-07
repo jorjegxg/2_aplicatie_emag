@@ -2549,6 +2549,46 @@ html.auth-pending body {
   display: none;
 }
 
+/* Tooltip de diferenta: sursa valorii se citeste din culoare, la fel ca in tabel. */
+.cell-text-tip.is-diff-tip {
+  white-space: normal;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.cell-text-tip .tip-row {
+  display: grid;
+  gap: 0.1rem;
+  padding-left: 0.5rem;
+  border-left: 3px solid currentColor;
+}
+
+.cell-text-tip .tip-row-channel {
+  color: var(--emag-price);
+}
+
+.cell-text-tip .tip-row-local {
+  color: var(--accent);
+}
+
+.cell-text-tip .tip-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cell-text-tip .tip-value {
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.cell-text-tip .tip-delta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 #pricing-table td.is-cell-overflow {
   cursor: zoom-in;
 }

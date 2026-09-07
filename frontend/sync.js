@@ -421,6 +421,28 @@ function diffKeysForOffer(offerId) {
   return keys;
 }
 
+/** Text deja escapat (ex. formatPrice) -> text simplu, pentru tooltip-ul propriu. */
+function plainText(value) {
+  return String(value ?? "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Atribute pentru tooltip-ul colorat: tipul valorii (canal vs. local) se citeste
+ * din culoare, nu din eticheta text.
+ */
+function diffTipAttrs({ channel, local, delta }) {
+  let attrs = ` data-tip-channel="${escapeHtml(plainText(channel))}" data-tip-local="${escapeHtml(
+    plainText(local)
+  )}"`;
+  if (delta) attrs += ` data-tip-delta="${escapeHtml(plainText(delta))}"`;
+  return attrs;
+}
+
 /** Field diff (mine/theirs) pentru o coloană din tabel, dacă diferă. */
 function diffFieldForCol(offerId, col) {
   const row = matchedDiffRow(offerId);
@@ -454,7 +476,11 @@ function textCellWithDiff(offerId, col, theirsRaw) {
   const html = `<span class="diff-mine">${escapeHtml(theirsText)}</span><span class="diff-vs diff-vs-text">Local: ${escapeHtml(
     mineText
   )}</span>`;
-  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
+  return {
+    html,
+    title: ` title="${escapeHtml(tip)}"${diffTipAttrs({ channel: theirsText, local: mineText })}`,
+    dataVal,
+  };
 }
 
 /** Celulă cu valoare locală + marketplace + Δ când diferă. */
@@ -477,6 +503,7 @@ function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
   const mineNum = Number(field.mine);
   const theirsNum = Number(field.theirs);
   let deltaText = "";
+  let deltaVal = "";
   if (
     !isStock &&
     Number.isFinite(mineNum) &&
@@ -484,13 +511,22 @@ function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
   ) {
     const d = mineNum - theirsNum;
     const sign = d > 0 ? "+" : "";
-    deltaText = ` · Δ ${sign}${d.toFixed(2)}`;
+    deltaVal = `Δ ${sign}${d.toFixed(2)}`;
+    deltaText = ` · ${deltaVal}`;
   }
   const tip = `Local (Produse): ${mineText} · Marketplace: ${theirsText}${deltaText}`;
   const html = `<span class="diff-mine">${mineText}</span><span class="diff-vs">MP: ${escapeHtml(
     theirsText
   )}${escapeHtml(deltaText)}</span>`;
-  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
+  return {
+    html,
+    title: ` title="${escapeHtml(tip)}"${diffTipAttrs({
+      channel: theirsText,
+      local: mineText,
+      delta: deltaVal,
+    })}`,
+    dataVal,
+  };
 }
 
 /**
@@ -516,16 +552,26 @@ function channelCellWithDiff(offerId, col, theirsText, currency, theirsRaw) {
   const mineNum = Number(field.mine);
   const theirsNum = Number(field.theirs);
   let deltaText = "";
+  let deltaVal = "";
   if (!isStock && Number.isFinite(mineNum) && Number.isFinite(theirsNum)) {
     const d = mineNum - theirsNum;
     const sign = d > 0 ? "+" : "";
-    deltaText = ` · Δ ${sign}${d.toFixed(2)}`;
+    deltaVal = `Δ ${sign}${d.toFixed(2)}`;
+    deltaText = ` · ${deltaVal}`;
   }
   const tip = `Marketplace: ${theirsText} · Local (Produse): ${mineText}${deltaText}`;
   const html = `<span class="diff-mine">${theirsText}</span><span class="diff-vs">Local: ${escapeHtml(
     mineText
   )}${escapeHtml(deltaText)}</span>`;
-  return { html, title: ` title="${escapeHtml(tip)}"`, dataVal };
+  return {
+    html,
+    title: ` title="${escapeHtml(tip)}"${diffTipAttrs({
+      channel: theirsText,
+      local: mineText,
+      delta: deltaVal,
+    })}`,
+    dataVal,
+  };
 }
 
 /** pret_transport / alte_costuri (vechi) → transport_override; evita drop din sync-column-order. */
@@ -1030,6 +1076,43 @@ function shouldShowCellTip(td) {
   return full !== cellShownText(td);
 }
 
+/**
+ * Tooltip pentru celulele cu diferente: fiecare valoare isi ia culoarea sursei
+ * (violet = canal/eMAG, albastru = local), ca in tabel.
+ */
+function renderDiffTip(tip, td) {
+  const channel = td?.dataset.tipChannel;
+  const local = td?.dataset.tipLocal;
+  if (channel == null && local == null) return false;
+
+  tip.textContent = "";
+  tip.classList.add("is-diff-tip");
+  const rows = [
+    ["channel", "eMAG", channel],
+    ["local", "Produse", local],
+  ];
+  for (const [kind, label, value] of rows) {
+    if (value == null) continue;
+    const row = document.createElement("div");
+    row.className = `tip-row tip-row-${kind}`;
+    const lab = document.createElement("span");
+    lab.className = "tip-label";
+    lab.textContent = label;
+    const val = document.createElement("span");
+    val.className = "tip-value";
+    val.textContent = value || "—";
+    row.append(lab, val);
+    tip.appendChild(row);
+  }
+  if (td.dataset.tipDelta) {
+    const delta = document.createElement("div");
+    delta.className = "tip-delta";
+    delta.textContent = td.dataset.tipDelta;
+    tip.appendChild(delta);
+  }
+  return true;
+}
+
 function createCellTextTip() {
   let tip = document.getElementById("cell-text-tip");
   if (!tip) {
@@ -1064,7 +1147,10 @@ function createCellTextTip() {
     const text = cellFullText(td);
     if (!text || text === "—") return false;
 
-    tip.textContent = text;
+    if (!renderDiffTip(tip, td)) {
+      tip.classList.remove("is-diff-tip");
+      tip.textContent = text;
+    }
     activeTd = td;
     pinned = pin;
     tip.classList.toggle("is-pinned", pin);
@@ -1078,7 +1164,7 @@ function createCellTextTip() {
     hoverTimer = null;
     tip.hidden = true;
     tip.textContent = "";
-    tip.classList.remove("is-pinned");
+    tip.classList.remove("is-pinned", "is-diff-tip");
     pinned = false;
     activeTd = null;
   }
