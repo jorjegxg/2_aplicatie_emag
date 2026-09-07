@@ -483,52 +483,6 @@ function textCellWithDiff(offerId, col, theirsRaw) {
   };
 }
 
-/** Celulă cu valoare locală + marketplace + Δ când diferă. */
-function priceCellWithDiff(offerId, col, mineText, currency, mineRaw) {
-  const field = diffFieldForCol(offerId, col);
-  const dataVal =
-    mineRaw != null && mineRaw !== ""
-      ? ` data-value="${escapeHtml(mineRaw)}"`
-      : "";
-  if (!field) {
-    return { html: mineText, title: titleAttr(mineText), dataVal };
-  }
-
-  const isStock = field.key === "general_stock";
-  const theirsText = isStock
-    ? field.theirs == null || field.theirs === ""
-      ? "—"
-      : String(field.theirs)
-    : formatPrice(field.theirs, currency);
-  const mineNum = Number(field.mine);
-  const theirsNum = Number(field.theirs);
-  let deltaText = "";
-  let deltaVal = "";
-  if (
-    !isStock &&
-    Number.isFinite(mineNum) &&
-    Number.isFinite(theirsNum)
-  ) {
-    const d = mineNum - theirsNum;
-    const sign = d > 0 ? "+" : "";
-    deltaVal = `Δ ${sign}${d.toFixed(2)}`;
-    deltaText = ` · ${deltaVal}`;
-  }
-  const tip = `Local (Produse): ${mineText} · Marketplace: ${theirsText}${deltaText}`;
-  const html = `<span class="diff-mine">${mineText}</span><span class="diff-vs">MP: ${escapeHtml(
-    theirsText
-  )}${escapeHtml(deltaText)}</span>`;
-  return {
-    html,
-    title: ` title="${escapeHtml(tip)}"${diffTipAttrs({
-      channel: theirsText,
-      local: mineText,
-      delta: deltaVal,
-    })}`,
-    dataVal,
-  };
-}
-
 /**
  * Celula unei coloane de canal: valoarea de pe marketplace e cea principala,
  * iar valoarea locala apare ca badge secundar doar cand difera.
@@ -638,6 +592,14 @@ function rowCosts(product) {
   return { pretCumparare, alte };
 }
 
+/**
+ * Pretul de vanzare al randului: cel de pe marketplace, cu revenire la cel
+ * local doar daca oferta remote nu are pret.
+ */
+function rowSalePrice(product) {
+  return product.remote_sale_price ?? product.sale_price;
+}
+
 function rowPctEmag(product) {
   const raw = product.procentaj_emag;
   return raw != null && Number.isFinite(Number(raw))
@@ -696,14 +658,10 @@ function pricingRowHtml(product, index) {
   const tooltip = escapeHtml(procentajEmagTooltip(commissionValue, fetchedAt));
   const hasOverride = !isFetched && Number(pct) !== DEFAULT_PROcentaj_EMAG;
 
+  const emagPrice = rowSalePrice(product);
   const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
-  const profit = calcProfit(product.sale_price, pretCumparare, alte, pct);
-  const procentaj = calcProcentajProfit(
-    product.sale_price,
-    pretCumparare,
-    alte,
-    pct
-  );
+  const profit = calcProfit(emagPrice, pretCumparare, alte, pct);
+  const procentaj = calcProcentajProfit(emagPrice, pretCumparare, alte, pct);
 
   const diffKeys = diffKeysForOffer(product.id);
   const colDiff = (col) => {
@@ -740,18 +698,18 @@ function pricingRowHtml(product, index) {
 
   const nameDiff = textCellWithDiff(product.id, "name", product.name);
   const descDiff = textCellWithDiff(product.id, "description", product.description);
-  const pretEmagText = formatPrice(product.sale_price, currency);
+  const pretEmagText = formatPrice(emagPrice, currency);
   const prpText = formatPrice(product.recommended_price, currency);
   const pretMinimText = formatPrice(pretMinim, currency);
   const pretMaximText = formatPrice(product.max_sale_price, currency);
   const stocText = stoc === "" || stoc == null ? "—" : String(stoc);
 
-  const pretEmagDiff = priceCellWithDiff(
+  const pretEmagDiff = channelCellWithDiff(
     product.id,
     "pret_emag",
     pretEmagText,
     currency,
-    product.sale_price
+    emagPrice
   );
   const prpDiff = channelCellWithDiff(
     product.id,
@@ -896,14 +854,10 @@ function refreshPricingRow(tr, product) {
   const currency = product.currency || "RON";
   const { pretCumparare, alte } = rowCosts(product);
   const pct = rowPctEmag(product);
+  const emagPrice = rowSalePrice(product);
   const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
-  const profit = calcProfit(product.sale_price, pretCumparare, alte, pct);
-  const procentaj = calcProcentajProfit(
-    product.sale_price,
-    pretCumparare,
-    alte,
-    pct
-  );
+  const profit = calcProfit(emagPrice, pretCumparare, alte, pct);
+  const procentaj = calcProcentajProfit(emagPrice, pretCumparare, alte, pct);
 
   const minCell = tr.querySelector("td[data-col='pret_minim_profit']");
   if (minCell) minCell.textContent = formatPrice(minProfit, currency);
