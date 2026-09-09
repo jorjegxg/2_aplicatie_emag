@@ -159,6 +159,53 @@ async function ensureSchema() {
   await ensurePgSchema();
 }
 
+/**
+ * EAN comparabil: trim, lower, primul segment daca e lista separata prin virgula
+ * (format eMAG pe catalog).
+ */
+function normalizeEan(v) {
+  const s = toTextOrNull(v);
+  if (!s) return null;
+  const first = s.split(",")[0].trim().toLowerCase();
+  return first || null;
+}
+
+/**
+ * Catalog indexat pe EAN normalizat (primul castiga la duplicate).
+ * Folosit de sync Trendyol: join channel-view + diff.
+ */
+async function getCatalogMappedByEan() {
+  await ensureSchema();
+  const { rows } = await query(
+    `${SQL_CATALOG_WITH_FAMILIE}
+     WHERE c.ean IS NOT NULL AND TRIM(c.ean) <> ''
+     ORDER BY c.id ASC`
+  );
+  const products = rows.map(mapCatalogRowToProduct);
+
+  const lastChanges = await getLastPriceChangeBulk(products.map((p) => p.id));
+  for (const p of products) {
+    const lc = lastChanges[p.id];
+    p.pret_emag_last_change = lc ? lc.recorded_at : null;
+  }
+
+  const imageMap = await listByProductIds(
+    products.map((p) => p.product_id).filter((id) => id != null)
+  );
+  for (const p of products) {
+    const pid = Number(p.product_id);
+    p.images = Number.isFinite(pid) ? imageMap.get(pid) || [] : [];
+  }
+
+  const byEan = new Map();
+  for (let i = 0; i < products.length; i++) {
+    const ean = normalizeEan(rows[i].ean);
+    if (!ean || byEan.has(ean)) continue;
+    byEan.set(ean, products[i]);
+  }
+  return byEan;
+}
+
 /** Intai dupa SKU, apoi dupa EAN, apoi dupa nume exact. */
 async function findCatalogProductId(remote) {
   await ensureSchema();
@@ -170,16 +217,13 @@ async function findCatalogProductId(remote) {
     );
     if (rows[0]) return rows[0].id;
   }
-  const ean = toTextOrNull(remote.ean);
+  const ean = normalizeEan(remote.ean);
   if (ean) {
-    const first = ean.split(",")[0].trim();
-    if (first) {
-      const { rows } = await query(
-        "SELECT id FROM catalog_products WHERE LOWER(ean) = LOWER($1) LIMIT 1",
-        [first]
-      );
-      if (rows[0]) return rows[0].id;
-    }
+    const { rows } = await query(
+      "SELECT id FROM catalog_products WHERE LOWER(TRIM(SPLIT_PART(ean, ',', 1))) = $1 LIMIT 1",
+      [ean]
+    );
+    if (rows[0]) return rows[0].id;
   }
   const name = toTextOrNull(remote.name ?? remote.nume);
   if (name) {
@@ -571,6 +615,11 @@ const DIFF_FIELDS = [
   { key: "general_stock", label: "Stoc", type: "number" },
 ];
 
+/** Trendyol nu expune min/max — le excludem ca sa nu marcheze totul ca diferit. */
+const DIFF_FIELDS_TRENDYOL = DIFF_FIELDS.filter(
+  (f) => f.key !== "min_sale_price" && f.key !== "max_sale_price"
+);
+
 function valuesDiffer(type, mine, theirs) {
   if (mine == null && theirs == null) return false;
   if (mine == null || theirs == null) return true;
@@ -598,10 +647,33 @@ function localDiffValue(local, key) {
   return local[key] ?? null;
 }
 
-async function getChannelDiff(channel) {
-  await ensureSchema();
-  const ch = assertEmagSot(channel);
+function buildDiffFields(local, snap, fieldDefs) {
+  return fieldDefs.map((f) => {
+    const mine = localDiffValue(local, f.key);
+    const theirs = snap[f.key] ?? null;
+    return {
+      key: f.key,
+      label: f.label,
+      mine,
+      theirs,
+      differs: valuesDiffer(f.type, mine, theirs),
+    };
+  });
+}
 
+function onlyRemoteEntry(s) {
+  return {
+    external_id: s.external_id,
+    part_number: s.part_number,
+    name: s.name,
+    sale_price: s.sale_price,
+    general_stock: s.general_stock,
+    fetched_at: s.fetched_at,
+  };
+}
+
+async function getEmagChannelDiff() {
+  const ch = "emag";
   const { rows: locals } = await query(
     `SELECT c.*, pf.name AS familie,
             c.cod_produs AS catalog_cod, c.id AS product_id,
@@ -643,17 +715,7 @@ async function getChannelDiff(channel) {
       continue;
     }
     snapByExt.delete(ext);
-    const fields = DIFF_FIELDS.map((f) => {
-      const mine = localDiffValue(l, f.key);
-      const theirs = snap[f.key] ?? null;
-      return {
-        key: f.key,
-        label: f.label,
-        mine,
-        theirs,
-        differs: valuesDiffer(f.type, mine, theirs),
-      };
-    });
+    const fields = buildDiffFields(l, snap, DIFF_FIELDS);
     matched.push({
       external_id: l.external_id,
       part_number: l.part_number || snap.part_number || "",
@@ -665,14 +727,7 @@ async function getChannelDiff(channel) {
     });
   }
 
-  const onlyRemote = [...snapByExt.values()].map((s) => ({
-    external_id: s.external_id,
-    part_number: s.part_number,
-    name: s.name,
-    sale_price: s.sale_price,
-    general_stock: s.general_stock,
-    fetched_at: s.fetched_at,
-  }));
+  const onlyRemote = [...snapByExt.values()].map(onlyRemoteEntry);
 
   const unlinked = locals
     .filter((l) => !l.cod_produs && !l.catalog_cod)
@@ -692,6 +747,109 @@ async function getChannelDiff(channel) {
     only_remote: onlyRemote,
     unlinked,
   };
+}
+
+/** Diff Trendyol: potrivire pe EAN/barcode; external_id in raspuns = barcode remote. */
+async function getTrendyolChannelDiff() {
+  const ch = "trendyol";
+  const { rows: locals } = await query(
+    `SELECT c.*, pf.name AS familie,
+            c.cod_produs AS catalog_cod, c.id AS product_id,
+            c.nume AS name,
+            ml.pret_minim_override
+     FROM catalog_products c
+     LEFT JOIN product_families pf ON pf.id = c.id_familie
+     LEFT JOIN marketplace_listings ml
+       ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
+     WHERE c.ean IS NOT NULL AND TRIM(c.ean) <> ''
+     ORDER BY c.id ASC`
+  );
+
+  const snapByEan = new Map();
+  const onlyRemoteExtra = [];
+  let cacheFetchedAt = null;
+
+  const cache = getChannelRemotes(ch);
+  if (cache) {
+    cacheFetchedAt = cache.fetchedAt;
+    for (const [, remote] of cache.byId) {
+      const snap = remoteToSnapshotShape(remote, cache.fetchedAt);
+      const ean = normalizeEan(remote.ean) || normalizeEan(remote.id);
+      if (!ean) {
+        onlyRemoteExtra.push(snap);
+        continue;
+      }
+      if (snapByEan.has(ean)) {
+        onlyRemoteExtra.push(snap);
+        continue;
+      }
+      snapByEan.set(ean, snap);
+    }
+  }
+
+  const matched = [];
+  const onlyLocal = [];
+  const seenLocalEan = new Set();
+
+  for (const l of locals) {
+    const ean = normalizeEan(l.ean);
+    if (!ean || seenLocalEan.has(ean)) continue;
+    seenLocalEan.add(ean);
+
+    const snap = snapByEan.get(ean);
+    if (!snap) {
+      onlyLocal.push({
+        external_id: ean,
+        part_number: l.part_number || l.cod_produs || "",
+        name: l.name,
+        sale_price: l.sale_price,
+        general_stock: l.general_stock,
+      });
+      continue;
+    }
+    snapByEan.delete(ean);
+    const fields = buildDiffFields(l, snap, DIFF_FIELDS_TRENDYOL);
+    matched.push({
+      external_id: snap.external_id,
+      part_number: l.part_number || l.cod_produs || snap.part_number || "",
+      catalog_cod: l.catalog_cod || null,
+      product_id: l.product_id,
+      fetched_at: snap.fetched_at,
+      diff_count: fields.filter((f) => f.differs).length,
+      fields,
+    });
+  }
+
+  const onlyRemote = [...snapByEan.values(), ...onlyRemoteExtra].map(onlyRemoteEntry);
+
+  const unlinked = locals
+    .filter((l) => {
+      const ean = normalizeEan(l.ean);
+      return ean && !l.cod_produs && !l.catalog_cod;
+    })
+    .map((l) => ({
+      external_id: normalizeEan(l.ean),
+      part_number: l.part_number,
+      name: l.name,
+    }));
+
+  const stats = await getChannelStats(ch);
+  return {
+    channel: ch,
+    last_sync: stats.last_sync ?? cacheFetchedAt,
+    fields: DIFF_FIELDS_TRENDYOL,
+    matched,
+    only_local: onlyLocal,
+    only_remote: onlyRemote,
+    unlinked,
+  };
+}
+
+async function getChannelDiff(channel) {
+  await ensureSchema();
+  const ch = normalizeChannel(channel);
+  if (ch === "trendyol") return getTrendyolChannelDiff();
+  return getEmagChannelDiff();
 }
 
 /**
@@ -734,16 +892,24 @@ async function getChannelViewRows(channel) {
     return { channel: ch, cached: false, fetched_at: null, count: 0, products: [] };
   }
 
-  // Partea locala (db/calc) exista deocamdata doar pentru eMAG.
-  const localByExt = new Map();
+  const localByKey = new Map();
   if (ch === "emag") {
-    for (const p of await getCatalogRows(ch)) localByExt.set(String(p.id), p);
+    for (const p of await getCatalogRows(ch)) localByKey.set(String(p.id), p);
+  } else if (ch === "trendyol") {
+    const byEan = await getCatalogMappedByEan();
+    for (const [ean, p] of byEan) localByKey.set(ean, p);
   }
 
   const products = [];
   for (const [ext, remote] of cache.byId) {
     const view = remoteToViewRow(remote);
-    const local = localByExt.get(String(ext)) || null;
+    let local = null;
+    if (ch === "emag") {
+      local = localByKey.get(String(ext)) || null;
+    } else if (ch === "trendyol") {
+      const ean = normalizeEan(remote.ean) || normalizeEan(remote.id) || normalizeEan(ext);
+      local = ean ? localByKey.get(ean) || null : null;
+    }
     products.push({
       ...view,
       channel: ch,
@@ -779,12 +945,23 @@ async function getChannelViewRows(channel) {
 
 async function getChannelStats(channel) {
   await ensureSchema();
-  const ch = assertEmagSot(channel);
+  const ch = normalizeChannel(channel);
+  const meta = getCacheMeta(ch);
+
+  if (ch === "trendyol") {
+    return {
+      channel: ch,
+      listings: meta.count,
+      snapshots: meta.count,
+      last_sync: meta.fetchedAt,
+    };
+  }
+
+  assertEmagSot(ch);
   const { rows } = await query(
     "SELECT COUNT(*)::int AS n FROM catalog_products WHERE emag_offer_id IS NOT NULL"
   );
   const listingsCount = rows[0]?.n ?? 0;
-  const meta = getCacheMeta(ch);
   return {
     channel: ch,
     listings: listingsCount,

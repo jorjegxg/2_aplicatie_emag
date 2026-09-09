@@ -1081,17 +1081,19 @@ function shouldShowCellTip(td) {
 
 /**
  * Tooltip pentru celulele cu diferente: fiecare valoare isi ia culoarea sursei
- * (violet = canal/eMAG, albastru = local), ca in tabel.
+ * (violet = canal, albastru = local), ca in tabel.
  */
 function renderDiffTip(tip, td) {
   const channel = td?.dataset.tipChannel;
   const local = td?.dataset.tipLocal;
   if (channel == null && local == null) return false;
 
+  const channelLabel = currentChannel === "trendyol" ? "Trendyol" : "eMAG";
+
   tip.textContent = "";
   tip.classList.add("is-diff-tip");
   const rows = [
-    ["channel", "eMAG", channel],
+    ["channel", channelLabel, channel],
     ["local", "Produse", local],
   ];
   for (const [kind, label, value] of rows) {
