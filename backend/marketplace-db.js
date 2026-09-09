@@ -143,12 +143,18 @@ function parseJson(raw, fallback) {
 }
 
 /** Shape compatibil cu vechiul marketplace_listings (server sync-prices etc.). */
-function catalogToListingShape(row) {
+function catalogToListingShape(row, { channel = "emag", externalId } = {}) {
   if (!row) return null;
+  const ch = normalizeChannel(channel);
   return {
     ...row,
-    channel: "emag",
-    external_id: row.emag_offer_id,
+    channel: ch,
+    external_id:
+      externalId != null
+        ? String(externalId)
+        : ch === "trendyol"
+          ? normalizeEan(row.ean) || row.ean
+          : row.emag_offer_id,
     name: row.nume,
     description: row.descriere,
     product_id: row.id,
@@ -456,8 +462,39 @@ async function getListing(channel, externalId) {
   return catalogToListingShape(rows[0] || null);
 }
 
+/** Listings pentru push Trendyol: potrivire pe EAN/barcode (external_id = barcode cerut). */
+async function getListingsByEan(externalIds) {
+  const ids = [...new Set((externalIds || []).map((v) => String(v)).filter(Boolean))];
+  if (ids.length === 0) return [];
+
+  const { rows } = await query(
+    `${SQL_CATALOG_WITH_FAMILIE}
+     WHERE c.ean IS NOT NULL AND TRIM(c.ean) <> ''
+     ORDER BY c.id ASC`
+  );
+
+  const byEan = new Map();
+  for (const row of rows) {
+    const ean = normalizeEan(row.ean);
+    if (!ean || byEan.has(ean)) continue;
+    byEan.set(ean, row);
+  }
+
+  const out = [];
+  for (const id of ids) {
+    const ean = normalizeEan(id);
+    const row = ean ? byEan.get(ean) : null;
+    if (!row) continue;
+    out.push(catalogToListingShape(row, { channel: "trendyol", externalId: id }));
+  }
+  return out;
+}
+
 async function getListings(channel, externalIds) {
   await ensureSchema();
+  const ch = normalizeChannel(channel);
+  if (ch === "trendyol") return getListingsByEan(externalIds);
+
   assertEmagSot(channel);
   const ids = [...new Set((externalIds || []).map((v) => String(v)).filter(Boolean))];
   if (ids.length === 0) return [];
@@ -467,7 +504,7 @@ async function getListings(channel, externalIds) {
      WHERE c.emag_offer_id = ANY($1::text[])`,
     [ids]
   );
-  return rows.map(catalogToListingShape);
+  return rows.map((r) => catalogToListingShape(r));
 }
 
 const PRODUCT_EDITABLE = {

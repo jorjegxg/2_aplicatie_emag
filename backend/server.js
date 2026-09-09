@@ -669,14 +669,23 @@ app.post("/api/products/sync-prices", async (req, res) => {
     const listings = await getListings(channelName, ids);
     if (listings.length === 0) {
       return res.status(404).json({
-        error: "Ofertele nu există în catalog — leagă emag_offer_id pe produs",
+        error:
+          channelName === "trendyol"
+            ? "Ofertele nu există în catalog — leagă EAN-ul produsului de barcode-ul Trendyol"
+            : "Ofertele nu există în catalog — leagă emag_offer_id pe produs",
       });
     }
 
-    const emagCache = getChannelRemotes("emag");
-    if (!emagCache) {
+    const remoteCache = getChannelRemotes(channelName);
+    if (!remoteCache) {
       return res.status(400).json({
-        error: "Lipsește oglinda eMAG din memorie — preia întâi ofertele de la marketplace",
+        error: `Lipsește oglinda ${channel.label} din memorie — preia întâi ofertele de la marketplace`,
+      });
+    }
+
+    if (typeof channel.mergeLocalWithRemoteCache !== "function") {
+      return res.status(501).json({
+        error: `Canalul ${channel.label}: merge pentru publicare nu e implementat`,
       });
     }
 
@@ -687,7 +696,7 @@ app.post("/api/products/sync-prices", async (req, res) => {
           ? Number(l.pret_minim_override)
           : l.min_sale_price;
 
-      const remote = emagCache.byId.get(String(l.external_id));
+      const remote = remoteCache.byId.get(String(l.external_id));
       const merged = channel.mergeLocalWithRemoteCache(
         {
           id: l.external_id,
@@ -707,11 +716,13 @@ app.post("/api/products/sync-prices", async (req, res) => {
 
     const result = await channel.pushListings(offers);
 
-    // eMAG proceseaza salvarea asincron (5-10 min), deci NU marchez snapshot-ul ca
-    // actualizat: ce e pe canal se afla doar la urmatorul pull. Retin doar ce am trimis.
+    // Marketplace-urile proceseaza asincron — NU actualizam oglinda local;
+    // confirmarea vine la urmatorul pull. Retinem doar istoricul de pret trimis.
     for (const o of offers) {
+      const sale = o.sale_price ?? o.inventory?.salePrice;
+      if (sale == null) continue;
       try {
-        await recordPretEmagIfChanged(o.id, o.sale_price, "RON", "sync");
+        await recordPretEmagIfChanged(o.id, sale, "RON", "sync", channelName);
       } catch (histErr) {
         console.warn("[sync-prices] istoric pret:", histErr.message);
       }

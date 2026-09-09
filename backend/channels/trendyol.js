@@ -7,9 +7,10 @@
  * memorie (channel-remote-cache), umpluta de /api/sync/pull.
  *
  * Endpoint-uri folosite (baza https://apigw.trendyol.com/integration):
- *   GET /product/sellers/{id}/products/approved     — produse aprobate
- *   GET /product/sellers/{id}/products/unapproved   — in asteptare/respinse
- *   filtre: ?barcode= / ?stockCode=, paginare 0-based (?page=&size=)
+ *   GET  /product/sellers/{id}/products/approved|unapproved — pull
+ *   POST /inventory/sellers/{id}/products/price-and-inventory — pret/stoc
+ *   POST /product/sellers/{id}/products/content-bulk-update — titlu/descriere
+ *   filtre pull: ?barcode= / ?stockCode=, paginare 0-based (?page=&size=)
  * Auth: Basic base64(apiKey:apiSecret) + User-Agent "{sellerId} - SelfIntegration".
  * Header obligatoriu: storeFrontCode (RO = piața / moneda storefront-ului).
  * Accept-Language: limba titlu/descriere/categorii (ro pe RO; fără el API-ul
@@ -65,19 +66,27 @@ function authHeaders(creds) {
   };
 }
 
-/** GET pe API-ul Trendyol; ridica eroare cu .status pastrat pentru sendChannelError. */
-async function trendyolGet(creds, path, params = {}) {
+/** Cerere HTTP pe API-ul Trendyol; ridica eroare cu .status pastrat pentru sendChannelError. */
+async function trendyolRequest(creds, method, path, { params = {}, body } = {}) {
   const url = new URL(`${TRENDYOL_API}${path}`);
   for (const [k, v] of Object.entries(params)) {
     if (v != null && String(v) !== "") url.searchParams.set(k, String(v));
   }
 
+  const headers = authHeaders(creds);
+  const init = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+
   let response;
   try {
-    response = await fetch(url, {
-      headers: authHeaders(creds),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    response = await fetch(url, init);
   } catch (cause) {
     const err = new Error(`Trendyol: cerere eșuată — ${cause.message}`);
     err.status = 502;
@@ -91,6 +100,7 @@ async function trendyolGet(creds, path, params = {}) {
     err.detail = text.slice(0, 300);
     throw err;
   }
+  if (!text) return {};
   try {
     return JSON.parse(text);
   } catch {
@@ -100,6 +110,14 @@ async function trendyolGet(creds, path, params = {}) {
     err.status = 502;
     throw err;
   }
+}
+
+async function trendyolGet(creds, path, params = {}) {
+  return trendyolRequest(creds, "GET", path, { params });
+}
+
+async function trendyolPost(creds, path, body) {
+  return trendyolRequest(creds, "POST", path, { body });
 }
 
 /** Mesajele Trendyol vin in `errors[].message`; 401/426 merita text explicit. */
@@ -307,17 +325,246 @@ async function fetchListings({ page = 1, filters } = {}) {
   };
 }
 
-async function pushListings() {
-  await requireConfigured();
-  const err = new Error("Trendyol: publicarea nu e implementată încă");
-  err.status = 501;
-  throw err;
+const TITLE_MAX_LEN = 100;
+const PUSH_CHUNK_SIZE = 1000;
+
+function invalidPush(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
 }
 
-function buildPushPayload() {
-  const err = new Error("Trendyol: publicarea nu e implementată încă");
-  err.status = 501;
-  throw err;
+function toNum(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Catalog SoT (pret/stoc/nume) + oglinda remote (content_id, preturi curente pe canal).
+ * Identitate = barcode.
+ */
+function mergeLocalWithRemoteCache(local, remote) {
+  const id = String(local?.id ?? remote?.id ?? "").trim();
+  if (!remote) {
+    const err = new Error(
+      `Oferta ${id || "?"}: lipsește oglinda remote — preia întâi ofertele de la Trendyol`
+    );
+    err.status = 400;
+    throw err;
+  }
+  const qty = Number(local?.general_stock);
+  return {
+    id,
+    barcode: id,
+    name: local?.name,
+    description: local?.description,
+    sale_price: local?.sale_price,
+    recommended_price: local?.recommended_price,
+    general_stock: Number.isFinite(qty) ? qty : 0,
+    content_id: remote.content_id ?? null,
+    remote_sale_price: remote.sale_price,
+    remote_list_price: remote.recommended_price,
+  };
+}
+
+/**
+ * Payload intern de push: { id, inventory?, content? }.
+ * inventory → POST .../price-and-inventory; content → POST .../content-bulk-update.
+ * Trendyol nu are min/max; PRP = listPrice.
+ */
+function buildPushPayload(
+  listing,
+  {
+    includeContent = false,
+    includeName = false,
+    includeDescription = false,
+    includeSalePrice = false,
+    includeRecommendedPrice = false,
+    includeStock = false,
+    includeMinSalePrice: _min = false,
+    includeMaxSalePrice: _max = false,
+  } = {}
+) {
+  const barcode = String(listing?.id ?? listing?.barcode ?? "").trim();
+  if (!barcode) throw invalidPush("Ofertă fără barcode — nu pot publica pe Trendyol");
+
+  const wantName = includeContent || includeName;
+  const wantDescription = includeContent || includeDescription;
+  const wantSale = includeSalePrice;
+  const wantList = includeRecommendedPrice;
+  const wantStock = includeStock;
+
+  if (!wantName && !wantDescription && !wantSale && !wantList && !wantStock) {
+    throw invalidPush(`Oferta ${barcode}: nimic de publicat`);
+  }
+
+  const payload = { id: barcode };
+
+  if (wantSale || wantList || wantStock) {
+    const inventory = { barcode };
+    if (wantStock) {
+      const qty = toNum(listing?.general_stock);
+      inventory.quantity = qty == null ? 0 : Math.max(0, Math.floor(qty));
+    }
+    if (wantSale) {
+      const salePrice = toNum(listing?.sale_price);
+      if (salePrice == null) {
+        throw invalidPush(
+          `Oferta ${barcode}: lipsește prețul de vânzare — completează-l în catalog`
+        );
+      }
+      inventory.salePrice = salePrice;
+    }
+    if (wantList) {
+      const listPrice = toNum(listing?.recommended_price);
+      if (listPrice == null) {
+        throw invalidPush(
+          `Oferta ${barcode}: lipsește PRP (listPrice) — completează-l în catalog`
+        );
+      }
+      inventory.listPrice = listPrice;
+    }
+
+    // listPrice nu poate fi sub salePrice (regula Trendyol).
+    const effectiveSale =
+      inventory.salePrice ??
+      toNum(listing?.sale_price) ??
+      toNum(listing?.remote_sale_price);
+    let effectiveList =
+      inventory.listPrice ??
+      toNum(listing?.recommended_price) ??
+      toNum(listing?.remote_list_price);
+
+    if (
+      wantSale &&
+      !wantList &&
+      inventory.salePrice != null &&
+      effectiveList != null &&
+      effectiveList < inventory.salePrice
+    ) {
+      // Ridicăm listPrice la noul sale ca să nu eșueze batch-ul.
+      inventory.listPrice = inventory.salePrice;
+      effectiveList = inventory.salePrice;
+    }
+
+    if (
+      effectiveSale != null &&
+      effectiveList != null &&
+      effectiveList < effectiveSale
+    ) {
+      throw invalidPush(
+        `Oferta ${barcode}: PRP/listPrice (${effectiveList}) trebuie ≥ prețul de vânzare (${effectiveSale})`
+      );
+    }
+
+    payload.inventory = inventory;
+    if (inventory.salePrice != null) payload.sale_price = inventory.salePrice;
+  }
+
+  if (wantName || wantDescription) {
+    const contentId = toNum(listing?.content_id);
+    if (contentId == null) {
+      throw invalidPush(
+        `Oferta ${barcode}: lipsește contentId — preia întâi ofertele de la Trendyol`
+      );
+    }
+    const content = { contentId };
+    if (wantName) {
+      const title = typeof listing?.name === "string" ? listing.name.trim() : "";
+      if (!title) {
+        throw invalidPush(`Oferta ${barcode}: titlu gol — completează numele în catalog`);
+      }
+      if (title.length > TITLE_MAX_LEN) {
+        throw invalidPush(
+          `Oferta ${barcode}: titlul are ${title.length} caractere (maxim ${TITLE_MAX_LEN} pe Trendyol)`
+        );
+      }
+      content.title = title;
+    }
+    if (wantDescription && listing?.description != null) {
+      const description = String(listing.description).trim();
+      if (description) content.description = description;
+    }
+    if (content.title != null || content.description != null) {
+      payload.content = content;
+    }
+  }
+
+  return payload;
+}
+
+/** Trimite loturi de pret/stoc și/sau content. -> { count, authUsed, batchRequestIds, messages } */
+async function pushListings(offers) {
+  if (!Array.isArray(offers) || offers.length === 0) {
+    throw new Error("Nicio ofertă de sincronizat");
+  }
+  const creds = await requireConfigured();
+  console.log(
+    `[sync-prices] start — ${offers.length} oferte de updatat pe Trendyol`
+  );
+
+  const inventoryItems = [];
+  const contentById = new Map();
+  for (const o of offers) {
+    if (o?.inventory) inventoryItems.push(o.inventory);
+    if (o?.content?.contentId != null) {
+      const cid = o.content.contentId;
+      const prev = contentById.get(cid) || { contentId: cid };
+      if (o.content.title != null) prev.title = o.content.title;
+      if (o.content.description != null) prev.description = o.content.description;
+      contentById.set(cid, prev);
+    }
+  }
+  const contentItems = [...contentById.values()];
+
+  const batchRequestIds = [];
+  const messages = [];
+  const seller = creds.SUPPLIER_ID;
+
+  async function postChunks(label, path, items) {
+    for (let i = 0; i < items.length; i += PUSH_CHUNK_SIZE) {
+      const chunk = items.slice(i, i + PUSH_CHUNK_SIZE);
+      console.log(
+        `[sync-prices] Trendyol ${label} lot ${Math.floor(i / PUSH_CHUNK_SIZE) + 1} — ${chunk.length} itemi`
+      );
+      const result = await trendyolPost(creds, path, { items: chunk });
+      const batchId = result?.batchRequestId;
+      if (batchId) batchRequestIds.push(batchId);
+      else messages.push({ type: "warning", message: `${label}: fără batchRequestId` });
+    }
+  }
+
+  if (inventoryItems.length > 0) {
+    await postChunks(
+      "price-and-inventory",
+      `/inventory/sellers/${seller}/products/price-and-inventory`,
+      inventoryItems
+    );
+  }
+  if (contentItems.length > 0) {
+    await postChunks(
+      "content-bulk-update",
+      `/product/sellers/${seller}/products/content-bulk-update`,
+      contentItems
+    );
+  }
+
+  const authUsed = `trendyol:${seller}/${STOREFRONT_CODE}/${ACCEPT_LANGUAGE}`;
+  console.log(
+    `[sync-prices] OK — ${offers.length} oferte pe Trendyol (auth=${authUsed}, batches=${batchRequestIds.length})`,
+    offers.map((o) => ({
+      id: o.id,
+      sale_price: o.sale_price ?? o.inventory?.salePrice,
+      contentId: o.content?.contentId,
+    }))
+  );
+  return {
+    count: offers.length,
+    authUsed,
+    batchRequestIds,
+    messages,
+  };
 }
 
 async function fetchCommission() {
@@ -340,6 +587,7 @@ module.exports = {
   fetchListings,
   pushListings,
   buildPushPayload,
+  mergeLocalWithRemoteCache,
   fetchCommission,
   resolveCommissionAuth,
 };
