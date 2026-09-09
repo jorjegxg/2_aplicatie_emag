@@ -44,6 +44,26 @@ function setChannelRemotes(channel, listings, fetchedAt) {
   });
 }
 
+/**
+ * Actualizeaza o singura oferta din oglinda, fara sa atinga restul.
+ * `setChannelRemotes` inlocuieste tot setul, deci nu poate fi folosit pentru
+ * preluarea unui singur rand.
+ * @param {string} channel
+ * @param {object} remote — oferta remote (cu .id)
+ * @returns {boolean} true daca s-a scris
+ */
+function upsertChannelRemote(channel, remote) {
+  if (remote == null || remote.id == null) return false;
+  const ch = normalizeChannel(channel);
+  let entry = store.get(ch);
+  if (!entry || !isFresh(entry)) {
+    entry = { fetchedAt: new Date().toISOString(), byId: new Map() };
+    store.set(ch, entry);
+  }
+  entry.byId.set(String(remote.id), remote);
+  return true;
+}
+
 /** @returns {{ fetchedAt: string, byId: Map<string, object> } | null} */
 function getChannelRemotes(channel) {
   const ch = normalizeChannel(channel);
@@ -71,6 +91,7 @@ function clearChannelCache(channel) {
 
 module.exports = {
   setChannelRemotes,
+  upsertChannelRemote,
   getChannelRemotes,
   getCacheMeta,
   clearChannelCache,

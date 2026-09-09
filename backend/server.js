@@ -13,6 +13,7 @@ const {
 const {
   normalizeChannel,
   setChannelRemotes,
+  upsertChannelRemote,
   clearChannelCache,
   getCatalogRows,
   updateListing,
@@ -563,6 +564,52 @@ app.post("/api/sync/pull", async (req, res) => {
     console.error("[sync-pull]", err.message);
     logCaught("sync-pull", err);
     return sendChannelError(res, err, "Eroare la preluare de la canal");
+  }
+});
+
+/** Preia o singura oferta de pe canal si o actualizeaza in oglinda remote. */
+app.post("/api/sync/pull-offer", async (req, res) => {
+  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+  const offerId = String(req.body?.id ?? "").trim();
+  if (!offerId) {
+    return res.status(400).json({ error: "Lipseste id-ul ofertei" });
+  }
+  try {
+    const channel = getChannel(channelName);
+    const result = await channel.fetchListings({ filters: { id: offerId } });
+    const remote = (result.listings || []).find(
+      (o) => String(o.id) === offerId
+    );
+    if (!remote) {
+      return res
+        .status(404)
+        .json({ error: `Oferta ${offerId} nu a fost gasita pe canal` });
+    }
+
+    try {
+      await recordPretEmagIfChanged(
+        remote.id,
+        remote.sale_price,
+        remote.currency,
+        "sync-pull-offer"
+      );
+    } catch (histErr) {
+      console.warn("[sync-pull-offer] istoric pret:", histErr.message);
+    }
+
+    upsertChannelRemote(channelName, remote);
+    console.log(`[sync-pull-offer] ${channelName}: oferta ${offerId} actualizata in cache`);
+    return res.json({
+      ok: true,
+      channel: channelName,
+      id: remote.id,
+      cache_only: true,
+      authUsed: result.authUsed || null,
+    });
+  } catch (err) {
+    console.error("[sync-pull-offer]", err.message);
+    logCaught("sync-pull-offer", err);
+    return sendChannelError(res, err, "Eroare la preluarea ofertei de la canal");
   }
 });
 

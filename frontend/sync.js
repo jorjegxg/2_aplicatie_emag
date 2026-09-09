@@ -661,6 +661,14 @@ function pushCellHtml(product, cellClass) {
   )}">⬆</button></td>`;
 }
 
+/** Butonul de preluare pe rand: reimprospateaza doar oferta asta de pe canal. */
+function pullCellHtml(product, cellClass) {
+  const title = `Preia de pe ${currentChannel} doar acest rând`;
+  return `<td data-col="pull"${cellClass("pull", "col-pull")}><button type="button" class="btn-pull-row" data-offer-id="${escapeHtml(
+    product.id
+  )}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">⬇</button></td>`;
+}
+
 /* Celulele care vin din baza locala primesc un tint, ca sa se vada dintr-o
    privire ce e al nostru si ce e de pe canal: `db` = catalog_products,
    `listing` = override-uri pe oferta din marketplace_listings. */
@@ -841,6 +849,7 @@ function pricingRowHtml(product, index) {
     )}" aria-label="Istoric preț și comenzi" title="Istoric preț și comenzi">📈</button></td>`,
 
     push: pushCellHtml(product, cellClass),
+    pull: pullCellHtml(product, cellClass),
   };
 
   const rowCls = [
@@ -1008,6 +1017,12 @@ pricingBody.addEventListener("click", (e) => {
   const pushBtn = e.target.closest("button.btn-push-row");
   if (pushBtn) {
     pushSingleOffer(pushBtn.dataset.offerId, pushBtn);
+    return;
+  }
+
+  const pullBtn = e.target.closest("button.btn-pull-row");
+  if (pullBtn) {
+    pullSingleOffer(pullBtn.dataset.offerId, pullBtn);
     return;
   }
 
@@ -1553,6 +1568,39 @@ async function pushSingleOffer(offerId, button) {
     okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
     button,
   });
+}
+
+/** Preia de pe canal un singur rand din tabel. */
+async function pullSingleOffer(offerId, button) {
+  if (pulling) return;
+  if (warnIfChannelUnconfigured()) return;
+  pulling = true;
+  btnPull.disabled = true;
+  if (button) button.disabled = true;
+  setStatus(`Se preia oferta ${offerId} de la ${currentChannel}…`, "loading");
+  try {
+    const res = await fetch(
+      `/api/sync/pull-offer?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: offerId }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      showApiError(data, `HTTP ${res.status}`);
+      return;
+    }
+    await Promise.all([loadDiff(), loadPricing()]);
+    setStatus(`Oferta ${offerId} a fost preluată de pe ${currentChannel}.`, "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la preluare", "error");
+  } finally {
+    pulling = false;
+    btnPull.disabled = false;
+    if (button && button.isConnected) button.disabled = false;
+  }
 }
 
 /* ---------- compactare + fullscreen ---------- */

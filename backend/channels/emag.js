@@ -101,10 +101,25 @@ function mapOffer(offer) {
 
 /* ---------------- HTTP ---------------- */
 
-async function productOfferRead(auth, page) {
+/** Filtre acceptate de product_offer/read pentru a restrange citirea la o oferta. */
+const READ_FILTER_KEYS = ["id", "part_number", "part_number_key"];
+
+function readFilterEntries(filters) {
+  if (!filters || typeof filters !== "object") return [];
+  return READ_FILTER_KEYS.map((key) => [key, filters[key]]).filter(
+    ([, value]) => value != null && String(value).trim() !== ""
+  );
+}
+
+async function productOfferRead(auth, page, filters = {}) {
   const body = new URLSearchParams();
+  const entries = readFilterEntries(filters);
   body.set("currentPage", String(page));
-  body.set("itemsPerPage", String(ITEMS_PER_PAGE));
+  // Cu filtru pe id se asteapta o singura oferta; nu are rost o pagina intreaga.
+  body.set("itemsPerPage", String(entries.length > 0 ? 1 : ITEMS_PER_PAGE));
+  for (const [key, value] of entries) {
+    body.set(key, String(value).trim());
+  }
 
   const response = await emagFetch(`${EMAG_API}/product_offer/read`, {
     method: "POST",
@@ -262,11 +277,16 @@ async function resolveAuth(context, probeFn) {
 
 /* ---------------- interfata de canal ---------------- */
 
-/** Citeste o pagina de oferte. -> { listings, hasMore, page, authUsed } */
-async function fetchListings({ page = 1 } = {}) {
+/**
+ * Citeste o pagina de oferte. Cu `filters` ({ id } / { part_number } /
+ * { part_number_key }) se cere o singura oferta, nu o pagina intreaga.
+ * -> { listings, hasMore, page, authUsed }
+ */
+async function fetchListings({ page = 1, filters } = {}) {
+  const filtered = readFilterEntries(filters).length > 0;
   let payload = null;
   const { label: authUsed } = await resolveAuth("products", async (auth) => {
-    const { response, json, text } = await productOfferRead(auth, page);
+    const { response, json, text } = await productOfferRead(auth, page, filters);
     if (response.status === 401 || response.status === 403) {
       return { status: response.status, ok: false, detail: text };
     }
@@ -294,8 +314,8 @@ async function fetchListings({ page = 1 } = {}) {
   return {
     listings,
     page,
-    itemsPerPage: ITEMS_PER_PAGE,
-    hasMore: listings.length >= ITEMS_PER_PAGE,
+    itemsPerPage: filtered ? 1 : ITEMS_PER_PAGE,
+    hasMore: filtered ? false : listings.length >= ITEMS_PER_PAGE,
     authUsed,
   };
 }

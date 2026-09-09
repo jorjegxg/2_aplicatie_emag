@@ -1594,7 +1594,8 @@ td.col-procentaj-profit.pct-2 {
   background: var(--row-alt);
 }
 
-.btn-push-row {
+.btn-push-row,
+.btn-pull-row {
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 6px;
@@ -1603,11 +1604,13 @@ td.col-procentaj-profit.pct-2 {
   font-size: 0.95rem;
   line-height: 1.2;
 }
-.btn-push-row:hover:not(:disabled) {
+.btn-push-row:hover:not(:disabled),
+.btn-pull-row:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--row-alt);
 }
-.btn-push-row:disabled {
+.btn-push-row:disabled,
+.btn-pull-row:disabled {
   opacity: 0.35;
   cursor: default;
 }

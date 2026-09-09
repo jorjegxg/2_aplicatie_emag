@@ -13,6 +13,7 @@ const {
   getChannelRemotes,
   getCacheMeta,
   setChannelRemotes,
+  upsertChannelRemote,
   clearChannelCache,
 } = require("./channel-remote-cache");
 
@@ -829,6 +830,7 @@ module.exports = {
   normalizeChannel,
   ensureSchema,
   setChannelRemotes,
+  upsertChannelRemote,
   getChannelRemotes,
   clearChannelCache,
   getCatalogRows,
