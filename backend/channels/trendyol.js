@@ -11,7 +11,9 @@
  *   GET /product/sellers/{id}/products/unapproved   — in asteptare/respinse
  *   filtre: ?barcode= / ?stockCode=, paginare 0-based (?page=&size=)
  * Auth: Basic base64(apiKey:apiSecret) + User-Agent "{sellerId} - SelfIntegration".
- * Header obligatoriu: storeFrontCode (RO pentru storefront-ul din Romania).
+ * Header obligatoriu: storeFrontCode (RO = piața / moneda storefront-ului).
+ * Accept-Language: limba titlu/descriere/categorii (ro pe RO; fără el API-ul
+ * întoarce adesea engleză). Override: TRENDYOL_ACCEPT_LANGUAGE.
  * Credentiale: Setări → Trendyol (SUPPLIER_ID, API_KEY, API_SECRET) în DB criptat.
  */
 
@@ -26,11 +28,17 @@ const id = "trendyol";
 const label = "Trendyol";
 
 const TRENDYOL_API = "https://apigw.trendyol.com/integration";
-/** Storefront-ul determina limba categoriilor si moneda ofertelor. */
+/** Storefront = piață / monedă; limba conținutului e Accept-Language. */
 const STOREFRONT_CODE = String(
   process.env.TRENDYOL_STOREFRONT_CODE || "RO"
 ).toUpperCase();
 const CURRENCY_BY_STOREFRONT = { RO: "RON", TR: "TRY", GR: "EUR", DE: "EUR" };
+const LANGUAGE_BY_STOREFRONT = { RO: "ro", GR: "el", TR: "en", DE: "en" };
+const ACCEPT_LANGUAGE = String(
+  process.env.TRENDYOL_ACCEPT_LANGUAGE ||
+    LANGUAGE_BY_STOREFRONT[STOREFRONT_CODE] ||
+    "ro"
+).toLowerCase();
 const ITEMS_PER_PAGE = 100;
 const REQUEST_TIMEOUT_MS = 30000;
 
@@ -53,6 +61,7 @@ function authHeaders(creds) {
     "User-Agent": `${creds.SUPPLIER_ID} - SelfIntegration`,
     Accept: "application/json",
     storeFrontCode: STOREFRONT_CODE,
+    "Accept-Language": ACCEPT_LANGUAGE,
   };
 }
 
@@ -294,7 +303,7 @@ async function fetchListings({ page = 1, filters } = {}) {
     page,
     itemsPerPage: filtered ? listings.length : ITEMS_PER_PAGE,
     hasMore: filtered ? false : hasMore,
-    authUsed: `trendyol:${creds.SUPPLIER_ID}/${STOREFRONT_CODE}`,
+    authUsed: `trendyol:${creds.SUPPLIER_ID}/${STOREFRONT_CODE}/${ACCEPT_LANGUAGE}`,
   };
 }
 
