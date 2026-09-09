@@ -745,6 +745,44 @@ td[data-col="images"] {
   cursor: pointer;
 }
 
+.product-image-thumb.is-primary img {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.product-image-thumb .btn-set-primary {
+  position: absolute;
+  bottom: -0.3rem;
+  left: -0.3rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted, var(--text));
+  cursor: pointer;
+  opacity: 0;
+}
+
+.product-image-thumb:hover .btn-set-primary,
+.product-image-thumb .btn-set-primary.is-active {
+  opacity: 1;
+}
+
+.product-image-thumb .btn-set-primary.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  cursor: default;
+}
+
+.product-image-thumb .btn-set-primary:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .image-lightbox {
   position: fixed;
   inset: 0;

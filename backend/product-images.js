@@ -15,6 +15,9 @@ const {
   HeadObjectCommand,
 } = require("@aws-sdk/client-s3");
 const { query, withTransaction, ensureSchema } = require("./pg");
+const {
+  sortByWhiteBackground,
+} = require("./image-white-bg");
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -224,6 +227,59 @@ async function getObjectStream(storedName) {
     contentLength:
       out.ContentLength != null ? Number(out.ContentLength) : null,
   };
+}
+
+/**
+ * @param {string} storedName
+ * @returns {Promise<Buffer>}
+ */
+async function getObjectBuffer(storedName) {
+  const { body } = await getObjectStream(storedName);
+  const chunks = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Reordoneaza pozele produsului: packshot (fundal alb) primul.
+ * @param {number|string} productId
+ * @returns {Promise<object[]>}
+ */
+async function preferWhiteBackgroundPrimary(productId) {
+  await ensureSchema();
+  await ensureBucket();
+  const pid = Number(productId);
+  if (!Number.isFinite(pid) || pid <= 0) {
+    const err = new Error("product_id invalid");
+    err.status = 400;
+    throw err;
+  }
+
+  const { rows } = await query(
+    `SELECT id, stored_name FROM product_images
+     WHERE product_id = $1
+     ORDER BY sort_order ASC, id ASC`,
+    [pid]
+  );
+  if (rows.length < 2) return listForProduct(pid);
+
+  const ordered = await sortByWhiteBackground(rows, async (row) => {
+    try {
+      return await getObjectBuffer(row.stored_name);
+    } catch {
+      return null;
+    }
+  });
+
+  const ids = ordered.map((r) => Number(r.id));
+  const currentIds = rows.map((r) => Number(r.id));
+  const sameOrder =
+    ids.length === currentIds.length &&
+    ids.every((id, i) => id === currentIds[i]);
+  if (!sameOrder) await reorder(pid, ids);
+  return listForProduct(pid);
 }
 
 async function objectExists(storedName) {
@@ -494,6 +550,7 @@ function downloadImage(url, redirectsLeft = MAX_REDIRECTS) {
 /**
  * Sterge pozele provenite din sursa externa (source_url NOT NULL) si le descarca
  * din nou de la URL-urile date. Uploadurile manuale (source_url NULL) raman intacte.
+ * Dupa import, reordoneaza tot setul astfel încât packshot-ul (fundal alb) sa fie primul.
  * @param {number|string} productId
  * @param {string[]} urls
  * @returns {Promise<{ deleted: number, added: object[], failed: {url: string, error: string}[] }>}
@@ -527,7 +584,7 @@ async function replaceRemoteImages(productId, urls) {
     await query(`DELETE FROM product_images WHERE id = $1`, [row.id]);
   }
 
-  // 2. descarca si urca pozele noi, dupa pozele manuale ramase
+  // 2. descarca toate URL-urile, sorteaza dupa scor fundal alb, apoi urca
   const { rows: maxRows } = await query(
     `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images WHERE product_id = $1`,
     [pid]
@@ -535,15 +592,38 @@ async function replaceRemoteImages(productId, urls) {
   let nextOrder = Number(maxRows[0]?.max_ord) + 1;
   if (!Number.isFinite(nextOrder) || nextOrder < 0) nextOrder = 0;
 
-  const added = [];
+  const downloaded = [];
   const failed = [];
 
   for (const url of list) {
-    let storedName = null;
     try {
       const { buffer, mime } = await downloadImage(url);
-      storedName = makeStoredName(mime);
-      await putObject(storedName, buffer, mime);
+      downloaded.push({ url, buffer, mime });
+    } catch (err) {
+      failed.push({ url, error: err.message });
+    }
+  }
+
+  const sorted = await sortByWhiteBackground(
+    downloaded,
+    (item) => item.buffer
+  );
+
+  const added = [];
+  for (const item of sorted) {
+    let storedName = null;
+    try {
+      storedName = makeStoredName(item.mime);
+      await putObject(storedName, item.buffer, item.mime);
+      let originalName = null;
+      try {
+        originalName =
+          decodeURIComponent(
+            new URL(item.url).pathname.split("/").pop() || ""
+          ) || null;
+      } catch {
+        originalName = null;
+      }
       const { rows } = await query(
         `INSERT INTO product_images
            (product_id, stored_name, original_name, mime_type, byte_size, sort_order, source_url)
@@ -552,17 +632,16 @@ async function replaceRemoteImages(productId, urls) {
         [
           pid,
           storedName,
-          decodeURIComponent(new URL(url).pathname.split("/").pop() || "") || null,
-          mime,
-          buffer.length,
+          originalName,
+          item.mime,
+          item.buffer.length,
           nextOrder,
-          url,
+          item.url,
         ]
       );
       added.push(mapRow(rows[0]));
       nextOrder += 1;
     } catch (err) {
-      // obiect scris pe S3 dar fara rand in DB -> curata, nu lasa orfani
       if (storedName) {
         try {
           await removeObject(storedName);
@@ -570,8 +649,18 @@ async function replaceRemoteImages(productId, urls) {
           /* ignore */
         }
       }
-      failed.push({ url, error: err.message });
+      failed.push({ url: item.url, error: err.message });
     }
+  }
+
+  // 3. reordoneaza tot setul (manual + remote) dupa scor packshot
+  try {
+    await preferWhiteBackgroundPrimary(pid);
+  } catch (err) {
+    console.error(
+      "[product-images] preferWhiteBackgroundPrimary failed:",
+      err.message
+    );
   }
 
   return { deleted: old.length, added, failed };
@@ -590,9 +679,11 @@ module.exports = {
   reorder,
   productExists,
   getObjectStream,
+  getObjectBuffer,
   objectExists,
   objectKey,
   downloadImage,
   replaceRemoteImages,
+  preferWhiteBackgroundPrimary,
   MAX_REMOTE_BYTES,
 };

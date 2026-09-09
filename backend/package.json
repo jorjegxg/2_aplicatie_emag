@@ -11,13 +11,15 @@
     "sync:orders": "node scripts/sync-orders.js",
     "migrate:sqlite": "node scripts/migrate-sqlite-to-pg.js",
     "migrate:images-s3": "node scripts/migrate-images-to-s3.js",
-    "import:emag-images": "node scripts/import-emag-images.js"
+    "import:emag-images": "node scripts/import-emag-images.js",
+    "prefer:white-bg": "node scripts/prefer-white-bg-primary.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.16.3",
+    "sharp": "^0.35.4",
     "xlsx": "^0.18.5"
   }
 }

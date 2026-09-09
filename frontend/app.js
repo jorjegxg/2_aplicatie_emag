@@ -462,13 +462,18 @@ function pnkCell(product) {
 function imagesCellHtml(images) {
   const list = Array.isArray(images) ? images : [];
   const thumbs = list
-    .map(
-      (img) =>
-        `<span class="product-image-thumb" data-image-id="${escapeHtml(img.id)}">
+    .map((img, index) => {
+      const primaryClass = index === 0 ? " is-primary" : "";
+      const primaryBtn =
+        index === 0
+          ? `<button type="button" class="btn-set-primary is-active" data-image-id="${escapeHtml(img.id)}" aria-label="Poza principală" title="Poza principală" disabled>★</button>`
+          : `<button type="button" class="btn-set-primary" data-image-id="${escapeHtml(img.id)}" aria-label="Setează ca poză principală" title="Setează ca poză principală">☆</button>`;
+      return `<span class="product-image-thumb${primaryClass}" data-image-id="${escapeHtml(img.id)}">
           <img src="${escapeHtml(img.url)}" alt="" loading="lazy" title="Mărește" />
+          ${primaryBtn}
           <button type="button" class="btn-delete-image" data-image-id="${escapeHtml(img.id)}" aria-label="Șterge poza">×</button>
-        </span>`
-    )
+        </span>`;
+    })
     .join("");
   return `<div class="product-images-cell">
     <div class="product-images-thumbs">${thumbs}</div>
@@ -950,6 +955,12 @@ document.addEventListener("keydown", (e) => {
 });
 
 tbody.addEventListener("click", (e) => {
+  const setPrimaryBtn = e.target.closest("button.btn-set-primary");
+  if (setPrimaryBtn) {
+    e.preventDefault();
+    if (!setPrimaryBtn.disabled) void handleProductImageSetPrimary(setPrimaryBtn);
+    return;
+  }
   const btn = e.target.closest("button.btn-delete-image");
   if (btn) {
     e.preventDefault();
@@ -1021,6 +1032,45 @@ async function handleProductImageDelete(btn) {
     setStatus("Poză ștearsă.", "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la ștergere poză", "error");
+  }
+}
+
+async function handleProductImageSetPrimary(btn) {
+  const tr = btn.closest("tr[data-offer-id]");
+  const productId = tr?.dataset.productId;
+  const imageId = Number(btn.dataset.imageId);
+  if (!tr || !productId || !Number.isFinite(imageId) || imageId <= 0) return;
+
+  const thumbs = [...tr.querySelectorAll(".product-image-thumb[data-image-id]")];
+  const ids = thumbs
+    .map((el) => Number(el.dataset.imageId))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!ids.length || ids[0] === imageId) return;
+
+  const imageIds = [imageId, ...ids.filter((id) => id !== imageId)];
+
+  setStatus("Se setează poza principală…", "loading");
+  try {
+    const res = await fetch(
+      `/api/catalog/product/${encodeURIComponent(productId)}/images/order`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_ids: imageIds }),
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+    const images = data.images || [];
+    updateImagesCell(tr, images);
+    const offerId = tr.dataset.offerId;
+    const cached = loadedProducts.find(
+      (p) => String(p.id) === String(offerId)
+    );
+    if (cached) cached.images = images;
+    setStatus("Poza principală actualizată.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la setarea pozei principale", "error");
   }
 }
 
