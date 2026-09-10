@@ -917,6 +917,7 @@ function remoteToViewRow(remote) {
     vat_id: toNumOrNull(remote.vat_id),
     currency: toTextOrNull(remote.currency) || "RON",
     characteristics: toTextOrNull(remote.characteristics) || "",
+    commission_rate: toNumOrNull(remote.commission_rate),
   };
 }
 
@@ -947,6 +948,10 @@ async function getChannelViewRows(channel) {
       const ean = normalizeEan(remote.ean) || normalizeEan(remote.id) || normalizeEan(ext);
       local = ean ? localByKey.get(ean) || null : null;
     }
+    // Comisionul: pe eMAG e override-ul local din listing, pe Trendyol vine
+    // direct din oglinda canalului (nu se persista nicaieri local).
+    const commissionSource =
+      ch === "trendyol" && view.commission_rate != null ? "trendyol" : "emag";
     products.push({
       ...view,
       channel: ch,
@@ -959,6 +964,13 @@ async function getChannelViewRows(channel) {
       procentaj_emag: local ? local.procentaj_emag : null,
       commission_value: local ? local.commission_value : null,
       commission_fetched_at: local ? local.commission_fetched_at : null,
+      commission_source: commissionSource,
+      channel_commission_pct:
+        commissionSource === "trendyol"
+          ? view.commission_rate
+          : local
+          ? local.procentaj_emag
+          : null,
       pret_emag_last_change: local ? local.pret_emag_last_change : null,
       images: local ? local.images : [],
     });

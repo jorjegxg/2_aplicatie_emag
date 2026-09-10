@@ -378,6 +378,10 @@ const {
 } = window.Pricing;
 
 const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
+const CHANNEL_COMMISSION_LABELS = {
+  emag: "Comision eMAG %",
+  trendyol: "Comision Trendyol %",
+};
 
 /** Diff API key → coloană din tabelul Prețuri și marjă. */
 const DIFF_KEY_TO_COL = {
@@ -398,6 +402,7 @@ const pricingTable = document.getElementById("pricing-table");
 const pricingBody = document.getElementById("pricing-body");
 const pricingWrap = document.getElementById("pricing-wrap");
 const thPretCanal = document.getElementById("th-pret-canal");
+const thComision = document.getElementById("th-comision");
 const btnPush = document.getElementById("btn-push");
 const btnCompactPricing = document.getElementById("btn-compact-pricing");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
@@ -601,7 +606,11 @@ function rowSalePrice(product) {
 }
 
 function rowPctEmag(product) {
-  const raw = product.procentaj_emag;
+  // Pe Trendyol comisionul vine de pe canal, nu din listing-ul eMAG local.
+  const raw =
+    product.commission_source === "trendyol"
+      ? product.channel_commission_pct
+      : product.procentaj_emag;
   return raw != null && Number.isFinite(Number(raw))
     ? Number(raw)
     : DEFAULT_PROcentaj_EMAG;
@@ -706,8 +715,16 @@ function pricingRowHtml(product, index) {
   const cellClass = (col, extra = "") =>
     columns.cellClass(col, `${extra}${colDiff(col)}${srcClass(col)}`.trim());
 
-  // Fara produs local nu exista unde salva comisionul → doar afisare.
-  const commissionCell = product.has_local === false
+  // Comisionul de canal (Trendyol) e read-only: nu are unde fi persistat local.
+  const commissionCell = product.commission_source === "trendyol"
+    ? `<td data-col="procentaj_emag"${cellClass(
+        "procentaj_emag",
+        "col-procentaj-emag"
+      )} title="Comision Trendyol">${escapeHtml(
+        formatProcentajEmagDisplay(product.channel_commission_pct)
+      )}</td>`
+    // Fara produs local nu exista unde salva comisionul → doar afisare.
+    : product.has_local === false
     ? `<td data-col="procentaj_emag"${cellClass("procentaj_emag", "col-procentaj-emag")}>—</td>`
     : isFetched
     ? `<td data-col="procentaj_emag"${cellClass(
@@ -866,6 +883,7 @@ function pricingRowHtml(product, index) {
 
 function renderPricing() {
   thPretCanal.textContent = CHANNEL_PRICE_LABELS[currentChannel] || "Preț canal";
+  syncCommissionControls();
   if (!pricingProducts.length) {
     const msg = remoteCached
       ? `Nicio ofertă pe ${currentChannel} la ultima preluare.`
@@ -1676,9 +1694,18 @@ function initFullscreenToggle() {
 
 /* ---------- pornire ---------- */
 
+/** Comisionul se preia doar de pe eMAG; pe alte canale e read-only. */
+function syncCommissionControls() {
+  thComision.textContent =
+    CHANNEL_COMMISSION_LABELS[currentChannel] || "Comision %";
+  btnFetchCommission.hidden = currentChannel !== "emag";
+}
+
 channelSelect.value = currentChannel;
+syncCommissionControls();
 channelSelect.addEventListener("change", async () => {
   currentChannel = channelSelect.value || "emag";
+  syncCommissionControls();
   summaryFilter = null;
   try {
     localStorage.setItem(CHANNEL_KEY, currentChannel);
