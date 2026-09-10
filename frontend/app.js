@@ -534,6 +534,11 @@ function rowHtml(product, index) {
     product.product_id != null && product.product_id !== ""
       ? ` data-product-id="${escapeHtml(product.product_id)}"`
       : "";
+  const dimVal = (v) => (v == null || v === "" ? "" : Number(v));
+  const greutate = dimVal(product.greutate);
+  const inaltime = dimVal(product.inaltime);
+  const lungime = dimVal(product.lungime);
+  const latime = dimVal(product.latime);
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
@@ -550,6 +555,10 @@ function rowHtml(product, index) {
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
     stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" /></td>`,
+    greutate: `<td data-col="greutate"${cellClass("greutate", "col-dim")}><input type="number" class="input-dim" data-dim-field="greutate" min="0" step="0.001" value="${escapeHtml(greutate)}" /></td>`,
+    inaltime: `<td data-col="inaltime"${cellClass("inaltime", "col-dim")}><input type="number" class="input-dim" data-dim-field="inaltime" min="0" step="0.01" value="${escapeHtml(inaltime)}" /></td>`,
+    lungime: `<td data-col="lungime"${cellClass("lungime", "col-dim")}><input type="number" class="input-dim" data-dim-field="lungime" min="0" step="0.01" value="${escapeHtml(lungime)}" /></td>`,
+    latime: `<td data-col="latime"${cellClass("latime", "col-dim")}><input type="number" class="input-dim" data-dim-field="latime" min="0" step="0.01" value="${escapeHtml(latime)}" /></td>`,
     ean: `<td data-col="ean"${cellClass("ean")}>${eanCell(product)}</td>`,
     pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
   };
@@ -582,6 +591,14 @@ function getCellSortValue(tr, col) {
     return description ? description.toLowerCase() : null;
   }
   if (col === "pret_cumparare") {
+    return parseSortNumber(td.querySelector("input")?.value ?? "");
+  }
+  if (
+    col === "greutate" ||
+    col === "inaltime" ||
+    col === "lungime" ||
+    col === "latime"
+  ) {
     return parseSortNumber(td.querySelector("input")?.value ?? "");
   }
   if (col === "index" || col === "id") {
@@ -636,7 +653,11 @@ function getCellFilterText(tr, col) {
     col === "transport_override" ||
     col === "pret_minim" ||
     col === "pret_cumparare" ||
-    col === "stoc"
+    col === "stoc" ||
+    col === "greutate" ||
+    col === "inaltime" ||
+    col === "lungime" ||
+    col === "latime"
   ) {
     return String(td.querySelector("input")?.value ?? "").trim();
   }
@@ -698,7 +719,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="17">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="21">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -754,7 +775,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="17">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="21">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
     updateToolbarTotals();
     return;
@@ -812,7 +833,7 @@ async function loadProducts() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="17">${escapeHtml(
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="21">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   } finally {
@@ -1147,6 +1168,19 @@ tbody.addEventListener("input", (e) => {
     return;
   }
 
+  const dimInput = e.target.closest("input.input-dim");
+  if (dimInput) {
+    const tr = dimInput.closest("tr[data-offer-id]");
+    const field = dimInput.dataset.dimField;
+    if (!tr || !field) return;
+    schedulePersistListing(
+      tr.dataset.offerId,
+      { [field]: numOrNull(dimInput.value) },
+      field
+    );
+    return;
+  }
+
   const nameInput = e.target.closest("textarea.input-name");
   if (nameInput) {
     const tr = nameInput.closest("tr[data-offer-id]");
@@ -1309,6 +1343,10 @@ const EXPORT_NUMERIC_COLS = new Set([
   "pret_minim",
   "pret_maxim",
   "stoc",
+  "greutate",
+  "inaltime",
+  "lungime",
+  "latime",
 ]);
 
 function toExportValue(col, text) {

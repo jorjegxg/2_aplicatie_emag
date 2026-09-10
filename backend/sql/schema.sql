@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS catalog_products (
   general_stock NUMERIC(12, 3),
   currency TEXT,
   transport_override NUMERIC(12, 4),
+  greutate NUMERIC(12, 3),
+  inaltime NUMERIC(12, 2),
+  lungime NUMERIC(12, 2),
+  latime NUMERIC(12, 2),
   created_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ
 );

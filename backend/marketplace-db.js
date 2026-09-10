@@ -281,6 +281,10 @@ function mapCatalogRowToProduct(r) {
     max_sale_price: toNumOrNull(r.max_sale_price),
     pret_cumparare: toNumOrNull(r.pret_cumparare),
     transport_override: toNumOrNull(r.transport_override),
+    greutate: toNumOrNull(r.greutate),
+    inaltime: toNumOrNull(r.inaltime),
+    lungime: toNumOrNull(r.lungime),
+    latime: toNumOrNull(r.latime),
     pret_minim_override: toNumOrNull(r.pret_minim_override),
     procentaj_emag: toNumOrNull(r.procentaj_emag),
     commission_value: toNumOrNull(r.commission_value),
@@ -337,6 +341,10 @@ const LISTING_EDITABLE = {
   max_sale_price: toNumOrNull,
   general_stock: toNumOrNull,
   transport_override: toNumOrNull,
+  greutate: toNumOrNull,
+  inaltime: toNumOrNull,
+  lungime: toNumOrNull,
+  latime: toNumOrNull,
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
@@ -359,6 +367,10 @@ const LISTING_TO_CATALOG_COL = {
   max_sale_price: "max_sale_price",
   general_stock: "general_stock",
   transport_override: "transport_override",
+  greutate: "greutate",
+  inaltime: "inaltime",
+  lungime: "lungime",
+  latime: "latime",
 };
 
 async function setListingPretCumparare(channel, externalId, value) {
@@ -525,6 +537,10 @@ const PRODUCT_EDITABLE = {
   general_stock: toNumOrNull,
   currency: toTextOrNull,
   transport_override: toNumOrNull,
+  greutate: toNumOrNull,
+  inaltime: toNumOrNull,
+  lungime: toNumOrNull,
+  latime: toNumOrNull,
 };
 
 const PRODUCT_LISTING_EDITABLE = {
