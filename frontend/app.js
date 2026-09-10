@@ -491,6 +491,60 @@ function updateImagesCell(tr, images) {
   td.dataset.count = String(Array.isArray(images) ? images.length : 0);
 }
 
+function calcGreutateVolumetrica(latime, lungime, inaltime) {
+  const w = Number(latime);
+  const l = Number(lungime);
+  const h = Number(inaltime);
+  if (![w, l, h].every((n) => Number.isFinite(n) && n > 0)) return null;
+  return (w * l * h) / 5000;
+}
+
+function formatGreutateVolumetrica(value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const rounded = Math.round(value * 1000) / 1000;
+  return String(rounded);
+}
+
+function dimHighlightClass(isLarger) {
+  return isLarger ? "is-dim-blue" : "is-dim-gray";
+}
+
+function applyWeightHighlight(tr) {
+  if (!tr) return;
+  const greutateTd = tr.querySelector('td[data-col="greutate"]');
+  const volTd = tr.querySelector('td[data-col="greutate_volumetrica"]');
+  if (!greutateTd || !volTd) return;
+
+  const dimVal = (field) => {
+    const input = tr.querySelector(`input.input-dim[data-dim-field="${field}"]`);
+    return numOrNull(input?.value);
+  };
+
+  const greutate = dimVal("greutate");
+  const vol = calcGreutateVolumetrica(
+    dimVal("latime"),
+    dimVal("lungime"),
+    dimVal("inaltime")
+  );
+
+  volTd.dataset.value = vol == null ? "" : String(vol);
+  volTd.textContent = formatGreutateVolumetrica(vol);
+
+  greutateTd.classList.remove("is-dim-blue", "is-dim-gray");
+  volTd.classList.remove("is-dim-blue", "is-dim-gray");
+
+  const greutateOk = greutate != null && Number.isFinite(greutate);
+  const volOk = vol != null && Number.isFinite(vol);
+  if (!greutateOk || !volOk) {
+    if (greutateOk) greutateTd.classList.add("is-dim-gray");
+    if (volOk) volTd.classList.add("is-dim-gray");
+    return;
+  }
+
+  greutateTd.classList.add(dimHighlightClass(greutate > vol));
+  volTd.classList.add(dimHighlightClass(vol > greutate));
+}
+
 function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
@@ -539,6 +593,20 @@ function rowHtml(product, index) {
   const inaltime = dimVal(product.inaltime);
   const lungime = dimVal(product.lungime);
   const latime = dimVal(product.latime);
+  const greutateVol = calcGreutateVolumetrica(latime, lungime, inaltime);
+  const greutateNum = greutate === "" ? null : Number(greutate);
+  const greutateOk = greutateNum != null && Number.isFinite(greutateNum);
+  const volOk = greutateVol != null && Number.isFinite(greutateVol);
+  let greutateExtra = "col-dim";
+  let volExtra = "";
+  if (greutateOk && volOk) {
+    greutateExtra += ` ${dimHighlightClass(greutateNum > greutateVol)}`;
+    volExtra = dimHighlightClass(greutateVol > greutateNum);
+  } else if (greutateOk) {
+    greutateExtra += " is-dim-gray";
+  } else if (volOk) {
+    volExtra = "is-dim-gray";
+  }
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
@@ -555,7 +623,8 @@ function rowHtml(product, index) {
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
     stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" /></td>`,
-    greutate: `<td data-col="greutate"${cellClass("greutate", "col-dim")}><input type="number" class="input-dim" data-dim-field="greutate" min="0" step="0.001" value="${escapeHtml(greutate)}" /></td>`,
+    greutate: `<td data-col="greutate"${cellClass("greutate", greutateExtra)}><input type="number" class="input-dim" data-dim-field="greutate" min="0" step="0.001" value="${escapeHtml(greutate)}" /></td>`,
+    greutate_volumetrica: `<td data-col="greutate_volumetrica"${cellClass("greutate_volumetrica", volExtra)} data-value="${escapeHtml(greutateVol ?? "")}">${formatGreutateVolumetrica(greutateVol)}</td>`,
     inaltime: `<td data-col="inaltime"${cellClass("inaltime", "col-dim")}><input type="number" class="input-dim" data-dim-field="inaltime" min="0" step="0.01" value="${escapeHtml(inaltime)}" /></td>`,
     lungime: `<td data-col="lungime"${cellClass("lungime", "col-dim")}><input type="number" class="input-dim" data-dim-field="lungime" min="0" step="0.01" value="${escapeHtml(lungime)}" /></td>`,
     latime: `<td data-col="latime"${cellClass("latime", "col-dim")}><input type="number" class="input-dim" data-dim-field="latime" min="0" step="0.01" value="${escapeHtml(latime)}" /></td>`,
@@ -576,7 +645,7 @@ function getCellSortValue(tr, col) {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
-  if (col === "prp" || col === "pret_maxim") {
+  if (col === "prp" || col === "pret_maxim" || col === "greutate_volumetrica") {
     return parseSortNumber(td.dataset.value);
   }
   if (col === "stoc") {
@@ -661,6 +730,12 @@ function getCellFilterText(tr, col) {
   ) {
     return String(td.querySelector("input")?.value ?? "").trim();
   }
+  if (col === "greutate_volumetrica") {
+    const raw = td.dataset.value;
+    if (raw != null && raw !== "") return String(raw).trim();
+    const text = (td.textContent || "").trim();
+    return text === "—" ? "" : text;
+  }
   if (col === "name") {
     return String(td.querySelector("textarea.input-name")?.value ?? "").trim();
   }
@@ -719,7 +794,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="21">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="22">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -775,7 +850,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="21">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="22">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
     updateToolbarTotals();
     return;
@@ -833,7 +908,7 @@ async function loadProducts() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="21">${escapeHtml(
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="22">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   } finally {
@@ -1173,6 +1248,7 @@ tbody.addEventListener("input", (e) => {
     const tr = dimInput.closest("tr[data-offer-id]");
     const field = dimInput.dataset.dimField;
     if (!tr || !field) return;
+    applyWeightHighlight(tr);
     schedulePersistListing(
       tr.dataset.offerId,
       { [field]: numOrNull(dimInput.value) },
@@ -1344,6 +1420,7 @@ const EXPORT_NUMERIC_COLS = new Set([
   "pret_maxim",
   "stoc",
   "greutate",
+  "greutate_volumetrica",
   "inaltime",
   "lungime",
   "latime",

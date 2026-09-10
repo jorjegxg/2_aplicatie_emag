@@ -697,6 +697,18 @@ td.col-dim .input-dim:focus {
   border-color: var(--accent);
 }
 
+td.col-dim.is-dim-blue .input-dim,
+td[data-col="greutate_volumetrica"].is-dim-blue {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+td.col-dim.is-dim-gray .input-dim,
+td[data-col="greutate_volumetrica"].is-dim-gray {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 td.col-name .input-name,
 td[data-col="name"] .input-name {
   display: block;
