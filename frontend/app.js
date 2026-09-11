@@ -1497,10 +1497,15 @@ function toExportValue(col, text) {
   if (!raw || raw === "—") return null;
   if (!EXPORT_NUMERIC_COLS.has(col)) return raw;
 
-  const cleaned = raw
-    .replace(/[^\d,.\-]/g, "")
-    .replace(/\.(?=\d{3}\b)/g, "")
-    .replace(",", ".");
+  // UI folosește "." ca zecimal (input[type=number] / Number). Nu șterge
+  // punctele „de mii” orbește — altfel 0.775 → 775 și 3.344 → 3344.
+  let cleaned = raw.replace(/[^\d,.\-]/g, "");
+  if (cleaned.includes(",") && cleaned.includes(".")) {
+    // format EU: 1.234,56
+    cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (cleaned.includes(",")) {
+    cleaned = cleaned.replace(",", ".");
+  }
   const num = Number(cleaned);
   return Number.isFinite(num) && cleaned !== "" ? num : raw;
 }
