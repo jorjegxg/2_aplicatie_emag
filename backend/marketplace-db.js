@@ -280,6 +280,8 @@ function mapCatalogRowToProduct(r) {
     min_sale_price: toNumOrNull(r.min_sale_price),
     max_sale_price: toNumOrNull(r.max_sale_price),
     pret_cumparare: toNumOrNull(r.pret_cumparare),
+    pret_cumparare_usd: toNumOrNull(r.pret_cumparare_usd),
+    link_cumparare: toTextOrNull(r.link_cumparare) || "",
     transport_override: toNumOrNull(r.transport_override),
     greutate: toNumOrNull(r.greutate),
     inaltime: toNumOrNull(r.inaltime),
@@ -345,6 +347,8 @@ const LISTING_EDITABLE = {
   inaltime: toNumOrNull,
   lungime: toNumOrNull,
   latime: toNumOrNull,
+  pret_cumparare_usd: toNumOrNull,
+  link_cumparare: toTextOrNull,
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
@@ -371,6 +375,8 @@ const LISTING_TO_CATALOG_COL = {
   inaltime: "inaltime",
   lungime: "lungime",
   latime: "latime",
+  pret_cumparare_usd: "pret_cumparare_usd",
+  link_cumparare: "link_cumparare",
 };
 
 async function setListingPretCumparare(channel, externalId, value) {
@@ -526,6 +532,8 @@ const PRODUCT_EDITABLE = {
   brand: toTextOrNull,
   ean: toTextOrNull,
   pret_cumparare: toNumOrNull,
+  pret_cumparare_usd: toNumOrNull,
+  link_cumparare: toTextOrNull,
   emag_offer_id: toTextOrNull,
   part_number: toTextOrNull,
   part_number_key: toTextOrNull,
@@ -635,27 +643,126 @@ async function upsertCatalogProducts(items) {
       const nume = toTextOrNull(r?.nume) || cod;
       if (!cod && !nume) continue;
       const pret = toNumOrNull(r?.pret_cumparare);
+      const pretUsd = Object.prototype.hasOwnProperty.call(r || {}, "pret_cumparare_usd")
+        ? toNumOrNull(r.pret_cumparare_usd)
+        : undefined;
+      const link = Object.prototype.hasOwnProperty.call(r || {}, "link_cumparare")
+        ? toTextOrNull(r.link_cumparare)
+        : undefined;
+
       if (cod) {
+        const sets = [
+          "nume = EXCLUDED.nume",
+          "pret_cumparare = EXCLUDED.pret_cumparare",
+          "updated_at = EXCLUDED.updated_at",
+        ];
+        if (pretUsd !== undefined) {
+          sets.push("pret_cumparare_usd = EXCLUDED.pret_cumparare_usd");
+        }
+        if (link !== undefined) {
+          sets.push("link_cumparare = EXCLUDED.link_cumparare");
+        }
         await client.query(
-          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $4)
-           ON CONFLICT (cod_produs) DO UPDATE SET
-             nume = EXCLUDED.nume,
-             pret_cumparare = EXCLUDED.pret_cumparare,
-             updated_at = EXCLUDED.updated_at`,
-          [cod, nume, pret, now]
+          `INSERT INTO catalog_products (
+             cod_produs, nume, pret_cumparare, pret_cumparare_usd, link_cumparare,
+             created_at, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $6)
+           ON CONFLICT (cod_produs) DO UPDATE SET ${sets.join(", ")}`,
+          [cod, nume, pret, pretUsd ?? null, link ?? null, now]
         );
       } else {
         await client.query(
-          `INSERT INTO catalog_products (cod_produs, nume, pret_cumparare, created_at, updated_at)
-           VALUES (NULL, $1, $2, $3, $3)`,
-          [nume, pret, now]
+          `INSERT INTO catalog_products (
+             cod_produs, nume, pret_cumparare, pret_cumparare_usd, link_cumparare,
+             created_at, updated_at
+           )
+           VALUES (NULL, $1, $2, $3, $4, $5, $5)`,
+          [nume, pret, pretUsd ?? null, link ?? null, now]
         );
       }
       count += 1;
     }
     return count;
   });
+}
+
+/**
+ * Actualizeaza doar pret_cumparare_usd / link_cumparare pe produse existente,
+ * potrivite dupa cod_produs, EAN sau part_number_key (PNK).
+ */
+async function updateCatalogPurchaseMeta(items) {
+  await ensureSchema();
+  const now = new Date().toISOString();
+  const list = Array.isArray(items) ? items : [];
+  let updated = 0;
+  let unmatched = 0;
+
+  await withTransaction(async (client) => {
+    for (const r of list) {
+      const hasUsd = Object.prototype.hasOwnProperty.call(r || {}, "pret_cumparare_usd");
+      const hasLink = Object.prototype.hasOwnProperty.call(r || {}, "link_cumparare");
+      if (!hasUsd && !hasLink) continue;
+
+      const pretUsd = hasUsd ? toNumOrNull(r.pret_cumparare_usd) : undefined;
+      const link = hasLink ? toTextOrNull(r.link_cumparare) : undefined;
+
+      const buildSet = () => {
+        const sets = ["updated_at = $1"];
+        const params = [now];
+        if (hasUsd) {
+          params.push(pretUsd);
+          sets.push(`pret_cumparare_usd = $${params.length}`);
+        }
+        if (hasLink) {
+          params.push(link);
+          sets.push(`link_cumparare = $${params.length}`);
+        }
+        return { sets, params };
+      };
+
+      const cod = toTextOrNull(r?.cod_produs);
+      const ean = normalizeEan(r?.ean);
+      const pnk = toTextOrNull(r?.part_number_key);
+
+      let rowCount = 0;
+      if (cod) {
+        const { sets, params } = buildSet();
+        params.push(cod);
+        const result = await client.query(
+          `UPDATE catalog_products SET ${sets.join(", ")}
+           WHERE LOWER(cod_produs) = LOWER($${params.length})`,
+          params
+        );
+        rowCount = result.rowCount || 0;
+      }
+      if (rowCount === 0 && ean) {
+        const { sets, params } = buildSet();
+        params.push(ean);
+        const result = await client.query(
+          `UPDATE catalog_products SET ${sets.join(", ")}
+           WHERE LOWER(TRIM(SPLIT_PART(ean, ',', 1))) = $${params.length}`,
+          params
+        );
+        rowCount = result.rowCount || 0;
+      }
+      if (rowCount === 0 && pnk) {
+        const { sets, params } = buildSet();
+        params.push(pnk);
+        const result = await client.query(
+          `UPDATE catalog_products SET ${sets.join(", ")}
+           WHERE LOWER(part_number_key) = LOWER($${params.length})`,
+          params
+        );
+        rowCount = result.rowCount || 0;
+      }
+
+      if (rowCount > 0) updated += rowCount;
+      else unmatched += 1;
+    }
+  });
+
+  return { updated, unmatched };
 }
 
 const DIFF_FIELDS = [
@@ -1081,6 +1188,7 @@ module.exports = {
   getListings,
   updateProduct,
   upsertCatalogProducts,
+  updateCatalogPurchaseMeta,
   getChannelDiff,
   getChannelViewRows,
   getChannelStats,

@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS catalog_products (
   brand TEXT,
   ean TEXT,
   pret_cumparare NUMERIC(12, 4),
+  pret_cumparare_usd NUMERIC(12, 4),
+  link_cumparare TEXT,
   emag_offer_id TEXT,
   part_number TEXT,
   part_number_key TEXT,

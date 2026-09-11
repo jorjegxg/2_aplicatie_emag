@@ -549,6 +549,9 @@ function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
   const pretCumparare = product.pret_cumparare ?? "";
+  const pretCumparareUsd = product.pret_cumparare_usd ?? "";
+  const linkCumparare = product.link_cumparare || "";
+  const linkCumparareSafe = /^https?:\/\//i.test(linkCumparare) ? linkCumparare : "";
   const cellClass = (col, extra = "") => columns.cellClass(col, extra);
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
   const hasOverride =
@@ -617,6 +620,8 @@ function rowHtml(product, index) {
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-pret-cumparare")}><input type="number" class="input-pret-cumparare" min="0" step="0.01" value="${escapeHtml(pretCumparare)}" /></td>`,
+    pret_cumparare_usd: `<td data-col="pret_cumparare_usd"${cellClass("pret_cumparare_usd", "col-pret-cumparare-usd")}><input type="number" class="input-pret-cumparare-usd" min="0" step="0.01" value="${escapeHtml(pretCumparareUsd)}" /></td>`,
+    link_cumparare: `<td data-col="link_cumparare"${cellClass("link_cumparare", "col-link-cumparare")}><div class="link-cumparare-wrap"><input type="url" class="input-link-cumparare" placeholder="https://…" value="${escapeHtml(linkCumparare)}" /><a class="btn-open-link"${linkCumparareSafe ? ` href="${escapeHtml(linkCumparareSafe)}" target="_blank" rel="noopener noreferrer"` : " hidden"} title="Deschide link" aria-label="Deschide link">↗</a></div></td>`,
     transport_override: `<td data-col="transport_override"${cellClass("transport_override", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
@@ -659,8 +664,11 @@ function getCellSortValue(tr, col) {
     const description = getRowDescription(tr);
     return description ? description.toLowerCase() : null;
   }
-  if (col === "pret_cumparare") {
+  if (col === "pret_cumparare" || col === "pret_cumparare_usd") {
     return parseSortNumber(td.querySelector("input")?.value ?? "");
+  }
+  if (col === "link_cumparare") {
+    return String(td.querySelector("input")?.value ?? "").trim().toLowerCase() || null;
   }
   if (
     col === "greutate" ||
@@ -722,6 +730,8 @@ function getCellFilterText(tr, col) {
     col === "transport_override" ||
     col === "pret_minim" ||
     col === "pret_cumparare" ||
+    col === "pret_cumparare_usd" ||
+    col === "link_cumparare" ||
     col === "stoc" ||
     col === "greutate" ||
     col === "inaltime" ||
@@ -951,6 +961,43 @@ tbody.addEventListener("change", (e) => {
   applyRowPrices(tr, saleInput?.value ?? "");
   updateToolbarTotals();
   schedulePersistPretCumparare(tr.dataset.offerId, next);
+});
+
+tbody.addEventListener("change", (e) => {
+  const usdInput = e.target.closest("input.input-pret-cumparare-usd");
+  if (usdInput) {
+    const tr = usdInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    schedulePersistListing(
+      tr.dataset.offerId,
+      { pret_cumparare_usd: numOrNull(usdInput.value) },
+      "pret-cumparare-usd"
+    );
+    return;
+  }
+
+  const linkInput = e.target.closest("input.input-link-cumparare");
+  if (!linkInput) return;
+  const tr = linkInput.closest("tr[data-offer-id]");
+  if (!tr) return;
+  const value = String(linkInput.value || "").trim();
+  linkInput.value = value;
+  const openBtn = tr.querySelector("a.btn-open-link");
+  if (openBtn) {
+    const safe = /^https?:\/\//i.test(value) ? value : "";
+    if (safe) {
+      openBtn.href = safe;
+      openBtn.hidden = false;
+    } else {
+      openBtn.removeAttribute("href");
+      openBtn.hidden = true;
+    }
+  }
+  schedulePersistListing(
+    tr.dataset.offerId,
+    { link_cumparare: value || null },
+    "link-cumparare"
+  );
 });
 
 const imageLightbox = document.createElement("div");
@@ -1257,6 +1304,24 @@ tbody.addEventListener("input", (e) => {
     return;
   }
 
+  const linkInput = e.target.closest("input.input-link-cumparare");
+  if (linkInput) {
+    const tr = linkInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    const openBtn = tr.querySelector("a.btn-open-link");
+    if (!openBtn) return;
+    const value = String(linkInput.value || "").trim();
+    const safe = /^https?:\/\//i.test(value) ? value : "";
+    if (safe) {
+      openBtn.href = safe;
+      openBtn.hidden = false;
+    } else {
+      openBtn.removeAttribute("href");
+      openBtn.hidden = true;
+    }
+    return;
+  }
+
   const nameInput = e.target.closest("textarea.input-name");
   if (nameInput) {
     const tr = nameInput.closest("tr[data-offer-id]");
@@ -1413,6 +1478,7 @@ const EXPORT_NUMERIC_COLS = new Set([
   "id",
   "id_familie",
   "pret_cumparare",
+  "pret_cumparare_usd",
   "transport_override",
   "pret_emag",
   "prp",

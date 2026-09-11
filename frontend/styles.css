@@ -2326,6 +2326,68 @@ td.col-pret-cumparare .input-pret-cumparare:focus {
   border-color: var(--accent);
 }
 
+td.col-pret-cumparare-usd .input-pret-cumparare-usd {
+  width: 5.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+td.col-pret-cumparare-usd .input-pret-cumparare-usd:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
+td.col-link-cumparare .link-cumparare-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 12rem;
+}
+
+td.col-link-cumparare .input-link-cumparare {
+  flex: 1 1 auto;
+  min-width: 9rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+td.col-link-cumparare .input-link-cumparare:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
+td.col-link-cumparare .btn-open-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  text-decoration: none;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+td.col-link-cumparare .btn-open-link[hidden] {
+  display: none;
+}
+
+td.col-link-cumparare .btn-open-link:hover {
+  background: var(--surface-alt);
+}
+
 /* ---------- Pagina de loguri ---------- */
 .logs-filters {
   display: flex;
