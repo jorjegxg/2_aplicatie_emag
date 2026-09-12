@@ -642,6 +642,10 @@ async function upsertCatalogProducts(items) {
       const cod = toTextOrNull(r?.cod_produs);
       const nume = toTextOrNull(r?.nume) || cod;
       if (!cod && !nume) continue;
+
+      const descriere = toTextOrNull(r?.descriere);
+      const brand = toTextOrNull(r?.brand);
+      const ean = toTextOrNull(r?.ean);
       const pret = toNumOrNull(r?.pret_cumparare);
       const pretUsd = Object.prototype.hasOwnProperty.call(r || {}, "pret_cumparare_usd")
         ? toNumOrNull(r.pret_cumparare_usd)
@@ -649,36 +653,113 @@ async function upsertCatalogProducts(items) {
       const link = Object.prototype.hasOwnProperty.call(r || {}, "link_cumparare")
         ? toTextOrNull(r.link_cumparare)
         : undefined;
+      const partNumber = toTextOrNull(r?.part_number) || cod;
+      const partNumberKey = toTextOrNull(r?.part_number_key);
+      const idFamilie = toNumOrNull(r?.id_familie);
+      const familieName = toTextOrNull(r?.familie);
+      const salePrice = toNumOrNull(r?.sale_price);
+      const recommendedPrice = toNumOrNull(r?.recommended_price);
+      const minSalePrice = toNumOrNull(r?.min_sale_price);
+      const maxSalePrice = toNumOrNull(r?.max_sale_price);
+      const generalStock = toNumOrNull(r?.general_stock);
+      const currency = toTextOrNull(r?.currency) || "RON";
+
+      await ensureProductFamily(idFamilie, familieName, client);
 
       if (cod) {
-        const sets = [
-          "nume = EXCLUDED.nume",
-          "pret_cumparare = EXCLUDED.pret_cumparare",
+        const conflictSets = [
+          "nume = COALESCE(EXCLUDED.nume, catalog_products.nume)",
+          "descriere = COALESCE(EXCLUDED.descriere, catalog_products.descriere)",
+          "brand = COALESCE(EXCLUDED.brand, catalog_products.brand)",
+          "ean = COALESCE(EXCLUDED.ean, catalog_products.ean)",
+          "pret_cumparare = COALESCE(EXCLUDED.pret_cumparare, catalog_products.pret_cumparare)",
+          "part_number = COALESCE(EXCLUDED.part_number, catalog_products.part_number)",
+          "part_number_key = COALESCE(EXCLUDED.part_number_key, catalog_products.part_number_key)",
+          "id_familie = COALESCE(EXCLUDED.id_familie, catalog_products.id_familie)",
+          "sale_price = COALESCE(EXCLUDED.sale_price, catalog_products.sale_price)",
+          "recommended_price = COALESCE(EXCLUDED.recommended_price, catalog_products.recommended_price)",
+          "min_sale_price = COALESCE(EXCLUDED.min_sale_price, catalog_products.min_sale_price)",
+          "max_sale_price = COALESCE(EXCLUDED.max_sale_price, catalog_products.max_sale_price)",
+          "general_stock = COALESCE(EXCLUDED.general_stock, catalog_products.general_stock)",
+          "currency = COALESCE(EXCLUDED.currency, catalog_products.currency)",
           "updated_at = EXCLUDED.updated_at",
         ];
         if (pretUsd !== undefined) {
-          sets.push("pret_cumparare_usd = EXCLUDED.pret_cumparare_usd");
+          conflictSets.push("pret_cumparare_usd = EXCLUDED.pret_cumparare_usd");
         }
         if (link !== undefined) {
-          sets.push("link_cumparare = EXCLUDED.link_cumparare");
+          conflictSets.push("link_cumparare = EXCLUDED.link_cumparare");
         }
         await client.query(
           `INSERT INTO catalog_products (
-             cod_produs, nume, pret_cumparare, pret_cumparare_usd, link_cumparare,
-             created_at, updated_at
+             cod_produs, nume, descriere, brand, ean, pret_cumparare,
+             pret_cumparare_usd, link_cumparare,
+             part_number, part_number_key, id_familie,
+             sale_price, recommended_price, min_sale_price, max_sale_price,
+             general_stock, currency, created_at, updated_at
+           ) VALUES (
+             $1,$2,$3,$4,$5,$6,
+             $7,$8,
+             $9,$10,$11,
+             $12,$13,$14,$15,
+             $16,$17,$18,$18
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $6)
-           ON CONFLICT (cod_produs) DO UPDATE SET ${sets.join(", ")}`,
-          [cod, nume, pret, pretUsd ?? null, link ?? null, now]
+           ON CONFLICT (cod_produs) DO UPDATE SET ${conflictSets.join(", ")}`,
+          [
+            cod,
+            nume,
+            descriere,
+            brand,
+            ean,
+            pret,
+            pretUsd ?? null,
+            link ?? null,
+            partNumber,
+            partNumberKey,
+            idFamilie,
+            salePrice,
+            recommendedPrice,
+            minSalePrice,
+            maxSalePrice,
+            generalStock,
+            currency,
+            now,
+          ]
         );
       } else {
         await client.query(
           `INSERT INTO catalog_products (
-             cod_produs, nume, pret_cumparare, pret_cumparare_usd, link_cumparare,
-             created_at, updated_at
-           )
-           VALUES (NULL, $1, $2, $3, $4, $5, $5)`,
-          [nume, pret, pretUsd ?? null, link ?? null, now]
+             cod_produs, nume, descriere, brand, ean, pret_cumparare,
+             pret_cumparare_usd, link_cumparare,
+             part_number, part_number_key, id_familie,
+             sale_price, recommended_price, min_sale_price, max_sale_price,
+             general_stock, currency, created_at, updated_at
+           ) VALUES (
+             NULL,$1,$2,$3,$4,$5,
+             $6,$7,
+             $8,$9,$10,
+             $11,$12,$13,$14,
+             $15,$16,$17,$17
+           )`,
+          [
+            nume,
+            descriere,
+            brand,
+            ean,
+            pret,
+            pretUsd ?? null,
+            link ?? null,
+            partNumber,
+            partNumberKey,
+            idFamilie,
+            salePrice,
+            recommendedPrice,
+            minSalePrice,
+            maxSalePrice,
+            generalStock,
+            currency,
+            now,
+          ]
         );
       }
       count += 1;

@@ -4,7 +4,8 @@ services:
     container_name: emag-db
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # 5433 pe host: evita conflict cu Postgres local pe 5432
+      - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-emag}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-emag}
