@@ -504,9 +504,9 @@ function channelCellWithDiff(offerId, col, theirsText, currency, theirsRaw) {
 
   const isStock = field.key === "general_stock";
   const mineText = isStock
-    ? field.mine == null || field.mine === ""
+    ? field.mine == null || field.mine === "" || !Number.isFinite(Number(field.mine))
       ? "—"
-      : String(field.mine)
+      : String(Number(field.mine))
     : formatPrice(field.mine, currency);
   const mineNum = Number(field.mine);
   const theirsNum = Number(field.theirs);

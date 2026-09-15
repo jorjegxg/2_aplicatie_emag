@@ -885,6 +885,8 @@ function localDiffValue(local, key) {
   }
   if (key === "name") return toTextOrNull(local.name ?? local.nume);
   if (key === "description") return toPlainTextOrNull(local.descriere);
+  // NUMERIC din pg vine ca string ("5.000") — il transformam in numar.
+  if (key === "general_stock") return toNumOrNull(local.general_stock);
   return local[key] ?? null;
 }
 
