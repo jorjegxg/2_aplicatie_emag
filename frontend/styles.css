@@ -421,6 +421,12 @@ body {
   margin: 0 0 0.35rem;
 }
 
+.page.is-table-fullscreen .toolbar-actions .sync-summary {
+  display: flex;
+  align-self: center;
+  margin: 0;
+}
+
 .page.is-table-fullscreen .table-wrap {
   border-radius: 6px 6px 0 0;
 }

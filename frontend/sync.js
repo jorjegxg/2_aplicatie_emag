@@ -1640,6 +1640,12 @@ function setCompact(wrap, btn, on, storageKey) {
 function setTableFullscreen(on) {
   if (!pageEl || !btnTableFullscreen) return;
   pageEl.classList.toggle("is-table-fullscreen", on);
+  // În fullscreen, chip-urile de sumar urcă pe rândul cu butoanele.
+  const actionsEl = document.querySelector(".toolbar-actions");
+  if (summaryEl && actionsEl) {
+    if (on) actionsEl.appendChild(summaryEl);
+    else document.getElementById("filter-status")?.before(summaryEl);
+  }
   btnTableFullscreen.setAttribute("aria-pressed", on ? "true" : "false");
   btnTableFullscreen.title = on ? "Ieși din toată pagina" : "Tabel pe toată pagina";
   const label = btnTableFullscreen.querySelector(".btn-fullscreen-label");
