@@ -1,11 +1,7 @@
 const {
   ITEMS_PER_PAGE,
-  loadCredentials,
-  authHeader,
-  authCandidates,
-  savePreferredAuthLabel,
-  logAuthAttempt,
-  logAuthResult,
+  toEmagDatetime,
+  resolveEmagAuth,
   emagOrderRead,
 } = require("../emag-client");
 const { upsertOrderLines } = require("../db");
@@ -13,18 +9,6 @@ const { upsertOrderLines } = require("../db");
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const EMPTY_STREAK_STOP = 6;
 const FLOOR_DATE = new Date("2015-01-01T00:00:00");
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-/** Local datetime → eMAG `YYYY-mm-dd HH:ii:ss` */
-function toEmagDatetime(d) {
-  return (
-    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
-    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
-  );
-}
 
 function linesFromOrders(orders) {
   const lines = [];
@@ -48,54 +32,6 @@ function linesFromOrders(orders) {
     }
   }
   return lines;
-}
-
-async function resolveAuth() {
-  const creds = await loadCredentials();
-  const candidates = authCandidates(creds);
-  console.log(
-    `[sync:orders] ordine încercări:`,
-    candidates.map((c) => c.label).join(" → ")
-  );
-
-  let lastStatus = null;
-  let lastText = "";
-
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i];
-    logAuthAttempt("sync-orders", candidate, i, candidates.length);
-    const auth = authHeader(candidate.user, candidate.pass);
-    const { response, json, text } = await emagOrderRead(auth, {
-      page: 1,
-      createdAfter: toEmagDatetime(new Date(Date.now() - 60 * 1000)),
-      createdBefore: toEmagDatetime(new Date()),
-    });
-    lastStatus = response.status;
-    lastText = text;
-
-    if (response.status === 401 || response.status === 403) {
-      logAuthResult("sync-orders", candidate, response.status, false);
-      continue;
-    }
-
-    logAuthResult("sync-orders", candidate, response.status, true);
-    savePreferredAuthLabel(candidate.label);
-
-    if (!json) {
-      throw new Error(`Răspuns invalid de la eMAG (HTTP ${response.status}): ${text.slice(0, 300)}`);
-    }
-    if (json.isError) {
-      throw new Error(
-        `eMAG eroare la probe auth: ${JSON.stringify(json.messages || [])}`
-      );
-    }
-
-    return auth;
-  }
-
-  throw new Error(
-    `Autentificare eMAG eșuată (HTTP ${lastStatus || "?"}). ${lastText.slice(0, 200)}`
-  );
 }
 
 async function fetchWindowPage(auth, page, createdAfter, createdBefore) {
@@ -146,7 +82,7 @@ async function syncWindow(auth, windowStart, windowEnd) {
 }
 
 async function main() {
-  const auth = await resolveAuth();
+  const auth = await resolveEmagAuth("sync-orders");
 
   let windowEnd = new Date();
   let emptyStreak = 0;

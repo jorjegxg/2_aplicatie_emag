@@ -178,10 +178,16 @@ function logAuthResult(context, candidate, status, ok) {
   }
 }
 
-async function emagOrderRead(auth, { page, status, createdAfter, createdBefore }) {
+async function emagOrderRead(
+  auth,
+  { page = 1, id, status, createdAfter, createdBefore, modifiedAfter, modifiedBefore }
+) {
   const body = new URLSearchParams();
   body.set("currentPage", String(page));
   body.set("itemsPerPage", String(ITEMS_PER_PAGE));
+  if (id != null && id !== "") body.set("id", String(id));
+  if (modifiedAfter) body.set("modifiedAfter", String(modifiedAfter));
+  if (modifiedBefore) body.set("modifiedBefore", String(modifiedBefore));
 
   if (status != null && status !== "") {
     const statuses = Array.isArray(status) ? status : [status];
@@ -212,8 +218,73 @@ async function emagOrderRead(auth, { page, status, createdAfter, createdBefore }
   return { response, json, text };
 }
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** Local datetime → eMAG `YYYY-mm-dd HH:ii:ss` */
+function toEmagDatetime(d) {
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+  );
+}
+
+let cachedAuth = null;
+
+/**
+ * Header Authorization valid pentru eMAG: incearca combinatiile de credentiale
+ * cu un order/read pe ultimul minut. Rezultatul e tinut in memorie; `fresh` il ignora.
+ */
+async function resolveEmagAuth(context, { fresh = false } = {}) {
+  if (cachedAuth && !fresh) return cachedAuth;
+  cachedAuth = null;
+
+  const creds = await loadCredentials();
+  const candidates = authCandidates(creds);
+  let lastStatus = null;
+  let lastText = "";
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    logAuthAttempt(context, candidate, i, candidates.length);
+    const auth = authHeader(candidate.user, candidate.pass);
+    const { response, json, text } = await emagOrderRead(auth, {
+      page: 1,
+      createdAfter: toEmagDatetime(new Date(Date.now() - 60 * 1000)),
+      createdBefore: toEmagDatetime(new Date()),
+    });
+    lastStatus = response.status;
+    lastText = text;
+
+    if (response.status === 401 || response.status === 403) {
+      logAuthResult(context, candidate, response.status, false);
+      continue;
+    }
+
+    logAuthResult(context, candidate, response.status, true);
+    savePreferredAuthLabel(candidate.label);
+
+    if (!json) {
+      throw new Error(`Răspuns invalid de la eMAG (HTTP ${response.status}): ${text.slice(0, 300)}`);
+    }
+    if (json.isError) {
+      throw new Error(`eMAG eroare la probe auth: ${JSON.stringify(json.messages || [])}`);
+    }
+
+    cachedAuth = auth;
+    return auth;
+  }
+
+  throw new Error(
+    `Autentificare eMAG eșuată (HTTP ${lastStatus || "?"}). ${lastText.slice(0, 200)}`
+  );
+}
+
 module.exports = {
   EMAG_API,
+  toEmagDatetime,
+  resolveEmagAuth,
   ITEMS_PER_PAGE,
   emagFetch,
   loadCredentials,

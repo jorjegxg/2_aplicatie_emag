@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const path = require("path");
 const multer = require("multer");
@@ -53,6 +54,12 @@ const {
   getTrendyolCreds,
 } = require("./credentials-store");
 const {
+  processEmagOrderId,
+  pollRecentEmagOrders,
+  listLocalOrders,
+  listStockMovements,
+} = require("./stock-movements");
+const {
   isAuthEnabled,
   requireAppAuth,
   authStatusHandler,
@@ -73,6 +80,41 @@ app.use(express.json());
 app.get("/api/auth/status", authStatusHandler);
 app.post("/api/auth/login", authLoginHandler);
 app.post("/api/auth/logout", authLogoutHandler);
+
+// Callback eMAG la comanda noua: GET/POST ...?token=SECRET&order_id=123.
+// Public (eMAG nu are cookie), protejat prin EMAG_WEBHOOK_TOKEN.
+function webhookTokenOk(provided) {
+  const expected = String(process.env.EMAG_WEBHOOK_TOKEN || "").trim();
+  if (!expected) return false;
+  const a = crypto.createHash("sha256").update(String(provided || "")).digest();
+  const b = crypto.createHash("sha256").update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+function emagOrderWebhook(req, res) {
+  if (!webhookTokenOk(req.query.token)) {
+    return res.status(403).json({ error: "Token invalid" });
+  }
+  const orderId = String(req.query.order_id ?? req.body?.order_id ?? "").trim();
+  if (!/^\d+$/.test(orderId)) {
+    return res.status(400).json({ error: "order_id lipsa" });
+  }
+  res.json({ ok: true });
+  processEmagOrderId(orderId, { via: "webhook" }).catch((err) => {
+    console.error(`[webhook:emag] comanda ${orderId}:`, err.message);
+    void log({
+      level: "error",
+      source: "server",
+      category: "webhook-emag",
+      message: `Webhook comanda ${orderId} esuat: ${err.message}`,
+      detail: { orderId, stack: err.stack },
+    });
+  });
+}
+
+app.get("/api/webhooks/emag/order", emagOrderWebhook);
+app.post("/api/webhooks/emag/order", express.urlencoded({ extended: false }), emagOrderWebhook);
+
 app.use(requireAppAuth);
 
 const uploadImages = multer({
@@ -99,7 +141,8 @@ function categoryForPath(urlPath) {
   if (p.startsWith("/api/catalog/product") && p.includes("/images")) return "product-images";
   if (p.startsWith("/api/catalog/listing")) return "listing-patch";
   if (p.startsWith("/api/catalog/product")) return "product-patch";
-  if (p.startsWith("/api/orders")) return "orders";
+  if (p.startsWith("/api/webhooks/emag")) return "webhook-emag";
+  if (p.startsWith("/api/orders") || p.startsWith("/api/stock-movements")) return "orders";
   if (p.startsWith("/api/settings")) return "settings";
   if (p.startsWith("/api/credentials")) return "credentials";
   return "http";
@@ -946,6 +989,29 @@ app.get("/api/orders", async (req, res) => {
   }
 });
 
+// Comenzile salvate local (webhook / poller), cu liniile si preturile lor.
+app.get("/api/orders/local", async (req, res) => {
+  try {
+    const orders = await listLocalOrders({
+      from: req.query.from,
+      to: req.query.to,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    return res.json({ count: orders.length, orders });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
+app.get("/api/stock-movements", async (req, res) => {
+  try {
+    return res.json({ movements: await listStockMovements({ limit: req.query.limit }) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
 /* ---------------- istoric + export ---------------- */
 
 app.get("/api/products/:offerId/history", async (req, res) => {
@@ -1120,6 +1186,40 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`Server pornit: http://localhost:${PORT}`);
   });
+  startEmagOrderPoller();
+}
+
+// Plasa de siguranta pentru webhook-uri pierdute si anulari (eMAG nu trimite callback la anulare).
+function startEmagOrderPoller() {
+  const minutes = Number(process.env.EMAG_ORDER_POLL_MINUTES ?? 5);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    console.log("[order-poll] dezactivat (EMAG_ORDER_POLL_MINUTES=0)");
+    return;
+  }
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await pollRecentEmagOrders({ lookbackMinutes: Math.max(30, minutes * 3) });
+    } catch (err) {
+      if (err?.code !== "CREDENTIALS_MISSING") {
+        console.error("[order-poll]", err.message);
+        void log({
+          level: "error",
+          source: "server",
+          category: "webhook-emag",
+          message: `Poll comenzi esuat: ${err.message}`,
+          detail: { stack: err.stack },
+        });
+      }
+    } finally {
+      running = false;
+    }
+  };
+  setInterval(tick, minutes * 60 * 1000);
+  setTimeout(tick, 15 * 1000);
+  console.log(`[order-poll] pornit la fiecare ${minutes} min`);
 }
 
 start().catch((err) => {
