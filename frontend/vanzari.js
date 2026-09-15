@@ -502,6 +502,14 @@ function toggleOrderExpand(orderRow) {
 
   const html = renderProductRows(order);
   orderRow.insertAdjacentHTML("afterend", html);
+
+  const productsTable = orderRow.nextElementSibling?.querySelector(".order-products-table");
+  if (productsTable && window.TableColumns?.enableResize) {
+    window.TableColumns.enableResize({
+      table: productsTable,
+      storageKey: "vanzari-order-products-column-widths",
+    });
+  }
 }
 
 async function loadSettings() {
@@ -614,6 +622,16 @@ ordersBody.addEventListener("click", (e) => {
   if (!row || !ordersBody.contains(row)) return;
   toggleOrderExpand(row);
 });
+
+if (window.TableColumns?.enableResize) {
+  const ordersTable = document.getElementById("orders-table");
+  if (ordersTable) {
+    window.TableColumns.enableResize({
+      table: ordersTable,
+      storageKey: "vanzari-orders-column-widths",
+    });
+  }
+}
 
 (async () => {
   await loadSettings();

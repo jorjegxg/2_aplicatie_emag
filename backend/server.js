@@ -57,6 +57,7 @@ const {
   processEmagOrderId,
   pollRecentEmagOrders,
   listLocalOrders,
+  listNewLocalOrders,
   listStockMovements,
 } = require("./stock-movements");
 const {
@@ -999,6 +1000,28 @@ app.get("/api/orders/local", async (req, res) => {
       limit: req.query.limit,
     });
     return res.json({ count: orders.length, orders });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
+// Comenzi noi dupa watermark (polling notificari browser) — fara linii.
+app.get("/api/orders/local/new", async (req, res) => {
+  try {
+    const after = req.query.after_created_at;
+    const result = await listNewLocalOrders({
+      afterCreatedAt: after || null,
+      limit: req.query.limit,
+    });
+    const serverTime =
+      result.serverTime instanceof Date
+        ? result.serverTime.toISOString()
+        : result.serverTime;
+    return res.json({
+      server_time: serverTime,
+      count: result.orders.length,
+      orders: result.orders,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Eroare server" });
   }

@@ -255,6 +255,14 @@
       if (detail) detail.hidden = !detail.hidden;
     });
 
+    var logsTable = document.querySelector(".logs-table");
+    if (logsTable && window.TableColumns && window.TableColumns.enableResize) {
+      window.TableColumns.enableResize({
+        table: logsTable,
+        storageKey: "logs-column-widths",
+      });
+    }
+
     load();
   }
 

@@ -1,15 +1,260 @@
 /*
- * Coloane de tabel: ascundere, reordonare prin drag si meniul "Coloane".
+ * Coloane de tabel: ascundere, reordonare prin drag, meniul "Coloane" si redimensionare.
  * Folosit de tabelul de produse (index.html) si de cel de preturi (sync.html).
  * Ordinea implicita, etichetele si sursele vin din <th data-col data-src> din thead.
+ * enableResize() poate fi folosit si pe tabele fara meniu de coloane.
  */
 (function (global) {
+  const MIN_COL_WIDTH = 48;
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function colKey(th, index) {
+    return th?.dataset?.col || String(index);
+  }
+
+  /**
+   * Redimensionare coloane prin drag pe manerul din antet; latimile se salveaza in localStorage.
+   * @param {object} opts
+   * @param {HTMLTableElement} opts.table
+   * @param {string} opts.storageKey
+   * @param {number} [opts.minWidth]
+   * @returns {{ applyWidths: () => void, refreshHandles: () => void }}
+   */
+  function enableResize({ table, storageKey, minWidth = MIN_COL_WIDTH }) {
+    if (!table || !storageKey) {
+      return { applyWidths() {}, refreshHandles() {} };
+    }
+
+    /* Reapel pe acelasi tabel: reutilizeaza API-ul (acelasi closure widths + listener). */
+    if (table._colResizeApi && table._colResizeApi.storageKey === storageKey) {
+      table._colResizeApi.refreshHandles();
+      return table._colResizeApi;
+    }
+
+    table.classList.add("is-col-resizable");
+
+    let widths = {};
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        widths = Object.fromEntries(
+          Object.entries(parsed).filter(
+            ([, v]) => typeof v === "number" && Number.isFinite(v) && v >= minWidth
+          )
+        );
+      }
+    } catch {
+      widths = {};
+    }
+
+    function saveWidths() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(widths));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function headerLabelRow() {
+      return (
+        table.querySelector("thead tr:not(.filter-row)") ||
+        table.querySelector("thead tr")
+      );
+    }
+
+    function setCellWidth(el, px) {
+      if (!el) return;
+      if (px == null) {
+        el.style.width = "";
+        el.style.minWidth = "";
+        el.style.maxWidth = "";
+        el.classList.remove("is-col-resized");
+        return;
+      }
+      el.style.width = `${px}px`;
+      el.style.minWidth = `${px}px`;
+      el.style.maxWidth = `${px}px`;
+      el.classList.add("is-col-resized");
+    }
+
+    function applyWidths() {
+      const row = headerLabelRow();
+      if (!row) return;
+      const cells = [...row.children].filter((el) => el instanceof HTMLTableCellElement);
+      const hasSaved = cells.some((th, index) => widths[colKey(th, index)] != null);
+      if (hasSaved) {
+        table.style.tableLayout = "fixed";
+      } else {
+        table.style.tableLayout = "";
+      }
+
+      cells.forEach((th, index) => {
+        const key = colKey(th, index);
+        const px = widths[key];
+        setCellWidth(th, px ?? null);
+
+        const filterTh =
+          key && table.querySelector(`thead tr.filter-row th[data-col="${CSS.escape(key)}"]`);
+        if (filterTh) {
+          setCellWidth(filterTh, px ?? null);
+          const input = filterTh.querySelector(".col-filter");
+          if (input) {
+            if (px != null) {
+              input.style.width = "100%";
+              input.style.minWidth = "0";
+              input.style.maxWidth = "none";
+            } else {
+              input.style.width = "";
+              input.style.minWidth = "";
+              input.style.maxWidth = "";
+            }
+          }
+        }
+
+        const label = th.querySelector(".th-label");
+        if (label) {
+          label.style.maxWidth = px != null ? "100%" : "";
+        }
+      });
+    }
+
+    /** Completeaza latimile lipsa din layout-ul curent (fara a le rescrie pe cele salvate). */
+    function lockCurrentWidths() {
+      const row = headerLabelRow();
+      if (!row) return;
+      [...row.children].forEach((th, index) => {
+        if (!(th instanceof HTMLTableCellElement)) return;
+        const key = colKey(th, index);
+        if (widths[key] != null) return;
+        widths[key] = Math.max(minWidth, Math.round(th.getBoundingClientRect().width));
+      });
+      table.style.tableLayout = "fixed";
+    }
+
+    function resetColumnWidth(key) {
+      delete widths[key];
+      if (Object.keys(widths).length === 0) {
+        table.style.tableLayout = "";
+      }
+      applyWidths();
+      saveWidths();
+    }
+
+    function ensureHandles() {
+      const row = headerLabelRow();
+      if (!row) return;
+      [...row.children].forEach((th) => {
+        if (!(th instanceof HTMLTableCellElement)) return;
+        if (th.querySelector(".col-resize-handle")) return;
+        const handle = document.createElement("span");
+        handle.className = "col-resize-handle";
+        handle.setAttribute("aria-hidden", "true");
+        handle.title = "Trage pentru a redimensiona · dublu-click resetează";
+        th.appendChild(handle);
+      });
+    }
+
+    function onHandleDown(e) {
+      if (e.button !== 0) return;
+      const handle = e.target.closest(".col-resize-handle");
+      if (!handle || !table.contains(handle)) return;
+      const th = handle.closest("th");
+      if (!th || !table.contains(th)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const row = headerLabelRow();
+      const index = [...row.children].indexOf(th);
+      const key = colKey(th, index);
+      lockCurrentWidths();
+      applyWidths();
+
+      const startX = e.clientX;
+      const startW = widths[key] || Math.round(th.getBoundingClientRect().width);
+      let latestW = startW;
+      let moved = false;
+
+      th.classList.add("is-col-resizing");
+      document.body.classList.add("is-col-resizing");
+
+      function onMove(ev) {
+        const next = Math.max(minWidth, Math.round(startW + (ev.clientX - startX)));
+        if (next === latestW && moved) return;
+        moved = moved || Math.abs(ev.clientX - startX) > 2;
+        latestW = next;
+        widths[key] = next;
+        applyWidths();
+      }
+
+      function onUp(ev) {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        th.classList.remove("is-col-resizing");
+        document.body.classList.remove("is-col-resizing");
+        if (moved) {
+          saveWidths();
+          const blockClick = (clickEv) => {
+            clickEv.stopPropagation();
+            clickEv.preventDefault();
+            document.removeEventListener("click", blockClick, true);
+          };
+          document.addEventListener("click", blockClick, true);
+          setTimeout(() => document.removeEventListener("click", blockClick, true), 0);
+        }
+        ev.stopPropagation();
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    }
+
+    function onHandleDblClick(e) {
+      const handle = e.target.closest(".col-resize-handle");
+      if (!handle || !table.contains(handle)) return;
+      const th = handle.closest("th");
+      if (!th) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const row = headerLabelRow();
+      const index = [...row.children].indexOf(th);
+      resetColumnWidth(colKey(th, index));
+    }
+
+    if (!table.dataset.colResizeBound) {
+      table.dataset.colResizeBound = "1";
+      table.addEventListener("mousedown", onHandleDown);
+      table.addEventListener("dblclick", onHandleDblClick);
+    }
+
+    ensureHandles();
+    applyWidths();
+    /* Daca exista latimi salvate partial, completeaza restul dupa layout. */
+    if (Object.keys(widths).length > 0) {
+      requestAnimationFrame(() => {
+        lockCurrentWidths();
+        applyWidths();
+      });
+    }
+
+    const api = {
+      storageKey,
+      applyWidths,
+      refreshHandles() {
+        ensureHandles();
+        applyWidths();
+      },
+    };
+    table._colResizeApi = api;
+    return api;
   }
 
   /**
@@ -20,9 +265,10 @@
    * @param {HTMLElement} opts.buttonEl butonul care deschide meniul
    * @param {string} opts.hiddenKey     cheia localStorage pentru coloanele ascunse
    * @param {string} opts.orderKey      cheia localStorage pentru ordine
+   * @param {string} [opts.widthsKey]   cheia localStorage pentru latimile coloanelor
    * @param {(cols: string[]) => string[]} [opts.migrate] normalizeaza valorile vechi salvate
    */
-  function create({ table, tbody, menuEl, buttonEl, hiddenKey, orderKey, migrate }) {
+  function create({ table, tbody, menuEl, buttonEl, hiddenKey, orderKey, widthsKey, migrate }) {
     const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
     const headerCells = [...headerLabelRow.querySelectorAll("th[data-col]")];
     const defaultOrder = headerCells.map((th) => th.dataset.col);
@@ -39,6 +285,10 @@
       th.title = label;
       th.innerHTML = `<span class="th-label">${escapeHtml(label)}</span>`;
     });
+
+    const resizeApi = widthsKey
+      ? enableResize({ table, storageKey: widthsKey })
+      : { applyWidths() {}, refreshHandles() {} };
 
     const applyMigrate = (cols) =>
       typeof migrate === "function" ? migrate(cols) : cols;
@@ -148,6 +398,7 @@
       reorderRow(table.querySelector("thead tr:not(.filter-row)"));
       reorderRow(table.querySelector("thead tr.filter-row"));
       tbody?.querySelectorAll("tr:not(.empty-row)").forEach((tr) => reorderRow(tr));
+      resizeApi.refreshHandles();
     }
 
     function buildMenu() {
@@ -256,10 +507,12 @@
       cellClass,
       applyVisibility,
       applyOrder,
+      applyWidths: resizeApi.applyWidths,
+      refreshResizeHandles: resizeApi.refreshHandles,
       buildMenu,
       setMenuOpen,
     };
   }
 
-  global.TableColumns = { create };
+  global.TableColumns = { create, enableResize };
 })(window);

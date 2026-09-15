@@ -81,6 +81,7 @@ const columns = window.TableColumns.create({
   buttonEl: btnColumns,
   hiddenKey: HIDDEN_COLS_KEY,
   orderKey: COL_ORDER_KEY,
+  widthsKey: "emag-column-widths",
   migrate: migrateLegacyCostCols,
 });
 
@@ -1609,6 +1610,7 @@ btnMore.hidden = true;
 
 table.querySelector("thead")?.addEventListener("click", (e) => {
   if (e.target.closest(".filter-row") || e.target.closest(".col-filter")) return;
+  if (e.target.closest(".col-resize-handle")) return;
   const th = e.target.closest("thead tr:not(.filter-row) th[data-col]");
   if (!th) return;
   const col = th.dataset.col;

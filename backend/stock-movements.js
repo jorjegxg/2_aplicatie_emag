@@ -343,6 +343,30 @@ async function listLocalOrders({ from, to, page = 1, limit = 50 } = {}) {
   return orders.map((o) => ({ ...o, products: byOrder.get(String(o.order_id)) || [] }));
 }
 
+/** Comenzi noi dupa un watermark created_at — fara linii, pentru notificari browser. */
+async function listNewLocalOrders({ afterCreatedAt, limit = 20 } = {}) {
+  await ensureSchema();
+  const { rows: nowRows } = await query(`SELECT now() AS server_time`);
+  const serverTime = nowRows[0]?.server_time;
+  if (!afterCreatedAt) {
+    return { serverTime, orders: [] };
+  }
+  const after = new Date(afterCreatedAt);
+  if (Number.isNaN(after.getTime())) {
+    return { serverTime, orders: [] };
+  }
+  const safeLimit = Math.min(Math.max(1, Number(limit) || 20), 50);
+  const { rows } = await query(
+    `SELECT order_id, status, order_date, customer_name, currency, products_total, created_at
+     FROM emag_orders
+     WHERE created_at > $1
+     ORDER BY created_at ASC, order_id ASC
+     LIMIT $2`,
+    [after.toISOString(), safeLimit]
+  );
+  return { serverTime, orders: rows };
+}
+
 async function listStockMovements({ limit = 100 } = {}) {
   await ensureSchema();
   const { rows } = await query(
@@ -359,5 +383,6 @@ module.exports = {
   processEmagOrderId,
   pollRecentEmagOrders,
   listLocalOrders,
+  listNewLocalOrders,
   listStockMovements,
 };

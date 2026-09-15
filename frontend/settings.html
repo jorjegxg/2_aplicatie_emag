@@ -128,7 +128,27 @@
           </div>
         </form>
       </section>
+
+      <section id="notificari" class="cred-section" aria-labelledby="notif-title">
+        <div class="cred-section-head">
+          <h2 id="notif-title">Notificări</h2>
+          <span id="notif-badge" class="cred-badge">—</span>
+        </div>
+        <p class="notif-hint">
+          Alerte desktop pentru comenzi eMAG noi. Funcționează cât timp aplicația e deschisă într-un tab
+          (inclusiv în fundal). La activare browserul cere permisiunea de notificări.
+        </p>
+        <label class="field field-checkbox notif-toggle">
+          <input type="checkbox" id="notif-orders-browser" />
+          <span>Notificări browser pentru comenzi noi</span>
+        </label>
+        <div class="notif-actions">
+          <button type="button" class="btn btn-secondary" id="btn-notif-test">Testează notificarea</button>
+        </div>
+        <p id="notif-status" class="notif-status" role="status"></p>
+      </section>
     </div>
+    <script src="order-notifications.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

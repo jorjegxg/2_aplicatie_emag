@@ -290,5 +290,13 @@
     if (e.key === "Escape" && !historyModal.hidden) close();
   });
 
+  const historyOrdersTable = historyModal.querySelector(".history-orders-table");
+  if (historyOrdersTable && global.TableColumns?.enableResize) {
+    global.TableColumns.enableResize({
+      table: historyOrdersTable,
+      storageKey: "history-orders-column-widths",
+    });
+  }
+
   global.HistoryModal = { open, close };
 })(window);

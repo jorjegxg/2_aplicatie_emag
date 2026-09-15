@@ -562,6 +562,7 @@ const columns = window.TableColumns.create({
   buttonEl: document.getElementById("btn-columns"),
   hiddenKey: "sync-hidden-columns",
   orderKey: "sync-column-order",
+  widthsKey: "sync-column-widths",
   migrate: migrateLegacyCostCols,
 });
 
@@ -1469,6 +1470,7 @@ function sortPricingTable() {
 
 pricingTable.querySelector("thead")?.addEventListener("click", (e) => {
   if (e.target.closest(".filter-row") || e.target.closest(".col-filter")) return;
+  if (e.target.closest(".col-resize-handle")) return;
   const th = e.target.closest("thead tr:not(.filter-row) th[data-col]");
   if (!th) return;
   const col = th.dataset.col;
