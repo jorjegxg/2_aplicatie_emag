@@ -76,7 +76,7 @@ async function upsertOrderHeader(client, order, products, via) {
   ) / 10000;
   const vouchersTotal = vouchers.reduce((s, v) => s + (toNum(v.sale_price_vat) ?? toNum(v.sale_price) ?? 0), 0);
 
-  await client.query(
+  const { rows } = await client.query(
     `INSERT INTO emag_orders
        (order_id, status, order_date, modified_at, payment_mode_id, payment_mode, customer_name,
         currency, products_total, products_total_vat, shipping_tax, vouchers_total, raw, received_via)
@@ -94,7 +94,8 @@ async function upsertOrderHeader(client, order, products, via) {
        shipping_tax = EXCLUDED.shipping_tax,
        vouchers_total = EXCLUDED.vouchers_total,
        raw = EXCLUDED.raw,
-       updated_at = now()`,
+       updated_at = now()
+     RETURNING order_id, customer_name, currency, products_total, (xmax = 0) AS is_new`,
     [
       order.id,
       toNum(order.status),
@@ -112,6 +113,7 @@ async function upsertOrderHeader(client, order, products, via) {
       via,
     ]
   );
+  return rows[0] || null;
 }
 
 async function upsertLine(client, order, p, catalogProductId) {
@@ -198,6 +200,8 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
   const products = Array.isArray(order.products) ? order.products : [];
   const orderId = String(order.id);
   const summary = { order_id: order.id, status: order.status, deducted: [], restored: [], unmatched: [] };
+  let isNewOrder = false;
+  let headerRow = null;
 
   await withTransaction(async (client) => {
     const since = await stockSince(client);
@@ -207,7 +211,8 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
     );
     const isRecent = recentRows[0]?.recent === true;
 
-    await upsertOrderHeader(client, order, products, via);
+    headerRow = await upsertOrderHeader(client, order, products, via);
+    isNewOrder = Boolean(headerRow?.is_new);
 
     for (const p of products) {
       const lineId = String(p.id);
@@ -275,6 +280,21 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
       detail: summary,
     });
   }
+
+  if (isNewOrder) {
+    try {
+      const { notifyNewOrder } = require("./push-notifications");
+      void notifyNewOrder({
+        order_id: headerRow?.order_id ?? order.id,
+        customer_name: headerRow?.customer_name,
+        currency: headerRow?.currency,
+        products_total: headerRow?.products_total,
+      });
+    } catch (err) {
+      console.warn("[push] skip:", err.message);
+    }
+  }
+
   return summary;
 }
 

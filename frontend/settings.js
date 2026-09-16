@@ -133,8 +133,9 @@ function syncNotifUi(message) {
   notifCheckbox.checked = enabled;
   const label = ON.permissionLabel();
   if (notifBadge) {
-    notifBadge.textContent = enabled && label === "Activ" ? "Activ" : label;
-    notifBadge.classList.toggle("is-ok", enabled && label === "Activ");
+    const pushOk = enabled && typeof ON.isPushSubscribed === "function" && ON.isPushSubscribed();
+    notifBadge.textContent = pushOk ? "Push activ" : enabled && label === "Activ" ? "Activ" : label;
+    notifBadge.classList.toggle("is-ok", enabled && (pushOk || label === "Activ" || label === "Push activ"));
     notifBadge.classList.toggle(
       "is-missing",
       !enabled || label === "Blocat" || label === "Nepermis" || label === "indisponibil"
@@ -156,16 +157,20 @@ async function onNotifToggle() {
       syncNotifUi(result.message || "Nu s-a putut activa.");
       return;
     }
-    syncNotifUi("Notificările pentru comenzi noi sunt active.");
+    syncNotifUi(result.message || "Notificările pentru comenzi noi sunt active.");
     return;
   }
-  ON.disable();
+  await ON.disable();
   syncNotifUi("Notificările sunt dezactivate.");
 }
 
 if (notifCheckbox) {
   notifCheckbox.addEventListener("change", onNotifToggle);
-  syncNotifUi("");
+  if (window.OrderNotifications && typeof window.OrderNotifications.refreshPushState === "function") {
+    window.OrderNotifications.refreshPushState().finally(() => syncNotifUi(""));
+  } else {
+    syncNotifUi("");
+  }
 }
 
 if (btnNotifTest) {
@@ -181,7 +186,7 @@ if (btnNotifTest) {
       }
       syncNotifUi("");
     }
-    const test = ON.sendTestNotification();
+    const test = await ON.sendTestNotification();
     syncNotifUi(test.message || (test.ok ? "OK" : "Eșuat"));
   });
 }

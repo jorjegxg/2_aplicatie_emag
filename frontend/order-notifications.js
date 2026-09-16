@@ -1,7 +1,7 @@
 /**
- * Notificări browser pentru comenzi eMAG noi.
- * Preferință în localStorage; polling pe paginile autentificate.
- * Watermark-ul folosește timpul serverului (evită ceasul browserului).
+ * Notificări pentru comenzi eMAG noi:
+ * - toast în pagină (polling, cât timp e tab-ul deschis)
+ * - Web Push → bara de notificări pe telefon / desktop (și cu app închisă)
  */
 (function () {
   "use strict";
@@ -9,8 +9,10 @@
   var PREF_KEY = "emag-order-browser-notif";
   var WATERMARK_KEY = "emag-order-notif-watermark";
   var POLL_MS = 10000;
+  var SW_PATH = "/sw.js";
   var pollTimer = null;
   var toastEl = null;
+  var pushSubscribed = false;
 
   function isEnabled() {
     return localStorage.getItem(PREF_KEY) === "1";
@@ -45,7 +47,9 @@
   function permissionLabel() {
     if (typeof Notification === "undefined") return "indisponibil";
     if (!window.isSecureContext) return "necesită HTTPS";
-    if (Notification.permission === "granted") return "Activ";
+    if (Notification.permission === "granted") {
+      return pushSubscribed ? "Push activ" : "Activ";
+    }
     if (Notification.permission === "denied") return "Blocat";
     return "Nepermis";
   }
@@ -93,6 +97,8 @@
   }
 
   function showBrowserNotification(order) {
+    // Dacă avem Web Push, OS-ul primește alerta din service worker — evităm dublura.
+    if (pushSubscribed) return true;
     if (typeof Notification === "undefined" || Notification.permission !== "granted") {
       return false;
     }
@@ -122,16 +128,12 @@
     showBrowserNotification(order);
   }
 
-  function bumpWatermark(orders, serverTime) {
+  function bumpWatermark(orders) {
     var max = getWatermark();
     for (var i = 0; i < orders.length; i++) {
       var iso = toIso(orders[i].created_at);
       if (!iso) continue;
       if (!max || iso > max) max = iso;
-    }
-    var serverIso = toIso(serverTime);
-    if (serverIso && (!max || serverIso > max)) {
-      // Nu urca watermark-ul peste comenzile vazute; doar pastreaza max din comenzi.
     }
     if (max) setWatermark(max);
   }
@@ -163,16 +165,17 @@
   function poll() {
     if (!isEnabled()) return;
     var after = getWatermark();
-    var req = after ? fetchNewOrders(after) : syncWatermarkFromServer().then(function () {
-      return { ok: true, data: { orders: [], server_time: getWatermark() } };
-    });
+    var req = after
+      ? fetchNewOrders(after)
+      : syncWatermarkFromServer().then(function () {
+          return { ok: true, data: { orders: [], server_time: getWatermark() } };
+        });
 
     req
       .then(function (result) {
         if (!result.ok) return;
         var orders = Array.isArray(result.data.orders) ? result.data.orders : [];
         if (orders.length === 0) {
-          // Pastreaza watermark-ul; optional aliniaza daca lipsea.
           if (!getWatermark() && result.data.server_time) {
             setWatermark(result.data.server_time);
           }
@@ -181,7 +184,7 @@
         for (var i = 0; i < orders.length; i++) {
           notifyOrder(orders[i]);
         }
-        bumpWatermark(orders, result.data.server_time);
+        bumpWatermark(orders);
       })
       .catch(function () {
         /* ignore transient errors */
@@ -213,6 +216,148 @@
     pollTimer = setInterval(poll, POLL_MS);
   }
 
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(base64);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  function pushSupported() {
+    return (
+      window.isSecureContext &&
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window
+    );
+  }
+
+  function registerServiceWorker() {
+    return navigator.serviceWorker.register(SW_PATH, { scope: "/" });
+  }
+
+  function getExistingSubscription() {
+    return navigator.serviceWorker.ready.then(function (reg) {
+      return reg.pushManager.getSubscription();
+    });
+  }
+
+  function fetchVapidPublicKey() {
+    return fetch("/api/push/vapid-public-key", {
+      credentials: "same-origin",
+      cache: "no-store",
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok || !data.publicKey) {
+          throw new Error(data.error || "Nu pot citi cheia VAPID");
+        }
+        return data.publicKey;
+      });
+    });
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        return { ok: res.ok, data: data || {} };
+      });
+    });
+  }
+
+  function subscribePush() {
+    if (!pushSupported()) {
+      return Promise.resolve({
+        ok: false,
+        message:
+          "Acest browser nu suportă Web Push. Pe iPhone: iOS 16.4+ și „Adaugă pe ecranul principal”.",
+      });
+    }
+    return registerServiceWorker()
+      .then(function () {
+        return Promise.all([navigator.serviceWorker.ready, fetchVapidPublicKey()]);
+      })
+      .then(function (pair) {
+        var reg = pair[0];
+        var key = pair[1];
+        return reg.pushManager.getSubscription().then(function (existing) {
+          if (existing) return existing;
+          return reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(key),
+          });
+        });
+      })
+      .then(function (sub) {
+        return postJson("/api/push/subscribe", sub.toJSON()).then(function (result) {
+          if (!result.ok) {
+            throw new Error(result.data.error || "Salvare subscription eșuată");
+          }
+          pushSubscribed = true;
+          return { ok: true };
+        });
+      })
+      .catch(function (err) {
+        pushSubscribed = false;
+        return {
+          ok: false,
+          message: err.message || "Nu s-a putut activa push pe dispozitiv.",
+        };
+      });
+  }
+
+  function unsubscribePush() {
+    if (!pushSupported()) {
+      pushSubscribed = false;
+      return Promise.resolve();
+    }
+    return getExistingSubscription()
+      .then(function (sub) {
+        if (!sub) return;
+        var endpoint = sub.endpoint;
+        return sub.unsubscribe().then(function () {
+          return postJson("/api/push/unsubscribe", { endpoint: endpoint });
+        });
+      })
+      .catch(function () {
+        /* ignore */
+      })
+      .then(function () {
+        pushSubscribed = false;
+      });
+  }
+
+  function refreshPushState() {
+    if (!isEnabled() || !pushSupported() || Notification.permission !== "granted") {
+      pushSubscribed = false;
+      return Promise.resolve(false);
+    }
+    return registerServiceWorker()
+      .then(function () {
+        return getExistingSubscription();
+      })
+      .then(function (sub) {
+        if (!sub) {
+          pushSubscribed = false;
+          return false;
+        }
+        return postJson("/api/push/subscribe", sub.toJSON()).then(function (result) {
+          pushSubscribed = Boolean(result.ok);
+          return pushSubscribed;
+        });
+      })
+      .catch(function () {
+        pushSubscribed = false;
+        return false;
+      });
+  }
+
   function enable() {
     if (typeof Notification === "undefined" || !window.isSecureContext) {
       setEnabled(false);
@@ -220,7 +365,7 @@
         ok: false,
         permission: "unavailable",
         message: !window.isSecureContext
-          ? "Notificările browser necesită HTTPS."
+          ? "Notificările necesită HTTPS (sau localhost)."
           : "Browserul nu suportă notificări.",
       });
     }
@@ -232,35 +377,53 @@
           permission: perm,
           message:
             perm === "denied"
-              ? "Permisiunea a fost blocată în browser. Deblochează din setările site-ului (lacătul de lângă URL)."
+              ? "Permisiunea a fost blocată. Deblochează din setările site-ului (lacătul de lângă URL)."
               : "Permisiunea nu a fost acordată.",
         };
       }
       setEnabled(true);
-      return syncWatermarkFromServer()
-        .then(function () {
-          startPolling();
-          return { ok: true, permission: perm };
-        })
-        .catch(function (err) {
-          // Totusi activeaza; watermark la urmatorul poll.
-          setWatermark(new Date().toISOString());
-          startPolling();
-          return {
-            ok: true,
-            permission: perm,
-            message: err.message || "Activ, dar sincronizarea timpului a eșuat.",
-          };
-        });
+      return subscribePush().then(function (pushResult) {
+        return syncWatermarkFromServer()
+          .then(function () {
+            startPolling();
+            if (pushResult.ok) {
+              return {
+                ok: true,
+                permission: perm,
+                push: true,
+                message: "Push activ — alertele apar în bara de notificări pe telefon.",
+              };
+            }
+            return {
+              ok: true,
+              permission: perm,
+              push: false,
+              message:
+                (pushResult.message || "Push indisponibil.") +
+                " Rămân alertele din tab cât timp aplicația e deschisă.",
+            };
+          })
+          .catch(function (err) {
+            setWatermark(new Date().toISOString());
+            startPolling();
+            return {
+              ok: true,
+              permission: perm,
+              push: Boolean(pushResult && pushResult.ok),
+              message: err.message || "Activ, dar sincronizarea timpului a eșuat.",
+            };
+          });
+      });
     });
   }
 
   function disable() {
     setEnabled(false);
     stopPolling();
+    return unsubscribePush();
   }
 
-  /** Notificare imediata de test (fara comanda in DB). */
+  /** Notificare de test: preferă push server → telefon; fallback Notification API. */
   function sendTestNotification() {
     var sample = {
       order_id: "TEST",
@@ -269,26 +432,50 @@
       currency: "RON",
     };
     showInPageToast(sample);
-    var browserOk = showBrowserNotification(sample);
+
     if (typeof Notification === "undefined") {
-      return { ok: false, message: "Browserul nu suportă Notification API." };
+      return Promise.resolve({ ok: false, message: "Browserul nu suportă Notification API." });
     }
     if (!window.isSecureContext) {
-      return { ok: false, message: "Context nesigur — folosește HTTPS." };
+      return Promise.resolve({ ok: false, message: "Context nesigur — folosește HTTPS." });
     }
     if (Notification.permission !== "granted") {
-      return {
+      return Promise.resolve({
         ok: false,
-        message: "Permisiunea nu e acordată (" + Notification.permission + "). Activează toggle-ul mai întâi.",
-      };
+        message: "Permisiunea nu e acordată. Activează toggle-ul mai întâi.",
+      });
     }
+
+    if (pushSubscribed) {
+      return postJson("/api/push/test", {}).then(function (result) {
+        if (result.ok) {
+          return {
+            ok: true,
+            message:
+              "Push de test trimis pe " +
+              (result.data.sent || 0) +
+              " dispozitiv(e). Verifică bara de notificări.",
+          };
+        }
+        showBrowserNotification(sample);
+        return {
+          ok: false,
+          message: result.data.error || "Push eșuat; am încercat și notificarea locală.",
+        };
+      });
+    }
+
+    var browserOk = showBrowserNotification(sample);
     if (!browserOk) {
-      return {
+      return Promise.resolve({
         ok: false,
-        message: "Toast în pagină afișat; notificarea OS a eșuat (verifică Focus Assist / Nu deranja).",
-      };
+        message: "Toast în pagină afișat; notificarea OS a eșuat (Focus Assist / Nu deranja).",
+      });
     }
-    return { ok: true, message: "Notificare de test trimisă (pagină + browser)." };
+    return Promise.resolve({
+      ok: true,
+      message: "Notificare locală trimisă. Pentru telefon cu app închisă, reactivează toggle-ul (Web Push).",
+    });
   }
 
   window.OrderNotifications = {
@@ -301,11 +488,22 @@
     stopPolling: stopPolling,
     sendTestNotification: sendTestNotification,
     syncWatermarkFromServer: syncWatermarkFromServer,
+    pushSupported: pushSupported,
+    isPushSubscribed: function () {
+      return pushSubscribed;
+    },
+    refreshPushState: refreshPushState,
   };
 
+  function boot() {
+    refreshPushState().finally(function () {
+      startPolling();
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", startPolling);
+    document.addEventListener("DOMContentLoaded", boot);
   } else {
-    startPolling();
+    boot();
   }
 })();

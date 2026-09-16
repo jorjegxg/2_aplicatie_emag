@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="eMAG">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <path fill="#22c55e" d="M128 320V192h48c48 0 80 24 80 64s-32 64-80 64h-48zm48-96v64h16c22 0 36-10 36-32s-14-32-36-32h-16z"/>
+  <path fill="#22c55e" d="M288 320V192h40l56 88V192h40v128h-40l-56-88v88h-40z"/>
+</svg>

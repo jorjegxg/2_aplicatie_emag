@@ -141,7 +141,7 @@ async function getLastPriceChangeBulk(offerIds, channel = "emag") {
        JOIN (
          SELECT offer_id, MAX(id) AS max_id
          FROM product_pret_emag_history
-         WHERE offer_id = ANY($1::int[]) AND channel = $2
+         WHERE offer_id = ANY($1::bigint[]) AND channel = $2
          GROUP BY offer_id
        ) last ON last.offer_id = h.offer_id AND last.max_id = h.id`,
       [ids, ch]

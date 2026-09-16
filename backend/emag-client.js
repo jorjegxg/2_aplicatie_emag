@@ -5,6 +5,14 @@ const { log, truncate } = require("./logs-db");
 
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 const ITEMS_PER_PAGE = 100;
+const EMAG_REQUEST_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.EMAG_REQUEST_TIMEOUT_MS) || 45_000
+);
+const EMAG_MAX_RESPONSE_BYTES = Math.max(
+  1_000_000,
+  Number(process.env.EMAG_MAX_RESPONSE_BYTES) || 15_000_000
+);
 const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 // eMAG marketplace cert currently expired (CERT_HAS_EXPIRED) — scoped bypass only for this host
 const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
@@ -29,8 +37,11 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
       },
       (res) => {
         const chunks = [];
+        let responseBytes = 0;
+        let responseTooLarge = false;
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
+          if (responseTooLarge) return;
           const text = Buffer.concat(chunks).toString("utf8");
           const ok = res.statusCode >= 200 && res.statusCode < 300;
           void log({
@@ -54,8 +65,24 @@ function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
             text: async () => text,
           });
         });
+        res.on("data", (c) => {
+          responseBytes += c.length;
+          if (responseBytes > EMAG_MAX_RESPONSE_BYTES) {
+            responseTooLarge = true;
+            req.destroy(
+              new Error(
+                `Răspuns eMAG prea mare (peste ${EMAG_MAX_RESPONSE_BYTES} bytes)`
+              )
+            );
+          }
+        });
       }
     );
+    req.setTimeout(EMAG_REQUEST_TIMEOUT_MS, () => {
+      req.destroy(
+        new Error(`Timeout eMAG după ${Math.round(EMAG_REQUEST_TIMEOUT_MS / 1000)} secunde`)
+      );
+    });
     req.on("error", (err) => {
       void log({
         level: "error",

@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Setări — Credentiale</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <script src="theme.js"></script>
     <script src="auth.js"></script>
     <script src="logger.js"></script>
@@ -135,12 +138,13 @@
           <span id="notif-badge" class="cred-badge">—</span>
         </div>
         <p class="notif-hint">
-          Alerte desktop pentru comenzi eMAG noi. Funcționează cât timp aplicația e deschisă într-un tab
-          (inclusiv în fundal). La activare browserul cere permisiunea de notificări.
+          Alerte în <strong>bara de notificări</strong> pe telefon și desktop, inclusiv când
+          aplicația e închisă (Web Push). Necesită HTTPS. Pe iPhone: iOS 16.4+ și
+          „Adaugă pe ecranul principal”, apoi activează aici.
         </p>
         <label class="field field-checkbox notif-toggle">
           <input type="checkbox" id="notif-orders-browser" />
-          <span>Notificări browser pentru comenzi noi</span>
+          <span>Notificări pe telefon / desktop pentru comenzi noi</span>
         </label>
         <div class="notif-actions">
           <button type="button" class="btn btn-secondary" id="btn-notif-test">Testează notificarea</button>

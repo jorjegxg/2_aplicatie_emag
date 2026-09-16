@@ -61,6 +61,13 @@ const {
   listStockMovements,
 } = require("./stock-movements");
 const {
+  initPush,
+  getPublicKey,
+  saveSubscription,
+  removeSubscription,
+  sendTestPush,
+} = require("./push-notifications");
+const {
   isAuthEnabled,
   requireAppAuth,
   authStatusHandler,
@@ -71,6 +78,7 @@ const {
 const PORT = process.env.PORT || 3000;
 const COMMISSION_FETCH_CONCURRENCY = 5;
 const MAX_PULL_PAGES = 50;
+const activePulls = new Set();
 
 const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
@@ -562,6 +570,12 @@ app.get("/api/sync/channel-view", async (req, res) => {
 /** Trage oferte: oglinda remote merge in cache; catalogul local ramane neatins. */
 app.post("/api/sync/pull", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+  if (activePulls.has(channelName)) {
+    return res.status(409).json({
+      error: `Sincronizarea pentru ${channelName} este deja în curs. Așteaptă finalizarea ei.`,
+    });
+  }
+  activePulls.add(channelName);
   try {
     const channel = getChannel(channelName);
 
@@ -608,6 +622,8 @@ app.post("/api/sync/pull", async (req, res) => {
     console.error("[sync-pull]", err.message);
     logCaught("sync-pull", err);
     return sendChannelError(res, err, "Eroare la preluare de la canal");
+  } finally {
+    activePulls.delete(channelName);
   }
 });
 
@@ -1027,6 +1043,51 @@ app.get("/api/orders/local/new", async (req, res) => {
   }
 });
 
+/* ---------------- Web Push (bara notificări telefon) ---------------- */
+
+app.get("/api/push/vapid-public-key", async (_req, res) => {
+  try {
+    await initPush();
+    return res.json({ publicKey: getPublicKey() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare VAPID" });
+  }
+});
+
+app.post("/api/push/subscribe", async (req, res) => {
+  try {
+    await saveSubscription(req.body, req.get("user-agent"));
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message || "Eroare subscribe" });
+  }
+});
+
+app.post("/api/push/unsubscribe", async (req, res) => {
+  try {
+    await removeSubscription(req.body?.endpoint);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message || "Eroare unsubscribe" });
+  }
+});
+
+app.post("/api/push/test", async (_req, res) => {
+  try {
+    const result = await sendTestPush();
+    if (result.total === 0) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Niciun dispozitiv abonat. Activează notificările pe telefon (Setări → Notificări).",
+      });
+    }
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare test push" });
+  }
+});
+
 app.get("/api/stock-movements", async (req, res) => {
   try {
     return res.json({ movements: await listStockMovements({ limit: req.query.limit }) });
@@ -1199,6 +1260,12 @@ async function start() {
   await ensureSchema();
   await ensureBucket();
   await pruneLogs(14);
+  try {
+    await initPush();
+    console.log("[push] Web Push activ (VAPID OK)");
+  } catch (err) {
+    console.warn("[push] init eșuat:", err.message);
+  }
   if (isAuthEnabled()) {
     console.log("[auth] APP_PASSWORD setat — accesul necesită autentificare");
   } else {

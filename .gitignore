@@ -6,5 +6,7 @@ node_modules/
 *.log
 backend/data/*.db
 backend/data/*.db.bak*
+backend/data/vapid-keys.json
+backend/data/auth-preferred.json
 backend/uploads/
 backups/
