@@ -550,11 +550,17 @@ function applyWeightHighlight(tr) {
   volTd.classList.add(dimHighlightClass(vol > greutate));
 }
 
+function isEvening() {
+  return new Date().getHours() >= 18;
+}
+
 function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
   const pretCumparare = product.pret_cumparare ?? "";
   const pretCumparareUsd = product.pret_cumparare_usd ?? "";
+  const hasNoOrdersInEvening =
+    isEvening() && Number(product.order_count) === 0;
   const linkCumparare = product.link_cumparare || "";
   const linkCumparareSafe = /^https?:\/\//i.test(linkCumparare) ? linkCumparare : "";
   const cellClass = (col, extra = "") => columns.cellClass(col, extra);
@@ -642,7 +648,7 @@ function rowHtml(product, index) {
     ean: `<td data-col="ean"${cellClass("ean")}>${eanCell(product)}</td>`,
     pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr}${hasNoOrdersInEvening ? ' class="is-evening-no-orders"' : ""} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }

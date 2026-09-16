@@ -740,6 +740,18 @@ td.col-pret-emag .input-sale-price:focus {
   border-color: var(--emag-price);
 }
 
+tbody tr.is-evening-no-orders td.col-pret-cumparare {
+  color: var(--warn);
+  background: var(--tint-amber);
+  box-shadow: inset 3px 0 0 var(--rule-amber);
+}
+
+tbody tr.is-evening-no-orders td.col-pret-cumparare .input-pret-cumparare {
+  color: var(--warn);
+  font-weight: 700;
+  border-color: var(--rule-amber);
+}
+
 td.col-stoc .input-stock {
   width: 4.5rem;
   font: inherit;

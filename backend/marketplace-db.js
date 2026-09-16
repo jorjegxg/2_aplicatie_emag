@@ -98,7 +98,12 @@ const SQL_CATALOG_WITH_FAMILIE = `
          ml.pret_minim_override,
          ml.procentaj_emag,
          ml.commission_value,
-         ml.commission_fetched_at
+         ml.commission_fetched_at,
+         (
+           SELECT COUNT(DISTINCT olh.order_id)
+           FROM order_line_history olh
+           WHERE olh.product_id = c.id
+         ) AS order_count
   FROM catalog_products c
   LEFT JOIN product_families pf ON pf.id = c.id_familie
   LEFT JOIN marketplace_listings ml
@@ -281,6 +286,7 @@ function mapCatalogRowToProduct(r) {
     max_sale_price: toNumOrNull(r.max_sale_price),
     pret_cumparare: toNumOrNull(r.pret_cumparare),
     pret_cumparare_usd: toNumOrNull(r.pret_cumparare_usd),
+    order_count: Number(r.order_count) || 0,
     link_cumparare: toTextOrNull(r.link_cumparare) || "",
     transport_override: toNumOrNull(r.transport_override),
     greutate: toNumOrNull(r.greutate),
