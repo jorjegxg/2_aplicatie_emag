@@ -182,6 +182,7 @@
             <tr>
               <th data-col="index" data-src="calc">#</th>
               <th data-col="id" data-src="channel">ID</th>
+              <th data-col="order_history" data-src="db">Istoric comenzi</th>
               <th data-col="name" data-src="channel">Nume</th>
               <th data-col="images" data-src="db">Poze</th>
               <th data-col="description" data-src="channel">Descriere</th>
@@ -208,6 +209,7 @@
             <tr class="filter-row">
               <th data-col="index"></th>
               <th data-col="id"><input type="search" class="col-filter" data-filter-col="id" placeholder="Filtrează…" aria-label="Filtrează ID" /></th>
+              <th data-col="order_history"></th>
               <th data-col="name"><input type="search" class="col-filter" data-filter-col="name" placeholder="Filtrează…" aria-label="Filtrează Nume" /></th>
               <th data-col="images"></th>
               <th data-col="description"><input type="search" class="col-filter" data-filter-col="description" placeholder="Filtrează…" aria-label="Filtrează Descriere" /></th>
@@ -234,14 +236,28 @@
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="22">Se încarcă din baza de date…</td>
+              <td colspan="23">Se încarcă din baza de date…</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <div id="order-history-modal" class="order-history-modal" hidden>
+        <div class="order-history-dialog" role="dialog" aria-modal="true" aria-labelledby="order-history-title">
+          <div class="order-history-header">
+            <div>
+              <h2 id="order-history-title">Istoric comenzi</h2>
+              <p id="order-history-product" class="order-history-product"></p>
+            </div>
+            <button type="button" id="order-history-close" class="btn btn-secondary" aria-label="Închide">Închide</button>
+          </div>
+          <div id="order-history-body" class="order-history-body">
+            <p class="muted">Selectează un produs pentru a vedea istoricul.</p>
+          </div>
+        </div>
+      </div>
     </div>
-    <script src="pricing.js"></script>
-    <script src="table-columns.js"></script>
-    <script src="app.js"></script>
+    <script src="pricing.js?v=20260916-2"></script>
+    <script src="table-columns.js?v=20260916-2"></script>
+    <script src="app.js?v=20260916-2"></script>
   </body>
 </html>

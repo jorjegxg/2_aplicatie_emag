@@ -78,10 +78,11 @@ async function upsertOrderHeader(client, order, products, via) {
 
   const { rows } = await client.query(
     `INSERT INTO emag_orders
-       (order_id, status, order_date, modified_at, payment_mode_id, payment_mode, customer_name,
+       (order_id, channel, status, order_date, modified_at, payment_mode_id, payment_mode, customer_name,
         currency, products_total, products_total_vat, shipping_tax, vouchers_total, raw, received_via)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT (order_id) DO UPDATE SET
+       channel = EXCLUDED.channel,
        status = EXCLUDED.status,
        order_date = EXCLUDED.order_date,
        modified_at = EXCLUDED.modified_at,
@@ -98,6 +99,7 @@ async function upsertOrderHeader(client, order, products, via) {
      RETURNING order_id, customer_name, currency, products_total, (xmax = 0) AS is_new`,
     [
       order.id,
+      String(order.channel || "emag").trim().toLowerCase() || "emag",
       toNum(order.status),
       order.date || order.created || null,
       order.modified || null,
@@ -119,11 +121,12 @@ async function upsertOrderHeader(client, order, products, via) {
 async function upsertLine(client, order, p, catalogProductId) {
   await client.query(
     `INSERT INTO order_line_history
-       (line_id, order_id, product_id, part_number, name, quantity, sale_price, status,
+       (line_id, order_id, channel, product_id, part_number, name, quantity, sale_price, status,
         currency, order_date, vat, catalog_product_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     VALUES ($1, $2, 'emag', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (line_id) DO UPDATE SET
        order_id = EXCLUDED.order_id,
+       channel = EXCLUDED.channel,
        product_id = EXCLUDED.product_id,
        part_number = EXCLUDED.part_number,
        name = EXCLUDED.name,
@@ -338,7 +341,7 @@ async function listLocalOrders({ from, to, page = 1, limit = 50 } = {}) {
   const safeLimit = Math.min(Math.max(1, Number(limit) || 50), 200);
   const offset = (Math.max(1, Number(page) || 1) - 1) * safeLimit;
   const { rows: orders } = await query(
-    `SELECT order_id, status, order_date, modified_at, payment_mode, customer_name, currency,
+    `SELECT order_id, channel, status, order_date, modified_at, payment_mode, customer_name, currency,
             products_total, products_total_vat, shipping_tax, vouchers_total, received_via,
             created_at, updated_at
      FROM emag_orders
@@ -350,7 +353,7 @@ async function listLocalOrders({ from, to, page = 1, limit = 50 } = {}) {
   );
   if (orders.length === 0) return [];
   const { rows: lines } = await query(
-    `SELECT order_id, line_id, product_id AS offer_id, catalog_product_id, part_number, name,
+    `SELECT order_id, channel, line_id, product_id AS offer_id, catalog_product_id, part_number, name,
             quantity, sale_price, vat, status, currency
      FROM order_line_history WHERE order_id = ANY($1::int[]) ORDER BY line_id`,
     [orders.map((o) => o.order_id)]

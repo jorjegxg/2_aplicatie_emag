@@ -163,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_pret_emag_hist_channel
 CREATE TABLE IF NOT EXISTS order_line_history (
   line_id INTEGER PRIMARY KEY,
   order_id INTEGER NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'emag',
   product_id INTEGER,
   part_number TEXT,
   name TEXT,
@@ -270,6 +271,8 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 
 ALTER TABLE order_line_history ADD COLUMN IF NOT EXISTS vat NUMERIC(6, 4);
+ALTER TABLE order_line_history
+  ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'emag';
 ALTER TABLE order_line_history
   ADD COLUMN IF NOT EXISTS catalog_product_id INTEGER REFERENCES catalog_products (id) ON DELETE SET NULL;
 

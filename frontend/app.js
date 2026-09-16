@@ -35,6 +35,10 @@ const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
 const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
+const orderHistoryModal = document.getElementById("order-history-modal");
+const orderHistoryClose = document.getElementById("order-history-close");
+const orderHistoryBody = document.getElementById("order-history-body");
+const orderHistoryProduct = document.getElementById("order-history-product");
 
 const HIDDEN_COLS_KEY = "emag-hidden-columns";
 const COL_ORDER_KEY = "emag-column-order";
@@ -614,6 +618,7 @@ function rowHtml(product, index) {
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
+    order_history: `<td data-col="order_history"${cellClass("order_history", "col-order-history")}><button type="button" class="btn-order-history" data-offer-id="${escapeHtml(product.id)}" data-product-name="${escapeHtml(product.name || product.part_number || `Produs ${product.id}`)}">Vezi istoricul</button></td>`,
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
     images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${images.length}">${imagesCellHtml(images)}</td>`,
     description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
@@ -805,7 +810,7 @@ function applyColumnFilters() {
   if (visibleCount === 0 && filters.length > 0) {
     tbody.insertAdjacentHTML(
       "beforeend",
-      '<tr class="empty-row" data-filter-empty="1"><td colspan="22">Niciun rezultat pentru filtre.</td></tr>'
+      '<tr class="empty-row" data-filter-empty="1"><td colspan="23">Niciun rezultat pentru filtre.</td></tr>'
     );
   }
 }
@@ -861,7 +866,7 @@ function renderProducts(products, append) {
 
   if (!append && products.length === 0) {
     tbody.innerHTML =
-      '<tr class="empty-row"><td colspan="22">Niciun produs găsit.</td></tr>';
+      '<tr class="empty-row"><td colspan="23">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
     updateToolbarTotals();
     return;
@@ -919,7 +924,7 @@ async function loadProducts() {
     }
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="22">${escapeHtml(
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="23">${escapeHtml(
       err.message || "Eroare"
     )}</td></tr>`;
   } finally {
@@ -931,6 +936,105 @@ async function loadProducts() {
 
 
 
+
+const ORDER_STATUS_LABELS = {
+  0: "Anulat",
+  1: "Nou",
+  2: "În progres",
+  3: "Preparat",
+  4: "Finalizat",
+  5: "Returnat",
+};
+
+function closeOrderHistory() {
+  if (!orderHistoryModal) return;
+  orderHistoryModal.hidden = true;
+  orderHistoryBody.innerHTML = '<p class="muted">Selectează un produs pentru a vedea istoricul.</p>';
+}
+
+function formatOrderHistoryDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ro-RO");
+}
+
+function renderOrderHistory(orders) {
+  if (!Array.isArray(orders) || orders.length === 0) {
+    orderHistoryBody.innerHTML = '<p class="muted">Nu există comenzi salvate pentru acest produs.</p>';
+    return;
+  }
+
+  orderHistoryBody.innerHTML = `
+    <div class="order-history-count">${orders.length} poziții de comandă</div>
+    <div class="order-history-table-wrap">
+      <table class="order-history-table">
+        <thead>
+          <tr>
+            <th>Platformă</th>
+            <th>Comandă</th>
+            <th>Dată</th>
+            <th>Status</th>
+            <th>Client</th>
+            <th>Cantitate</th>
+            <th>Preț</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${orders
+            .map((order) => {
+              const status = order.order_status ?? order.status;
+              return `<tr>
+                <td>${escapeHtml(order.channel || "emag")}</td>
+                <td>${escapeHtml(order.order_id ?? "—")}</td>
+                <td>${escapeHtml(formatOrderHistoryDate(order.order_date))}</td>
+                <td>${escapeHtml(ORDER_STATUS_LABELS[Number(status)] || status || "—")}</td>
+                <td>${escapeHtml(order.customer_name || "—")}</td>
+                <td>${escapeHtml(order.quantity ?? "—")}</td>
+                <td>${formatPrice(order.sale_price, order.currency || "RON")}</td>
+              </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function openOrderHistory(button) {
+  const offerId = button?.dataset?.offerId;
+  if (!offerId || !orderHistoryModal) return;
+
+  orderHistoryProduct.textContent = button.dataset.productName || `Produs ${offerId}`;
+  orderHistoryBody.innerHTML = '<p class="muted">Se încarcă istoricul…</p>';
+  orderHistoryModal.hidden = false;
+
+  try {
+    const res = await fetch(`/api/products/${encodeURIComponent(offerId)}/history`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+    renderOrderHistory(data.orders);
+  } catch (err) {
+    orderHistoryBody.innerHTML = `<p class="status is-error">${escapeHtml(
+      err.message || "Eroare la încărcarea istoricului"
+    )}</p>`;
+  }
+}
+
+tbody.addEventListener("click", (event) => {
+  const button = event.target.closest(".btn-order-history");
+  if (!button) return;
+  event.stopPropagation();
+  void openOrderHistory(button);
+});
+
+orderHistoryClose?.addEventListener("click", closeOrderHistory);
+orderHistoryModal?.addEventListener("click", (event) => {
+  if (event.target === orderHistoryModal) closeOrderHistory();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && orderHistoryModal && !orderHistoryModal.hidden) {
+    closeOrderHistory();
+  }
+});
 
 /** Pretul de cumparare se editeaza doar dupa confirmare explicita. */
 tbody.addEventListener("change", (e) => {

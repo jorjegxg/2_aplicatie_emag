@@ -20,6 +20,7 @@ function linesFromOrders(orders) {
       lines.push({
         line_id: p.id,
         order_id: orderId,
+        channel: order?.channel || "emag",
         product_id: p.product_id ?? null,
         part_number: p.part_number || "",
         name: p.name || p.product_name || "",

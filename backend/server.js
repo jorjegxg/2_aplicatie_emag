@@ -958,6 +958,7 @@ app.get("/api/orders", async (req, res) => {
             lines.push({
               line_id: p.id,
               order_id: order.id,
+              channel: order.channel || "emag",
               product_id: p.product_id,
               part_number: p.part_number,
               name: p.name,

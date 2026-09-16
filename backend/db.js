@@ -182,10 +182,11 @@ async function upsertOrderLines(lines) {
         if (line_id == null || order_id == null) continue;
         await client.query(
           `INSERT INTO order_line_history
-             (line_id, order_id, product_id, part_number, name, quantity, sale_price, status, currency, order_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             (line_id, order_id, channel, product_id, part_number, name, quantity, sale_price, status, currency, order_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (line_id) DO UPDATE SET
              order_id = EXCLUDED.order_id,
+             channel = EXCLUDED.channel,
              product_id = EXCLUDED.product_id,
              part_number = EXCLUDED.part_number,
              name = EXCLUDED.name,
@@ -197,6 +198,7 @@ async function upsertOrderLines(lines) {
           [
             line_id,
             order_id,
+            String(r?.channel || "emag").trim().toLowerCase() || "emag",
             toNum(r?.product_id),
             r?.part_number ?? null,
             r?.name ?? null,
@@ -222,11 +224,15 @@ async function getOrderLinesForProduct(offerId) {
   if (!Number.isFinite(id)) return [];
   try {
     const { rows } = await query(
-      `SELECT line_id, order_id, product_id, part_number, name, quantity,
-              sale_price, status, currency, order_date
-       FROM order_line_history
-       WHERE product_id = $1
-       ORDER BY order_date DESC, order_id DESC`,
+      `SELECT l.line_id, l.order_id, COALESCE(l.channel, o.channel, 'emag') AS channel,
+              l.product_id, l.part_number, l.name, l.quantity, l.sale_price,
+              l.status, l.currency, l.order_date,
+              o.status AS order_status, o.customer_name, o.payment_mode,
+              o.modified_at
+       FROM order_line_history l
+       LEFT JOIN emag_orders o ON o.order_id = l.order_id
+       WHERE l.product_id = $1
+       ORDER BY l.order_date DESC NULLS LAST, l.order_id DESC, l.line_id DESC`,
       [id]
     );
     return rows.map((r) => ({
