@@ -66,6 +66,9 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
       S3_ENDPOINT: http://minio:9000
+    volumes:
+      # Păstrează cheile VAPID între recreări/restarturi ale containerului.
+      - ./backend/data:/app/data
     depends_on:
       db:
         condition: service_healthy

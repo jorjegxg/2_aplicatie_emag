@@ -79,6 +79,7 @@
     var id = order.order_id;
     var name = (order.customer_name || "").trim() || "Client";
     el.innerHTML =
+      '<button type="button" class="order-notif-close" aria-label="Închide notificarea" title="Închide">Închide</button>' +
       '<strong>Comandă nouă #' +
       String(id) +
       "</strong>" +
@@ -87,6 +88,11 @@
       " · " +
       formatTotal(order) +
       '</span><a href="/vanzari.html">Deschide Comenzi</a>';
+    el.querySelector(".order-notif-close").addEventListener("click", function () {
+      clearTimeout(showInPageToast._t);
+      el.classList.remove("is-visible");
+      el.hidden = true;
+    });
     el.hidden = false;
     el.classList.add("is-visible");
     clearTimeout(showInPageToast._t);
@@ -96,10 +102,17 @@
     }, 12000);
   }
 
-  function showBrowserNotification(order) {
+  function showBrowserNotification(order, forceLocal) {
     // Dacă avem Web Push, OS-ul primește alerta din service worker — evităm dublura.
-    if (pushSubscribed) return true;
+    showBrowserNotification.lastError = "";
+    if (pushSubscribed && !forceLocal) return true;
     if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+      showBrowserNotification.lastError =
+        typeof Notification === "undefined"
+          ? "Browserul nu suportă Notification API."
+          : "Permisiunea pentru notificări nu este acordată (" +
+            Notification.permission +
+            ").";
       return false;
     }
     var id = order.order_id;
@@ -118,7 +131,11 @@
         n.close();
       };
       return true;
-    } catch (_) {
+    } catch (err) {
+      showBrowserNotification.lastError =
+        err && err.message
+          ? "Browserul a refuzat notificarea: " + err.message
+          : "Browserul a refuzat notificarea. Verifică permisiunea site-ului și setările Nu deranja.";
       return false;
     }
   }
@@ -447,29 +464,52 @@
     }
 
     if (pushSubscribed) {
-      return postJson("/api/push/test", {}).then(function (result) {
-        if (result.ok) {
+      return postJson("/api/push/test", {})
+        .then(function (result) {
+          if (result.ok && Number(result.data.sent || 0) > 0) {
+            return {
+              ok: true,
+              message:
+                "Push de test trimis pe " +
+                (result.data.sent || 0) +
+                " dispozitiv(e). Verifică bara de notificări.",
+            };
+          }
+          var fallbackOk = showBrowserNotification(sample, true);
           return {
-            ok: true,
+            ok: false,
             message:
-              "Push de test trimis pe " +
-              (result.data.sent || 0) +
-              " dispozitiv(e). Verifică bara de notificări.",
+              (result.data.error || "Push eșuat.") +
+              (fallbackOk
+                ? " Notificarea locală a fost trimisă."
+                : " " +
+                  (showBrowserNotification.lastError ||
+                    "Notificarea locală a eșuat.")),
           };
-        }
-        showBrowserNotification(sample);
-        return {
-          ok: false,
-          message: result.data.error || "Push eșuat; am încercat și notificarea locală.",
-        };
-      });
+        })
+        .catch(function (err) {
+          var fallbackOk = showBrowserNotification(sample, true);
+          return {
+            ok: false,
+            message:
+              "Serverul de push nu poate fi contactat (" +
+              (err.message || "eroare de rețea") +
+              ")." +
+              (fallbackOk
+                ? " Notificarea locală a fost trimisă."
+                : " " + (showBrowserNotification.lastError || "Notificarea locală a eșuat.")),
+          };
+        });
     }
 
     var browserOk = showBrowserNotification(sample);
     if (!browserOk) {
       return Promise.resolve({
         ok: false,
-        message: "Toast în pagină afișat; notificarea OS a eșuat (Focus Assist / Nu deranja).",
+        message:
+          "Toast în pagină afișat; notificarea OS a eșuat. " +
+          (showBrowserNotification.lastError ||
+            "Verifică permisiunea site-ului și setările Nu deranja."),
       });
     }
     return Promise.resolve({

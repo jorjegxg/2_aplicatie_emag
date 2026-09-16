@@ -861,7 +861,7 @@ td[data-col="images"] {
   line-height: 1;
   font-size: 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--surface);
   color: var(--muted, var(--text));
   cursor: pointer;
@@ -2729,6 +2729,29 @@ td.col-link-cumparare .btn-open-link:hover {
   transform: translateY(0.5rem);
   transition: opacity 0.2s ease, transform 0.2s ease;
   pointer-events: none;
+}
+
+.order-notif-toast .order-notif-close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.35rem;
+  min-width: 4.5rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.order-notif-toast .order-notif-close:hover,
+.order-notif-toast .order-notif-close:focus-visible {
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--text);
 }
 
 .order-notif-toast.is-visible {

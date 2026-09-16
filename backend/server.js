@@ -1082,9 +1082,20 @@ app.post("/api/push/test", async (_req, res) => {
           "Niciun dispozitiv abonat. Activează notificările pe telefon (Setări → Notificări).",
       });
     }
+    if (result.sent === 0) {
+      return res.status(502).json({
+        ok: false,
+        ...result,
+        error:
+          "Push-ul nu a fost livrat către niciun dispozitiv. Verifică logurile backend și permisiunea notificărilor în Brave.",
+      });
+    }
     return res.json({ ok: true, ...result });
   } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare test push" });
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "Eroare test push",
+    });
   }
 });
 

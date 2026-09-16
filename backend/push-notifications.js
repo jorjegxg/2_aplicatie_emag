@@ -183,7 +183,11 @@ async function sendToAll(payload) {
             /* ignore */
           }
         } else {
-          console.warn("[push] send failed:", status || err?.message);
+          console.warn(
+            "[push] send failed:",
+            status || "unknown",
+            err?.message || "fără detalii"
+          );
         }
       }
     })
