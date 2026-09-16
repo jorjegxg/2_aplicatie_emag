@@ -1,17 +1,12 @@
 /**
  * Notificări pentru comenzi eMAG noi:
- * - toast în pagină (polling, cât timp e tab-ul deschis)
- * - Web Push → bara de notificări pe telefon / desktop (și cu app închisă)
+ * - Web Push → bara de notificări pe telefon (și cu app închisă)
  */
 (function () {
   "use strict";
 
   var PREF_KEY = "emag-order-browser-notif";
-  var WATERMARK_KEY = "emag-order-notif-watermark";
-  var POLL_MS = 10000;
   var SW_PATH = "/sw.js";
-  var pollTimer = null;
-  var toastEl = null;
   var pushSubscribed = false;
 
   function isEnabled() {
@@ -22,28 +17,6 @@
     localStorage.setItem(PREF_KEY, on ? "1" : "0");
   }
 
-  function getWatermark() {
-    return localStorage.getItem(WATERMARK_KEY) || "";
-  }
-
-  function setWatermark(iso) {
-    if (!iso) return;
-    var d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return;
-    localStorage.setItem(WATERMARK_KEY, d.toISOString());
-  }
-
-  function toIso(value) {
-    if (!value) return "";
-    if (typeof value === "string") {
-      var d = new Date(value);
-      return Number.isNaN(d.getTime()) ? value : d.toISOString();
-    }
-    if (value instanceof Date) return value.toISOString();
-    var parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
-  }
-
   function permissionLabel() {
     if (typeof Notification === "undefined") return "indisponibil";
     if (!window.isSecureContext) return "necesită HTTPS";
@@ -52,185 +25,6 @@
     }
     if (Notification.permission === "denied") return "Blocat";
     return "Nepermis";
-  }
-
-  function formatTotal(order) {
-    var total = order.products_total;
-    var currency = order.currency || "RON";
-    if (total == null || total === "") return currency;
-    var n = Number(total);
-    if (!Number.isFinite(n)) return String(total) + " " + currency;
-    return n.toFixed(2) + " " + currency;
-  }
-
-  function ensureToastEl() {
-    if (toastEl && document.body.contains(toastEl)) return toastEl;
-    toastEl = document.createElement("div");
-    toastEl.id = "order-notif-toast";
-    toastEl.className = "order-notif-toast";
-    toastEl.setAttribute("role", "status");
-    toastEl.hidden = true;
-    document.body.appendChild(toastEl);
-    return toastEl;
-  }
-
-  function showInPageToast(order) {
-    var el = ensureToastEl();
-    var id = order.order_id;
-    var name = (order.customer_name || "").trim() || "Client";
-    el.innerHTML =
-      '<button type="button" class="order-notif-close" aria-label="Închide notificarea" title="Închide">Închide</button>' +
-      '<strong>Comandă nouă #' +
-      String(id) +
-      "</strong>" +
-      "<span>" +
-      name +
-      " · " +
-      formatTotal(order) +
-      '</span><a href="/vanzari.html">Deschide Comenzi</a>';
-    el.querySelector(".order-notif-close").addEventListener("click", function () {
-      clearTimeout(showInPageToast._t);
-      el.classList.remove("is-visible");
-      el.hidden = true;
-    });
-    el.hidden = false;
-    el.classList.add("is-visible");
-    clearTimeout(showInPageToast._t);
-    showInPageToast._t = setTimeout(function () {
-      el.classList.remove("is-visible");
-      el.hidden = true;
-    }, 12000);
-  }
-
-  function showBrowserNotification(order, forceLocal) {
-    // Dacă avem Web Push, OS-ul primește alerta din service worker — evităm dublura.
-    showBrowserNotification.lastError = "";
-    if (pushSubscribed && !forceLocal) return true;
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") {
-      showBrowserNotification.lastError =
-        typeof Notification === "undefined"
-          ? "Browserul nu suportă Notification API."
-          : "Permisiunea pentru notificări nu este acordată (" +
-            Notification.permission +
-            ").";
-      return false;
-    }
-    var id = order.order_id;
-    var name = (order.customer_name || "").trim() || "Client";
-    var body = name + " · " + formatTotal(order);
-    try {
-      var n = new Notification("Comandă eMAG #" + id, {
-        body: body,
-        tag: "emag-order-" + id,
-      });
-      n.onclick = function () {
-        window.focus();
-        if (!/\/vanzari\.html$/i.test(window.location.pathname)) {
-          window.location.href = "/vanzari.html";
-        }
-        n.close();
-      };
-      return true;
-    } catch (err) {
-      showBrowserNotification.lastError =
-        err && err.message
-          ? "Browserul a refuzat notificarea: " + err.message
-          : "Browserul a refuzat notificarea. Verifică permisiunea site-ului și setările Nu deranja.";
-      return false;
-    }
-  }
-
-  function notifyOrder(order) {
-    showInPageToast(order);
-    showBrowserNotification(order);
-  }
-
-  function bumpWatermark(orders) {
-    var max = getWatermark();
-    for (var i = 0; i < orders.length; i++) {
-      var iso = toIso(orders[i].created_at);
-      if (!iso) continue;
-      if (!max || iso > max) max = iso;
-    }
-    if (max) setWatermark(max);
-  }
-
-  function fetchNewOrders(after) {
-    var url = "/api/orders/local/new";
-    if (after) {
-      url += "?after_created_at=" + encodeURIComponent(after);
-    }
-    return fetch(url, { credentials: "same-origin", cache: "no-store" }).then(
-      function (res) {
-        return res.json().then(function (data) {
-          return { ok: res.ok, data: data || {} };
-        });
-      }
-    );
-  }
-
-  function syncWatermarkFromServer() {
-    return fetchNewOrders(null).then(function (result) {
-      if (!result.ok || !result.data.server_time) {
-        throw new Error(result.data.error || "Nu pot citi timpul serverului");
-      }
-      setWatermark(result.data.server_time);
-      return result.data.server_time;
-    });
-  }
-
-  function poll() {
-    if (!isEnabled()) return;
-    var after = getWatermark();
-    var req = after
-      ? fetchNewOrders(after)
-      : syncWatermarkFromServer().then(function () {
-          return { ok: true, data: { orders: [], server_time: getWatermark() } };
-        });
-
-    req
-      .then(function (result) {
-        if (!result.ok) return;
-        var orders = Array.isArray(result.data.orders) ? result.data.orders : [];
-        if (orders.length === 0) {
-          if (!getWatermark() && result.data.server_time) {
-            setWatermark(result.data.server_time);
-          }
-          return;
-        }
-        for (var i = 0; i < orders.length; i++) {
-          notifyOrder(orders[i]);
-        }
-        bumpWatermark(orders);
-      })
-      .catch(function () {
-        /* ignore transient errors */
-      });
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  function startPolling() {
-    stopPolling();
-    if (!isEnabled()) return;
-    if (!getWatermark()) {
-      syncWatermarkFromServer()
-        .then(function () {
-          poll();
-          pollTimer = setInterval(poll, POLL_MS);
-        })
-        .catch(function () {
-          pollTimer = setInterval(poll, POLL_MS);
-        });
-      return;
-    }
-    poll();
-    pollTimer = setInterval(poll, POLL_MS);
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -400,122 +194,68 @@
       }
       setEnabled(true);
       return subscribePush().then(function (pushResult) {
-        return syncWatermarkFromServer()
-          .then(function () {
-            startPolling();
-            if (pushResult.ok) {
-              return {
-                ok: true,
-                permission: perm,
-                push: true,
-                message: "Push activ — alertele apar în bara de notificări pe telefon.",
-              };
-            }
-            return {
-              ok: true,
-              permission: perm,
-              push: false,
-              message:
-                (pushResult.message || "Push indisponibil.") +
-                " Rămân alertele din tab cât timp aplicația e deschisă.",
-            };
-          })
-          .catch(function (err) {
-            setWatermark(new Date().toISOString());
-            startPolling();
-            return {
-              ok: true,
-              permission: perm,
-              push: Boolean(pushResult && pushResult.ok),
-              message: err.message || "Activ, dar sincronizarea timpului a eșuat.",
-            };
-          });
+        if (pushResult.ok) {
+          return {
+            ok: true,
+            permission: perm,
+            push: true,
+            message: "Push activ — alertele apar în bara de notificări pe telefon.",
+          };
+        }
+        return {
+          ok: true,
+          permission: perm,
+          push: false,
+          message:
+            (pushResult.message || "Push indisponibil.") +
+            " Activează notificările pe telefon pentru a primi alerte.",
+        };
       });
     });
   }
 
   function disable() {
     setEnabled(false);
-    stopPolling();
     return unsubscribePush();
   }
 
-  /** Notificare de test: preferă push server → telefon; fallback Notification API. */
+  /** Notificare de test livrată exclusiv prin Web Push către telefon. */
   function sendTestNotification() {
-    var sample = {
-      order_id: "TEST",
-      customer_name: "Test Notificare",
-      products_total: 1.0,
-      currency: "RON",
-    };
-    showInPageToast(sample);
-
-    if (typeof Notification === "undefined") {
-      return Promise.resolve({ ok: false, message: "Browserul nu suportă Notification API." });
-    }
     if (!window.isSecureContext) {
       return Promise.resolve({ ok: false, message: "Context nesigur — folosește HTTPS." });
     }
-    if (Notification.permission !== "granted") {
+    if (!pushSubscribed) {
       return Promise.resolve({
         ok: false,
-        message: "Permisiunea nu e acordată. Activează toggle-ul mai întâi.",
+        message: "Telefonul nu este abonat la Web Push. Activează notificările mai întâi.",
       });
     }
 
-    if (pushSubscribed) {
-      return postJson("/api/push/test", {})
-        .then(function (result) {
-          if (result.ok && Number(result.data.sent || 0) > 0) {
-            return {
-              ok: true,
-              message:
-                "Push de test trimis pe " +
-                (result.data.sent || 0) +
-                " dispozitiv(e). Verifică bara de notificări.",
-            };
-          }
-          var fallbackOk = showBrowserNotification(sample, true);
+    return postJson("/api/push/test", {})
+      .then(function (result) {
+        if (result.ok && Number(result.data.sent || 0) > 0) {
           return {
-            ok: false,
+            ok: true,
             message:
-              (result.data.error || "Push eșuat.") +
-              (fallbackOk
-                ? " Notificarea locală a fost trimisă."
-                : " " +
-                  (showBrowserNotification.lastError ||
-                    "Notificarea locală a eșuat.")),
+              "Push de test trimis pe " +
+              (result.data.sent || 0) +
+              " dispozitiv(e). Verifică bara de notificări.",
           };
-        })
-        .catch(function (err) {
-          var fallbackOk = showBrowserNotification(sample, true);
-          return {
-            ok: false,
-            message:
-              "Serverul de push nu poate fi contactat (" +
-              (err.message || "eroare de rețea") +
-              ")." +
-              (fallbackOk
-                ? " Notificarea locală a fost trimisă."
-                : " " + (showBrowserNotification.lastError || "Notificarea locală a eșuat.")),
-          };
-        });
-    }
-
-    var browserOk = showBrowserNotification(sample);
-    if (!browserOk) {
-      return Promise.resolve({
-        ok: false,
-        message:
-          "Toast în pagină afișat; notificarea OS a eșuat. " +
-          (showBrowserNotification.lastError ||
-            "Verifică permisiunea site-ului și setările Nu deranja."),
+        }
+        return {
+          ok: false,
+          message: result.data.error || "Push-ul nu a fost livrat telefonului.",
+        };
+      })
+      .catch(function (err) {
+        return {
+          ok: false,
+          message:
+            "Serverul de push nu poate fi contactat (" +
+            (err.message || "eroare de rețea") +
+            ").",
+        };
       });
-    }
-    return Promise.resolve({
-      ok: true,
-      message: "Notificare locală trimisă. Pentru telefon cu app închisă, reactivează toggle-ul (Web Push).",
-    });
   }
 
   window.OrderNotifications = {
@@ -524,10 +264,7 @@
     enable: enable,
     disable: disable,
     permissionLabel: permissionLabel,
-    startPolling: startPolling,
-    stopPolling: stopPolling,
     sendTestNotification: sendTestNotification,
-    syncWatermarkFromServer: syncWatermarkFromServer,
     pushSupported: pushSupported,
     isPushSubscribed: function () {
       return pushSubscribed;
@@ -536,9 +273,7 @@
   };
 
   function boot() {
-    refreshPushState().finally(function () {
-      startPolling();
-    });
+    refreshPushState();
   }
 
   if (document.readyState === "loading") {
