@@ -1,0 +1,125 @@
+ALEGE UNA DIN VARIANTE,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Impozit pe profit neplatitor de TVA,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,ASPECTE IMPORTANTE,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Pe aceasta culoare trebuie introduse date,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Pe aceasta culoare se calculceaza automat,,,,"- Cost transport Fabrica-Agent il aflati cu exactitate dupa ce agentul revine cu un raspuns, daca nu ai contactat agentul poti trece 2%",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,"- Taxele vamale difera in functie de produse, 5% pentru a fi acoperit complet",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Curs RMB to LEI,,0.7,,"- Pentru un calcul corect cursul valutar atat pentru RMB, cat si pentru $, trebuie sa fie cel folosit de agent",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Curs $ to LEI,,4.44,,"- Cand introduceti date folositi doar "","" nu ""."" (Folositi doar ""virgula"" nu ""punct"")",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,- Calcul greutate volumetrica L * l * H /5000 (in centimeri!),,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Cost Trans Aer $/kg,,8.0,,- La greutate se introduce valoarea mai mare dintre GREUTATEA FIZICA A PRODUSULUI sau VOLUMETRIA PRODUSULUI (L*l*H/5000) - rotunjiti mereu in sus!,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Cost Trans Aer RON/kg,,35.5,,- Nu completati comisionul emag mai mare de 30% deoarece tabelul va da eroare! (comisionul maxim pe emag este 27% ),,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Cost Trans Tren/mare $/kg,,3.6,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Cost Trans Tren/mare RON/kg,,16.0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Calcul greutate volumetrica L * l * H /5000 (in centimeri!),,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Cost transport Fabrica-Agent (0,5-2% din pretul produsului)",,1.0%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Comision agent ,,3.0%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+TVA,,21%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Taxe Vamale,,7%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Impozit pe profit,,16%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Consumabile-impachetare / produs, cu TVA",,5.5 lei,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Cost curierat conform contract, cu TVA",,19.2 lei,"desi e 12,5 am adaugat 19,2 datorita cresterii costului Genius",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Cost curierat facturat catre client, cu TVA",,15.9 lei,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Pentru a calcula cu livrare in Easybox in C26 si C29 se introduce 0 lei,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,"Introdu
+Date","Introdu
+Date","Introdu
+Date",Nu modifica!,"Introdu
+Date",Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,"Introdu
+Date","Introdu
+Date",Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,Nu modifica!,"Introdu
+Date",Nu modifica!,Nu modifica!,"Introdu
+Date","Introdu
+Date","Introdu
+Date","Introdu
+Date","Introdu
+Date","Introdu
+Date"
+,,,,,,,,DE ASCUNS,,,,,,,,,,,,DE ASCUNS,,,,,,,,,,,,,,,,,,,,,
+"Nr.
+crt.",Denumire produs,,Model,"Alege pret 
+fabrica RMB / $",Pret $/RMB,Pret achiz. China,Greutate,"Cost Transport
+Aer","Cost Transport
+Tren/Mare","Taxe Vamale
+Aer","Taxe Vamale
+Tren/Mare","TVA Import
+Aer","TVA Import
+Tren/Mare","Cost final achiz.
+Aer","Cost final achiz.
+Tren/Mare","Diferenta
+Aer - Tren/Mare","Cat salvezi
+din transport",Pret vanzare eMAG,Com eMAG,Pret vanzare eMAG,"Valoarea Comision 
+eMAG fara TVA","TVA Comision
+eMAG",Impozit Aer,Impozit Tren/Mare,"TVA Colectat
+de platit la stat Aer","TVA Colectat
+de platit la stat Tren/Mare","Profit final
+Aer","% Profit 
+Aer","Profit final
+Tren/Mare","% Profit 
+Tren/Mare","Break even 
+point AER","Break even 
+point TREN/MARE",nr bucati ,Cost comanda Aer,Cost comanda Tren/Mare,Link eMag,Link 1688,Link ALI,Link AMZ,CE,DECIZIE
+1,CD-CS002-W-MARO,,A,$$$,6.9,31.87 lei,3.4 kg,120.8 lei,54.3 lei,9.9 lei,5.6 lei,34.1 lei,19.3 lei,196.7 lei,111.1 lei,85.60 lei,43.52%,199.99 lei,20.00%,199.99 lei,43.18 lei,9.07 lei,-9.24 lei,4.45 lei,0.00 lei,0.00 lei,-48.5 lei,-24.3%,23.4 lei,11.7%,276.2 lei,163.3 lei,5 buc,$ 221.51,$ 125.12,,,,,,
+2,CD-CS002-W-NEGRU,,A,$$$,6.9,31.87 lei,3.3 kg,118.8 lei,53.5 lei,9.8 lei,5.5 lei,33.7 lei,19.1 lei,194.1 lei,109.9 lei,84.19 lei,43.36%,199.99 lei,20.00%,199.99 lei,43.18 lei,9.07 lei,-8.83 lei,4.64 lei,0.00 lei,0.00 lei,-46.4 lei,-23.2%,24.4 lei,12.2%,272.8 lei,161.7 lei,5 buc,$ 218.62,$ 123.82,,,,,,
+3,CD-CS002-W-ROSU,,A,$$$,6.9,31.87 lei,3.3 kg,118.8 lei,53.5 lei,9.8 lei,5.5 lei,33.7 lei,19.1 lei,194.1 lei,109.9 lei,84.19 lei,43.36%,199.99 lei,20.00%,199.99 lei,43.18 lei,9.07 lei,-8.83 lei,4.64 lei,0.00 lei,0.00 lei,-46.4 lei,-23.2%,24.4 lei,12.2%,272.8 lei,161.7 lei,5 buc,$ 218.62,$ 123.82,,,,,,
+4,ARO-SOL-ARGINTIU,,A,$$$,3.9,18.01 lei,0.2 kg,5.9 lei,2.7 lei,1.6 lei,1.3 lei,5.4 lei,4.6 lei,30.8 lei,26.6 lei,4.19 lei,13.59%,105.99 lei,22.00%,105.99 lei,26.82 lei,5.63 lei,5.43 lei,6.10 lei,0.00 lei,0.00 lei,28.5 lei,26.9%,32.0 lei,30.2%,59.8 lei,54.1 lei,5 buc,$ 34.72,$ 30.00,,,,,,
+5,ARO-SOL-AURIU,,A,$$$,3.9,18.01 lei,0.2 kg,5.9 lei,2.7 lei,1.6 lei,1.3 lei,5.4 lei,4.6 lei,30.8 lei,26.6 lei,4.19 lei,13.59%,105.99 lei,22.00%,105.99 lei,26.82 lei,5.63 lei,5.43 lei,6.10 lei,0.00 lei,0.00 lei,28.5 lei,26.9%,32.0 lei,30.2%,59.8 lei,54.1 lei,5 buc,$ 34.72,$ 30.00,,,,,,
+6,ARO-SOL-NEGRU,,A,$$$,3.9,18.01 lei,0.2 kg,5.9 lei,2.7 lei,1.6 lei,1.3 lei,5.4 lei,4.6 lei,30.8 lei,26.6 lei,4.19 lei,13.59%,105.99 lei,22.00%,105.99 lei,26.82 lei,5.63 lei,5.43 lei,6.10 lei,0.00 lei,0.00 lei,28.5 lei,26.9%,32.0 lei,30.2%,59.8 lei,54.1 lei,5 buc,$ 34.72,$ 30.00,,,,,,
+7,ARO-SOL-ROSU,,A,$$$,3.9,18.01 lei,0.2 kg,5.9 lei,2.7 lei,1.6 lei,1.3 lei,5.4 lei,4.6 lei,30.8 lei,26.6 lei,4.19 lei,13.59%,105.99 lei,22.00%,105.99 lei,26.82 lei,5.63 lei,5.43 lei,6.10 lei,0.00 lei,0.00 lei,28.5 lei,26.9%,32.0 lei,30.2%,59.8 lei,54.1 lei,5 buc,$ 34.72,$ 30.00,,,,,,
+8,LED-AMB,,A,$$$,5.3,24.48 lei,0.4 kg,15.1 lei,6.8 lei,2.6 lei,2.0 lei,8.9 lei,7.0 lei,51.0 lei,40.3 lei,10.70 lei,20.98%,158.99 lei,25.00%,158.99 lei,43.72 lei,9.18 lei,7.41 lei,9.12 lei,0.00 lei,0.00 lei,38.9 lei,24.5%,47.9 lei,30.1%,92.6 lei,77.3 lei,5 buc,$ 57.43,$ 45.38,,,,,,
+9,HUSA-VOL-BEJ,,A,$$$,1.5,6.93 lei,1.3 kg,45.5 lei,20.5 lei,3.4 lei,1.8 lei,11.7 lei,6.1 lei,67.5 lei,35.3 lei,32.22 lei,47.73%,108.99 lei,17.00%,108.99 lei,21.23 lei,4.46 lei,1.12 lei,6.27 lei,0.00 lei,0.00 lei,5.9 lei,5.4%,32.9 lei,30.2%,100.2 lei,59.6 lei,5 buc,$ 76.03,$ 39.74,,,,,,
+10,HUSA-VOL-NEGRU,,A,$$$,1.5,6.93 lei,1.3 kg,45.5 lei,20.5 lei,3.4 lei,1.8 lei,11.7 lei,6.1 lei,67.5 lei,35.3 lei,32.22 lei,47.73%,89.99 lei,17.00%,89.99 lei,18.00 lei,3.78 lei,-1.30 lei,3.86 lei,0.00 lei,0.00 lei,-6.8 lei,-7.6%,20.3 lei,22.5%,100.2 lei,59.6 lei,5 buc,$ 76.03,$ 39.74,,,,,,
+11,MOD-SIRI,,A,$$$,3.3,15.24 lei,0.1 kg,3.2 lei,1.5 lei,1.2 lei,1.1 lei,4.1 lei,3.7 lei,23.8 lei,21.5 lei,2.29 lei,9.62%,74.99 lei,16.00%,74.99 lei,14.54 lei,3.05 lei,3.97 lei,4.33 lei,0.00 lei,0.00 lei,20.8 lei,27.8%,22.7 lei,30.3%,44.3 lei,41.4 lei,5 buc,$ 26.81,$ 24.23,,,,,,
+12,INC-WL3,,A,$$$,11.99,55.38 lei,0.3 kg,12.1 lei,5.4 lei,4.4 lei,4.0 lei,15.1 lei,13.6 lei,86.9 lei,78.4 lei,8.56 lei,9.85%,234.99 lei,21.00%,234.99 lei,52.69 lei,11.06 lei,12.08 lei,13.45 lei,0.00 lei,0.00 lei,63.4 lei,27.0%,70.6 lei,30.1%,133.8 lei,122.3 lei,5 buc,$ 97.89,$ 88.25,,,,,,
+13,ORG-BANC-BEJ,,A,$$$,1.05,4.85 lei,0.5 kg,18.8 lei,8.4 lei,1.5 lei,0.9 lei,5.3 lei,3.0 lei,30.4 lei,17.1 lei,13.29 lei,43.70%,80.99 lei,22.00%,80.99 lei,21.32 lei,4.48 lei,2.56 lei,4.68 lei,0.00 lei,0.00 lei,13.4 lei,16.6%,24.6 lei,30.4%,59.2 lei,41.1 lei,5 buc,$ 34.25,$ 19.29,,,,,,
+14,ORG-BANC-NEGRU,,A,$$$,1.2,5.54 lei,0.9 kg,32.0 lei,14.4 lei,2.4 lei,1.3 lei,8.4 lei,4.5 lei,48.3 lei,25.7 lei,22.66 lei,46.87%,102.99 lei,22.00%,102.99 lei,26.16 lei,5.49 lei,2.27 lei,5.90 lei,0.00 lei,0.00 lei,11.9 lei,11.6%,31.0 lei,30.1%,83.6 lei,52.8 lei,5 buc,$ 54.43,$ 28.92,,,,,,
+15,SUP-MAG,,A,$$$,0.75,3.46 lei,0.1 kg,2.5 lei,1.1 lei,0.4 lei,0.3 lei,1.3 lei,1.0 lei,7.7 lei,5.9 lei,1.76 lei,22.98%,41.99 lei,17.00%,41.99 lei,9.84 lei,2.07 lei,2.18 lei,2.46 lei,0.00 lei,0.00 lei,11.4 lei,27.2%,12.9 lei,30.8%,24.9 lei,22.6 lei,5 buc,$ 8.64,$ 6.65,,,,,,
+16,MOD-SFC,,A,$$$,4.35,20.09 lei,0.1 kg,3.7 lei,1.7 lei,1.5 lei,1.4 lei,5.3 lei,4.9 lei,30.7 lei,28.1 lei,2.64 lei,8.61%,101.99 lei,20.00%,101.99 lei,23.58 lei,4.95 lei,5.43 lei,5.86 lei,0.00 lei,0.00 lei,28.5 lei,28.0%,30.7 lei,30.1%,57.2 lei,53.7 lei,5 buc,$ 34.57,$ 31.59,,,,,,
+17,MOD-BT50,,A,$$$,5.8,26.79 lei,0.1 kg,3.6 lei,1.6 lei,2.0 lei,1.8 lei,6.8 lei,6.4 lei,39.1 lei,36.6 lei,2.54 lei,6.48%,122.99 lei,20.00%,122.99 lei,27.78 lei,5.83 lei,6.63 lei,7.04 lei,0.00 lei,0.00 lei,34.8 lei,28.3%,36.9 lei,30.0%,68.3 lei,65.0 lei,5 buc,$ 44.07,$ 41.22,,,,,,
+18,SUP-OGL,,A,$$$,1.22,5.64 lei,0.6 kg,19.9 lei,9.0 lei,1.7 lei,0.9 lei,5.7 lei,3.3 lei,33.0 lei,18.8 lei,14.14 lei,42.89%,78.99 lei,20.00%,78.99 lei,18.98 lei,3.99 lei,2.28 lei,4.54 lei,0.00 lei,0.00 lei,12.0 lei,15.2%,23.9 lei,30.2%,60.2 lei,41.5 lei,5 buc,$ 37.13,$ 21.20,,,,,,
+19,ORG-SCA,,A,$$$,1.3,6.00 lei,0.2 kg,7.1 lei,3.2 lei,0.9 lei,0.6 lei,2.9 lei,2.1 lei,16.9 lei,11.9 lei,5.04 lei,29.81%,61.99 lei,20.00%,61.99 lei,15.58 lei,3.27 lei,2.79 lei,3.60 lei,0.00 lei,0.00 lei,14.7 lei,23.6%,18.9 lei,30.5%,39.0 lei,32.3 lei,5 buc,$ 19.02,$ 13.35,,,,,,
+20,PROT-CENT,,A,$$$,0.9,4.16 lei,0.4 kg,13.9 lei,6.3 lei,1.2 lei,0.7 lei,4.0 lei,2.3 lei,23.3 lei,13.4 lei,9.87 lei,42.35%,65.99 lei,20.00%,65.99 lei,16.38 lei,3.44 lei,2.25 lei,3.83 lei,0.00 lei,0.00 lei,11.8 lei,17.9%,20.1 lei,30.5%,47.4 lei,34.4 lei,5 buc,$ 26.24,$ 15.13,,,,,,
+21,UV-PARB,,A,$$$,1.88,8.68 lei,0.1 kg,3.4 lei,1.5 lei,0.8 lei,0.7 lei,2.7 lei,2.3 lei,15.5 lei,13.1 lei,2.39 lei,15.39%,66.99 lei,21.00%,66.99 lei,17.41 lei,3.66 lei,3.45 lei,3.84 lei,0.00 lei,0.00 lei,18.1 lei,27.1%,20.1 lei,30.1%,38.0 lei,34.8 lei,5 buc,$ 17.50,$ 14.81,,,,,,
+22,MOD-BTFM,,A,$$$,2.8,12.93 lei,0.1 kg,3.2 lei,1.5 lei,1.1 lei,0.9 lei,3.6 lei,3.2 lei,20.8 lei,18.5 lei,2.29 lei,11.00%,67.99 lei,16.00%,67.99 lei,13.42 lei,2.82 lei,3.54 lei,3.91 lei,0.00 lei,0.00 lei,18.6 lei,27.3%,20.5 lei,30.2%,40.6 lei,37.7 lei,5 buc,$ 23.46,$ 20.88,,,,,,
+23,LUM-WARN,,A,$$$,0.43,1.99 lei,0.1 kg,3.6 lei,1.6 lei,0.4 lei,0.2 lei,1.2 lei,0.8 lei,7.1 lei,4.6 lei,2.52 lei,35.28%,53.99 lei,20.00%,53.99 lei,13.98 lei,2.94 lei,3.38 lei,3.79 lei,0.00 lei,0.00 lei,17.8 lei,32.9%,19.9 lei,36.8%,26.1 lei,22.8 lei,5 buc,$ 8.04,$ 5.20,,,,,,
+24,SPAL-23,,A,$$$,4.8,22.17 lei,3.0 kg,105.1 lei,47.3 lei,8.3 lei,4.5 lei,28.5 lei,15.5 lei,164.1 lei,89.5 lei,74.52 lei,45.42%,199.99 lei,22.00%,199.99 lei,47.50 lei,9.97 lei,-4.85 lei,7.07 lei,0.00 lei,0.00 lei,-25.5 lei,-12.7%,37.1 lei,18.6%,241.3 lei,139.8 lei,5 buc,$ 184.75,$ 100.83,,,,,,
+25,TAV-MNC,,A,$$$,3.09,14.27 lei,0.9 kg,30.9 lei,13.9 lei,2.9 lei,1.8 lei,10.1 lei,6.3 lei,58.3 lei,36.3 lei,21.93 lei,37.64%,122.99 lei,20.00%,122.99 lei,27.78 lei,5.83 lei,3.57 lei,7.08 lei,0.00 lei,0.00 lei,18.7 lei,15.2%,37.2 lei,30.2%,93.6 lei,64.6 lei,5 buc,$ 65.62,$ 40.92,,,,,,
+26,TAV-ANT,,A,$$$,1.9,8.78 lei,0.6 kg,21.1 lei,9.5 lei,1.9 lei,1.2 lei,6.7 lei,4.1 lei,38.4 lei,23.5 lei,14.92 lei,38.82%,90.99 lei,20.00%,90.99 lei,21.38 lei,4.49 lei,2.86 lei,5.25 lei,0.00 lei,0.00 lei,15.0 lei,16.5%,27.6 lei,30.3%,67.4 lei,47.7 lei,5 buc,$ 43.29,$ 26.49,,,,,,
+27,CBL-RET,,A,$$$,11.4,52.66 lei,0.3 kg,10.8 lei,4.9 lei,4.1 lei,3.7 lei,14.2 lei,12.9 lei,81.8 lei,74.1 lei,7.68 lei,9.38%,216.99 lei,20.00%,216.99 lei,46.58 lei,9.78 lei,11.20 lei,12.43 lei,0.00 lei,0.00 lei,58.8 lei,27.1%,65.3 lei,30.1%,124.6 lei,114.5 lei,5 buc,$ 92.13,$ 83.49,,,,,,
+28,COS-GUN,,A,$$$,0.68,3.14 lei,0.3 kg,11.1 lei,5.0 lei,0.9 lei,0.5 lei,3.2 lei,1.8 lei,18.4 lei,10.5 lei,7.89 lei,42.90%,57.99 lei,20.00%,57.99 lei,14.78 lei,3.10 lei,2.07 lei,3.33 lei,0.00 lei,0.00 lei,10.8 lei,18.7%,17.5 lei,30.1%,41.0 lei,30.5 lei,5 buc,$ 20.72,$ 11.83,,,,,,
+29,SET-PENS,,A,$$$,6.35,29.33 lei,2.1 kg,73.8 lei,33.2 lei,6.7 lei,4.1 lei,23.1 lei,14.0 lei,133.0 lei,80.6 lei,52.34 lei,39.36%,232.99 lei,20.00%,232.99 lei,49.78 lei,10.45 lei,4.96 lei,13.33 lei,0.00 lei,0.00 lei,26.0 lei,11.2%,70.0 lei,30.0%,192.1 lei,123.0 lei,5 buc,$ 149.73,$ 90.79,,,,,,
+30,KIT-CUR,,A,$$$,6.6,30.48 lei,2.2 kg,78.9 lei,35.5 lei,7.1 lei,4.3 lei,24.5 lei,14.8 lei,140.9 lei,85.0 lei,55.89 lei,39.67%,243.99 lei,20.00%,243.99 lei,51.98 lei,10.92 lei,5.02 lei,13.97 lei,0.00 lei,0.00 lei,26.4 lei,10.8%,73.3 lei,30.1%,202.6 lei,128.8 lei,5 buc,$ 158.67,$ 95.73,,,,,,
+31,ORG-PARA-BEJ,,A,$$$,1.13,5.22 lei,0.1 kg,3.9 lei,1.8 lei,0.6 lei,0.5 lei,2.0 lei,1.6 lei,11.8 lei,9.0 lei,2.77 lei,23.55%,59.99 lei,20.00%,59.99 lei,15.18 lei,3.19 lei,3.37 lei,3.81 lei,0.00 lei,0.00 lei,17.7 lei,29.5%,20.0 lei,33.4%,32.2 lei,28.5 lei,5 buc,$ 13.24,$ 10.13,,,,,,
+32,ORG-PARA-GRI,,A,$$$,1.13,5.22 lei,0.1 kg,3.9 lei,1.8 lei,0.6 lei,0.5 lei,2.0 lei,1.6 lei,11.8 lei,9.0 lei,2.77 lei,23.55%,53.99 lei,20.00%,53.99 lei,13.98 lei,2.94 lei,2.64 lei,3.09 lei,0.00 lei,0.00 lei,13.9 lei,25.7%,16.2 lei,30.0%,32.2 lei,28.5 lei,5 buc,$ 13.24,$ 10.13,,,,,,
+33,ORG-PARA-NEGRU,,A,$$$,1.13,5.22 lei,0.1 kg,3.9 lei,1.8 lei,0.6 lei,0.5 lei,2.0 lei,1.6 lei,11.8 lei,9.0 lei,2.77 lei,23.55%,53.99 lei,20.00%,53.99 lei,13.98 lei,2.94 lei,2.64 lei,3.09 lei,0.00 lei,0.00 lei,13.9 lei,25.7%,16.2 lei,30.0%,32.2 lei,28.5 lei,5 buc,$ 13.24,$ 10.13,,,,,,
+34,ORG-PORT,,A,$$$,1.1,5.08 lei,0.4 kg,15.9 lei,7.2 lei,1.4 lei,0.8 lei,4.7 lei,2.7 lei,27.1 lei,15.8 lei,11.30 lei,41.71%,70.99 lei,20.00%,70.99 lei,17.38 lei,3.65 lei,2.25 lei,4.06 lei,0.00 lei,0.00 lei,11.8 lei,16.7%,21.3 lei,30.0%,52.4 lei,37.5 lei,5 buc,$ 30.51,$ 17.78,,,,,,
+35,HUS-VOL2,,A,$$$,3.3,15.24 lei,1.4 kg,51.3 lei,23.1 lei,4.3 lei,2.5 lei,14.9 lei,8.6 lei,85.7 lei,49.4 lei,36.35 lei,42.40%,154.99 lei,20.00%,154.99 lei,34.18 lei,7.18 lei,3.06 lei,8.87 lei,0.00 lei,0.00 lei,16.0 lei,10.3%,46.6 lei,30.1%,129.8 lei,81.8 lei,5 buc,$ 96.55,$ 55.61,,,,,,
+36,SUP-OCL,,A,$$$,1.84,8.50 lei,0.1 kg,2.1 lei,1.0 lei,0.7 lei,0.6 lei,2.4 lei,2.1 lei,13.7 lei,12.2 lei,1.51 lei,11.03%,55.99 lei,17.00%,55.99 lei,12.22 lei,2.57 lei,2.99 lei,3.23 lei,0.00 lei,0.00 lei,15.7 lei,28.1%,17.0 lei,30.3%,32.4 lei,30.5 lei,5 buc,$ 15.43,$ 13.73,,,,,,
+37,OGL-BEB,,A,$$$,1.5,6.93 lei,0.8 kg,28.6 lei,12.9 lei,2.3 lei,1.3 lei,8.0 lei,4.4 lei,45.8 lei,25.5 lei,20.30 lei,44.29%,98.99 lei,21.00%,98.99 lei,24.13 lei,5.07 lei,2.43 lei,5.67 lei,0.00 lei,0.00 lei,12.7 lei,12.9%,29.8 lei,30.1%,78.7 lei,51.5 lei,5 buc,$ 51.62,$ 28.76,,,,,,
+38,PROL-CENT,,A,$$$,1.15,5.31 lei,0.1 kg,2.4 lei,1.1 lei,0.5 lei,0.4 lei,1.7 lei,1.4 lei,9.9 lei,8.2 lei,1.69 lei,17.05%,59.99 lei,17.00%,59.99 lei,12.90 lei,2.71 lei,4.11 lei,4.38 lei,0.00 lei,0.00 lei,21.6 lei,35.9%,23.0 lei,38.3%,27.7 lei,25.6 lei,5 buc,$ 11.17,$ 9.27,,,,,,
+39,PARF-AUTO,,A,$$$,1.5,6.93 lei,0.1 kg,2.6 lei,1.2 lei,0.6 lei,0.5 lei,2.1 lei,1.8 lei,12.2 lei,10.4 lei,1.81 lei,14.83%,57.99 lei,20.00%,57.99 lei,14.78 lei,3.10 lei,3.05 lei,3.34 lei,0.00 lei,0.00 lei,16.0 lei,27.6%,17.6 lei,30.3%,32.8 lei,30.4 lei,5 buc,$ 13.77,$ 11.72,,,,,,
+40,SUP-TET,,A,$$$,7.29,33.67 lei,0.7 kg,23.9 lei,10.7 lei,3.7 lei,2.9 lei,12.9 lei,9.9 lei,74.2 lei,57.2 lei,16.92 lei,22.82%,174.99 lei,20.00%,174.99 lei,38.18 lei,8.02 lei,7.34 lei,10.04 lei,0.00 lei,0.00 lei,38.5 lei,22.0%,52.7 lei,30.1%,114.5 lei,92.2 lei,5 buc,$ 83.50,$ 64.45,,,,,,
+41,DEP-PLAF,,A,$$$,2.15,9.93 lei,1.1 kg,39.9 lei,17.9 lei,3.2 lei,1.8 lei,11.1 lei,6.2 lei,64.2 lei,35.9 lei,28.25 lei,44.03%,109.99 lei,17.00%,109.99 lei,21.40 lei,4.49 lei,1.78 lei,6.30 lei,0.00 lei,0.00 lei,9.4 lei,8.5%,33.1 lei,30.1%,96.0 lei,60.4 lei,5 buc,$ 72.25,$ 40.44,,,,,,
+42,REP-ANV,,A,$$$,6.6,30.48 lei,0.6 kg,21.8 lei,9.8 lei,3.4 lei,2.6 lei,11.7 lei,9.0 lei,67.4 lei,52.0 lei,15.48 lei,22.96%,166.99 lei,21.00%,166.99 lei,38.41 lei,8.07 lei,7.09 lei,9.56 lei,0.00 lei,0.00 lei,37.2 lei,22.3%,50.2 lei,30.1%,107.6 lei,86.9 lei,5 buc,$ 75.94,$ 58.50,,,,,,
+43,SUP-MAG2,,A,$$$,1.83,8.45 lei,0.2 kg,6.8 lei,3.1 lei,1.0 lei,0.7 lei,3.4 lei,2.6 lei,19.7 lei,14.8 lei,4.83 lei,24.56%,61.99 lei,17.00%,61.99 lei,13.24 lei,2.78 lei,2.80 lei,3.57 lei,0.00 lei,0.00 lei,14.7 lei,23.7%,18.7 lei,30.2%,40.0 lei,33.9 lei,5 buc,$ 22.16,$ 16.72,,,,,,
+44,ASP-AUTO,,A,$$$,8.45,39.03 lei,1.7 kg,59.3 lei,26.7 lei,6.4 lei,4.3 lei,22.0 lei,14.7 lei,126.8 lei,84.7 lei,42.05 lei,33.18%,214.99 lei,16.00%,214.99 lei,36.94 lei,7.76 lei,5.56 lei,12.29 lei,0.00 lei,0.00 lei,29.2 lei,13.6%,64.5 lei,30.0%,171.9 lei,119.8 lei,5 buc,$ 142.74,$ 95.39,,,,,,
+45,LUM-PLAF,,A,$$$,2.39,11.04 lei,0.1 kg,4.3 lei,1.9 lei,1.0 lei,0.8 lei,3.4 lei,2.9 lei,19.7 lei,16.7 lei,3.02 lei,15.32%,73.99 lei,20.00%,73.99 lei,17.98 lei,3.78 lei,3.79 lei,4.28 lei,0.00 lei,0.00 lei,19.9 lei,26.9%,22.5 lei,30.4%,42.7 lei,38.7 lei,5 buc,$ 22.21,$ 18.80,,,,,,
+46,HUS-CHE,,A,$$$,2.96,13.67 lei,0.2 kg,6.7 lei,3.0 lei,1.3 lei,1.1 lei,4.6 lei,3.7 lei,26.3 lei,21.5 lei,4.78 lei,18.18%,85.99 lei,20.00%,85.99 lei,20.38 lei,4.28 lei,4.19 lei,4.96 lei,0.00 lei,0.00 lei,22.0 lei,25.6%,26.0 lei,30.3%,51.4 lei,45.1 lei,5 buc,$ 29.63,$ 24.25,,,,,,
+47,LED-PARB,,A,$$$,6,27.71 lei,0.3 kg,10.9 lei,4.9 lei,2.5 lei,2.1 lei,8.6 lei,7.3 lei,49.8 lei,42.0 lei,7.73 lei,15.54%,136.99 lei,20.00%,136.99 lei,30.58 lei,6.42 lei,6.63 lei,7.86 lei,0.00 lei,0.00 lei,34.8 lei,25.4%,41.3 lei,30.1%,82.4 lei,72.1 lei,5 buc,$ 56.05,$ 47.34,,,,,,
+48,DEC-EXT,,A,$$$,2.6,12.01 lei,0.5 kg,17.9 lei,8.1 lei,1.9 lei,1.3 lei,6.7 lei,4.5 lei,38.5 lei,25.9 lei,12.69 lei,32.92%,79.99 lei,20.00%,79.99 lei,19.18 lei,4.03 lei,1.51 lei,3.54 lei,0.00 lei,0.00 lei,7.9 lei,9.9%,18.6 lei,23.2%,67.5 lei,50.8 lei,5 buc,$ 43.41,$ 29.12,,,,,,
+49,CAR-TET,,A,$$$,0.07,0.32 lei,0.1 kg,2.8 lei,1.2 lei,0.2 lei,0.1 lei,0.7 lei,0.4 lei,4.0 lei,2.0 lei,1.96 lei,49.25%,55.99 lei,20.00%,55.99 lei,14.38 lei,3.02 lei,4.13 lei,4.44 lei,0.00 lei,0.00 lei,21.7 lei,38.7%,23.3 lei,41.7%,21.9 lei,19.4 lei,5 buc,$ 4.49,$ 2.28,,,,,,
+50,STK-FRM,,A,$$$,2.6,12.01 lei,0.0 kg,0.4 lei,0.2 lei,0.8 lei,0.8 lei,2.8 lei,2.7 lei,15.9 lei,15.7 lei,0.25 lei,1.58%,70.99 lei,20.00%,70.99 lei,17.38 lei,3.65 lei,4.04 lei,4.08 lei,0.00 lei,0.00 lei,21.2 lei,29.9%,21.4 lei,30.2%,37.7 lei,37.4 lei,5 buc,$ 17.94,$ 17.66,,,,,,
+51,GEA-VENT,,A,$$$,0.74,3.42 lei,0.1 kg,4.6 lei,2.1 lei,0.5 lei,0.4 lei,1.8 lei,1.2 lei,10.3 lei,7.1 lei,3.26 lei,31.56%,49.99 lei,20.00%,49.99 lei,13.18 lei,2.77 lei,2.39 lei,2.91 lei,0.00 lei,0.00 lei,12.5 lei,25.1%,15.3 lei,30.5%,30.3 lei,26.0 lei,5 buc,$ 11.64,$ 7.97,,,,,,
+52,MAS-VOL,,A,$$$,1.3,6.00 lei,0.4 kg,15.6 lei,7.0 lei,1.4 lei,0.8 lei,4.8 lei,2.9 lei,27.9 lei,16.8 lei,11.08 lei,39.73%,73.99 lei,20.00%,73.99 lei,17.98 lei,3.78 lei,2.49 lei,4.26 lei,0.00 lei,0.00 lei,13.1 lei,17.7%,22.4 lei,30.2%,53.5 lei,38.9 lei,5 buc,$ 31.39,$ 18.92,,,,,,
+53,PARF-SOL-AURIU,,A,$$$,4.15,19.17 lei,0.3 kg,12.3 lei,5.5 lei,2.0 lei,1.6 lei,7.0 lei,5.5 lei,40.5 lei,31.8 lei,8.70 lei,21.47%,110.99 lei,20.00%,110.99 lei,25.38 lei,5.33 lei,4.95 lei,6.35 lei,0.00 lei,0.00 lei,26.0 lei,23.4%,33.3 lei,30.0%,70.1 lei,58.7 lei,5 buc,$ 45.63,$ 35.83,,,,,,
+54,PARF-SOL-NEGRU,,A,$$$,4.15,19.17 lei,0.3 kg,12.3 lei,5.5 lei,2.0 lei,1.6 lei,7.0 lei,5.5 lei,40.5 lei,31.8 lei,8.70 lei,21.47%,110.99 lei,20.00%,110.99 lei,25.38 lei,5.33 lei,4.95 lei,6.35 lei,0.00 lei,0.00 lei,26.0 lei,23.4%,33.3 lei,30.0%,70.1 lei,58.7 lei,5 buc,$ 45.63,$ 35.83,,,,,,
+55,PARF-SOL-ROSU,,A,$$$,4.15,19.17 lei,0.3 kg,12.3 lei,5.5 lei,2.0 lei,1.6 lei,7.0 lei,5.5 lei,40.5 lei,31.8 lei,8.70 lei,21.47%,110.99 lei,20.00%,110.99 lei,25.38 lei,5.33 lei,4.95 lei,6.35 lei,0.00 lei,0.00 lei,26.0 lei,23.4%,33.3 lei,30.0%,70.1 lei,58.7 lei,5 buc,$ 45.63,$ 35.83,,,,,,
+56,CD-CS002-W-BEJ,,A,$$$,6.9,31.87 lei,3.3 kg,118.8 lei,53.5 lei,9.8 lei,5.5 lei,33.7 lei,19.1 lei,194.1 lei,109.9 lei,84.19 lei,43.36%,199.99 lei,20.00%,199.99 lei,43.18 lei,9.07 lei,-8.83 lei,4.64 lei,0.00 lei,0.00 lei,-46.4 lei,-23.2%,24.4 lei,12.2%,272.8 lei,161.7 lei,5 buc,$ 218.62,$ 123.82,,,,,,
