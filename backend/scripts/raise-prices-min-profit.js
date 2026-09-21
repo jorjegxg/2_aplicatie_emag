@@ -2,7 +2,9 @@
  * Ridica pretul de vanzare (catalog_products.sale_price) la produsele cu % profit Tren/Mare
  * sub prag, la cel mai mic pret terminat in ,99 care atinge pragul. Restul raman neschimbate.
  * Foloseste acelasi calcul ca tabelul (calculator.js, comision implicit 25% ca in app.js).
+ * Salveaza si PRP / pret minim / pret maxim derivate din pret (ca schedulePersistDerived in app.js).
  * Rulare: node scripts/raise-prices-min-profit.js [--apply] [--min=20]
+ *         node scripts/raise-prices-min-profit.js --derived-only --ids=1,2,3 [--apply]
  */
 const { query, withTransaction, endPool } = require("../pg");
 const { calcProduct } = require("../calculator");
@@ -12,6 +14,35 @@ const minArg = process.argv.find((a) => a.startsWith("--min="));
 const MIN = (minArg ? Number(minArg.slice(6)) : 20) / 100;
 const DEFAULT_PROCENTAJ_EMAG = 25;
 const EPS = 1e-9;
+const DERIVED_ONLY = process.argv.includes("--derived-only");
+const idsArg = process.argv.find((a) => a.startsWith("--ids="));
+const IDS = idsArg ? idsArg.slice(6).split(",").map(Number).filter(Number.isFinite) : null;
+
+const roundPrice = (n) => Math.round(n * 10000) / 10000;
+const multOrNull = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+
+/** Ca derivePrices + getRowPretMinim din app.js: pretul minim override ramane neschimbat. */
+function derivedFor(sale, st, minOverride) {
+  const m = (k) => multOrNull(st?.[k]);
+  const d = (mult) => (mult == null ? null : roundPrice(sale * mult));
+  return {
+    recommended_price: d(m("mult_prp")),
+    min_sale_price: minOverride != null ? Number(minOverride) : d(m("mult_min")),
+    max_sale_price: d(m("mult_max")),
+  };
+}
+
+async function updatePrices(client, id, sale, derived, now) {
+  const set = ["sale_price = $1", "updated_at = $2"];
+  const vals = [sale, now];
+  for (const [k, v] of Object.entries(derived)) {
+    if (v == null) continue;
+    vals.push(v);
+    set.push(`${k} = $${vals.length}`);
+  }
+  vals.push(id);
+  await client.query(`UPDATE catalog_products SET ${set.join(", ")} WHERE id = $${vals.length}`, vals);
+}
 
 function pctTren(input, params, price) {
   return calcProduct({ ...input, pret_vanzare: price }, params)?.procent_profit_tren ?? null;
@@ -37,11 +68,15 @@ function minPrice99(input, params) {
 }
 
 async function main() {
-  const { rows: st } = await query("SELECT calculator_params FROM settings WHERE id = 1");
+  const { rows: st } = await query(
+    "SELECT calculator_params, mult_prp, mult_min, mult_max FROM settings WHERE id = 1"
+  );
   const params = st[0]?.calculator_params || null;
+  if (DERIVED_ONLY) return derivedOnly(st[0]);
 
   const { rows } = await query(`
     SELECT c.id, c.emag_offer_id, c.nume AS name, c.sale_price, c.max_sale_price,
+           ml.pret_minim_override,
            c.pret_cumparare_usd, c.moneda_fabrica, c.greutate, c.inaltime, c.lungime, c.latime,
            ml.procentaj_emag
     FROM catalog_products c
@@ -84,6 +119,7 @@ async function main() {
       next,
       oldPct,
       newPct: pctTren(input, params, next),
+      derived: derivedFor(next, st[0], r.pret_minim_override),
       overMax: r.max_sale_price != null && next > Number(r.max_sale_price) ? Number(r.max_sale_price) : null,
     });
   }
@@ -107,16 +143,50 @@ async function main() {
     const now = new Date().toISOString();
     await withTransaction(async (client) => {
       for (const c of changes) {
-        await client.query(
-          "UPDATE catalog_products SET sale_price = $1, updated_at = $2 WHERE id = $3",
-          [c.next, now, c.id]
-        );
+        await updatePrices(client, c.id, c.next, c.derived, now);
       }
     });
     console.log(`\nAPLICAT: ${changes.length} preturi actualizate.`);
   } else if (!APPLY) {
     console.log("\nDry-run (nimic salvat). Ruleaza cu --apply ca sa salvezi.");
   }
+}
+
+/** Doar PRP / min / max din pretul de vanzare curent, pentru produsele din --ids. */
+async function derivedOnly(st) {
+  if (!IDS || IDS.length === 0) throw new Error("--derived-only cere --ids=1,2,3");
+  const { rows } = await query(
+    `SELECT c.id, c.sale_price, c.recommended_price, c.min_sale_price, c.max_sale_price,
+            ml.pret_minim_override
+     FROM catalog_products c
+     LEFT JOIN marketplace_listings ml
+       ON ml.channel = 'emag' AND ml.external_id = c.emag_offer_id
+     WHERE c.id = ANY($1::int[]) AND c.sale_price IS NOT NULL
+     ORDER BY c.id`,
+    [IDS]
+  );
+  const f = (x) => (x == null ? "—" : Number(x).toFixed(4));
+  const items = rows.map((r) => ({
+    r,
+    sale: Number(r.sale_price),
+    derived: derivedFor(Number(r.sale_price), st, r.pret_minim_override),
+  }));
+  for (const { r, sale, derived } of items) {
+    console.log(
+      `#${r.id}\tpret ${sale.toFixed(2)}\tPRP ${f(r.recommended_price)} -> ${f(derived.recommended_price)}` +
+        `\tmin ${f(r.min_sale_price)} -> ${f(derived.min_sale_price)}\tmax ${f(r.max_sale_price)} -> ${f(derived.max_sale_price)}`
+    );
+  }
+  console.log(`\nProduse: ${items.length} (din ${IDS.length} id-uri)`);
+  if (!APPLY) {
+    console.log("Dry-run (nimic salvat). Ruleaza cu --apply ca sa salvezi.");
+    return;
+  }
+  const now = new Date().toISOString();
+  await withTransaction(async (client) => {
+    for (const { r, sale, derived } of items) await updatePrices(client, r.id, sale, derived, now);
+  });
+  console.log(`APLICAT: ${items.length} produse actualizate.`);
 }
 
 main()
