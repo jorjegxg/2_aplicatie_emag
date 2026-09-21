@@ -43,6 +43,8 @@
   --tint-amber: #fef3c7;
   --tint-amber-hover: #fde68a;
   --rule-amber: #d97706;
+  --tint-beige: #f5ecd7;
+  --rule-beige: #c9ad7a;
 
   --tint-green: #dcfce7;
   --tint-green-hover: #bbf7d0;
@@ -127,6 +129,8 @@
   --tint-amber: #3a2d10;
   --tint-amber-hover: #4d3c16;
   --rule-amber: #d9950b;
+  --tint-beige: #3a3222;
+  --rule-beige: #a88d5c;
 
   --tint-green: #14331f;
   --tint-green-hover: #1b472b;
@@ -738,6 +742,17 @@ td.col-pret-emag .input-sale-price {
 td.col-pret-emag .input-sale-price:focus {
   outline: 2px solid color-mix(in srgb, var(--emag-price) 35%, transparent);
   border-color: var(--emag-price);
+}
+
+/* Produse fără nicio comandă: preț de vânzare bej (dirty/synced au prioritate, definite mai jos) */
+tr.is-no-orders td.col-pret-emag {
+  background: var(--tint-beige);
+  box-shadow: inset 3px 0 0 var(--rule-beige);
+}
+
+tr.is-no-orders td.col-pret-emag .input-sale-price {
+  background: var(--tint-beige);
+  border-color: var(--rule-beige);
 }
 
 tbody tr.is-evening-no-orders td.col-pret-cumparare {
