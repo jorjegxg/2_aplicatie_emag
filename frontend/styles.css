@@ -465,13 +465,17 @@ th {
   z-index: 3;
 }
 
+thead tr:not(.filter-row) th[data-col] {
+  vertical-align: bottom;
+}
+
 thead tr:not(.filter-row) th[data-col] .th-label {
-  display: inline-block;
-  max-width: 7rem;
+  display: block;
+  max-width: 12rem;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
+  line-height: 1.2;
 }
 
 thead tr:not(.filter-row) th[data-col="index"] .th-label {
@@ -2545,7 +2549,8 @@ td.col-link-cumparare .link-cumparare-wrap {
   min-width: 12rem;
 }
 
-td.col-link-cumparare .input-link-cumparare {
+td.col-link-cumparare .input-link-cumparare,
+td.col-link-cumparare .input-link-extra {
   flex: 1 1 auto;
   min-width: 9rem;
   font: inherit;
@@ -2556,7 +2561,8 @@ td.col-link-cumparare .input-link-cumparare {
   background: var(--surface);
 }
 
-td.col-link-cumparare .input-link-cumparare:focus {
+td.col-link-cumparare .input-link-cumparare:focus,
+td.col-link-cumparare .input-link-extra:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-color: var(--accent);
 }
@@ -3061,3 +3067,169 @@ html.auth-pending body {
 }
 
 
+
+/* ---------- Calculator (parametri + coloane din Excel) ---------- */
+
+.calc-params {
+  flex-shrink: 0;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.calc-params > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.calc-params-summary {
+  margin-left: 0.5rem;
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.calc-params-body {
+  padding: 0 0.85rem 0.85rem;
+}
+
+.calc-params-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.calc-params-grid .field.field-wide select {
+  width: 100%;
+}
+
+.calc-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.calc-params-grid .calc-input-wrap input {
+  width: 100%;
+  min-width: 0;
+}
+
+.calc-params-grid input[readonly] {
+  background: var(--surface-alt);
+  color: var(--muted);
+}
+
+.calc-unit {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.calc-params-notes {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+td.col-calc {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+td.col-calc.is-calc-negative {
+  color: var(--danger);
+  font-weight: 600;
+  background: var(--tint-red);
+}
+
+td.col-calc.is-calc-positive {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+td.col-calc.is-cost-legacy {
+  color: var(--muted);
+  font-style: italic;
+}
+
+td[data-col="moneda_fabrica"] .input-moneda,
+td[data-col="nr_bucati"] .input-nr-bucati,
+td .input-text-field {
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+td[data-col="nr_bucati"] .input-nr-bucati {
+  width: 4rem;
+  text-align: right;
+}
+
+td .input-text-field {
+  width: 9rem;
+}
+
+/* Tabelul de produse: antetele se rup pe 2-3 randuri in loc sa fie taiate cu "…". */
+#products-table thead tr:not(.filter-row) th[data-col] {
+  white-space: normal;
+  min-width: 8.5rem;
+  vertical-align: bottom;
+}
+
+#products-table thead tr:not(.filter-row) th[data-col] .th-label {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+#products-table thead tr:not(.filter-row) th[data-col="index"] {
+  min-width: 3rem;
+}
+
+#products-table thead tr:not(.filter-row) th[data-col="name"],
+#products-table thead tr:not(.filter-row) th[data-col="description"] {
+  min-width: 14rem;
+}
+
+/* Etichetele din bara de sus si din panoul calculatorului: pe 2 randuri, nu taiate. */
+.toolbar-fields .field > span,
+.calc-params-grid .field > span:first-child {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.2;
+}
+
+/* Preseturi de coloane (pagina Produse) */
+.col-preset-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.col-preset-select {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  max-width: 17rem;
+}
+
+.btn-col-preset-delete {
+  padding-inline: 0.6rem;
+}

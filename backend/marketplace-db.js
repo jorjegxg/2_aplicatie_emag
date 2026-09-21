@@ -7,6 +7,7 @@
  */
 const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg");
 const { getLastPriceChangeBulk } = require("./db");
+const { calcProduct } = require("./calculator");
 const { htmlToText, looksLikeHtml } = require("./description-format");
 const { listByProductIds } = require("./product-images");
 const {
@@ -41,6 +42,15 @@ function toTextOrNull(v) {
   if (v == null) return null;
   const s = String(v);
   return s === "" ? null : s;
+}
+
+function toMoneda(v) {
+  return String(v || "").trim().toUpperCase() === "RMB" ? "RMB" : "USD";
+}
+
+function toIntOrNull(v) {
+  const n = toNumOrNull(v);
+  return n == null ? null : Math.max(0, Math.round(n));
 }
 
 function toPlainTextOrNull(v) {
@@ -288,6 +298,12 @@ function mapCatalogRowToProduct(r) {
     pret_cumparare_usd: toNumOrNull(r.pret_cumparare_usd),
     order_count: Number(r.order_count) || 0,
     link_cumparare: toTextOrNull(r.link_cumparare) || "",
+    moneda_fabrica: toMoneda(r.moneda_fabrica),
+    nr_bucati: toNumOrNull(r.nr_bucati),
+    link_ali: toTextOrNull(r.link_ali) || "",
+    link_amz: toTextOrNull(r.link_amz) || "",
+    ce: toTextOrNull(r.ce) || "",
+    decizie: toTextOrNull(r.decizie) || "",
     transport_override: toNumOrNull(r.transport_override),
     greutate: toNumOrNull(r.greutate),
     inaltime: toNumOrNull(r.inaltime),
@@ -355,6 +371,12 @@ const LISTING_EDITABLE = {
   latime: toNumOrNull,
   pret_cumparare_usd: toNumOrNull,
   link_cumparare: toTextOrNull,
+  moneda_fabrica: toMoneda,
+  nr_bucati: toIntOrNull,
+  link_ali: toTextOrNull,
+  link_amz: toTextOrNull,
+  ce: toTextOrNull,
+  decizie: toTextOrNull,
   pret_minim_override: toNumOrNull,
   procentaj_emag: toNumOrNull,
   commission_value: toNumOrNull,
@@ -383,7 +405,73 @@ const LISTING_TO_CATALOG_COL = {
   latime: "latime",
   pret_cumparare_usd: "pret_cumparare_usd",
   link_cumparare: "link_cumparare",
+  moneda_fabrica: "moneda_fabrica",
+  nr_bucati: "nr_bucati",
+  link_ali: "link_ali",
+  link_amz: "link_amz",
+  ce: "ce",
+  decizie: "decizie",
 };
+
+/** Campurile din care se calculeaza pret_cumparare (costul final din calculator). */
+const PRET_CUMPARARE_INPUTS = [
+  "pret_cumparare_usd",
+  "moneda_fabrica",
+  "greutate",
+  "inaltime",
+  "lungime",
+  "latime",
+];
+
+function touchesPretCumparareInputs(fields) {
+  return PRET_CUMPARARE_INPUTS.some((k) =>
+    Object.prototype.hasOwnProperty.call(fields || {}, k)
+  );
+}
+
+/**
+ * Recalculeaza catalog_products.pret_cumparare = costul final din calculator (ruta din parametri).
+ * productIds null = toate produsele. Produsele fara pret fabrica / greutate raman neschimbate.
+ */
+async function recalcPretCumparare(productIds = null, client = null) {
+  const q = client ? client.query.bind(client) : query;
+  const { rows: settingsRows } = await q(
+    "SELECT calculator_params FROM settings WHERE id = 1"
+  );
+  const params = settingsRows[0]?.calculator_params || null;
+  const ids = productIds == null ? null : productIds.map(Number).filter(Number.isFinite);
+  if (ids && ids.length === 0) return 0;
+
+  const { rows } = await q(
+    `SELECT id, pret_cumparare, pret_cumparare_usd, moneda_fabrica,
+            greutate, inaltime, lungime, latime
+     FROM catalog_products
+     ${ids ? "WHERE id = ANY($1::int[])" : ""}`,
+    ids ? [ids] : []
+  );
+
+  let updated = 0;
+  for (const r of rows) {
+    const out = calcProduct(
+      {
+        pret_fabrica: r.pret_cumparare_usd,
+        moneda: r.moneda_fabrica,
+        greutate: r.greutate,
+        inaltime: r.inaltime,
+        lungime: r.lungime,
+        latime: r.latime,
+      },
+      params
+    );
+    if (!out || !Number.isFinite(out.pret_cumparare)) continue;
+    const next = Math.round(out.pret_cumparare * 10000) / 10000;
+    const prev = toNumOrNull(r.pret_cumparare);
+    if (prev != null && Math.abs(prev - next) < 0.00005) continue;
+    await q("UPDATE catalog_products SET pret_cumparare = $1 WHERE id = $2", [next, r.id]);
+    updated++;
+  }
+  return updated;
+}
 
 async function setListingPretCumparare(channel, externalId, value) {
   await ensureSchema();
@@ -466,6 +554,10 @@ async function updateListingEmag(externalId, fields) {
 
   await upsertEmagListingFields(productId, ext, listingPayload, now);
 
+  if (touchesPretCumparareInputs(fields)) {
+    await recalcPretCumparare([productId]);
+  }
+
   return getListing("emag", ext);
 }
 
@@ -540,6 +632,12 @@ const PRODUCT_EDITABLE = {
   pret_cumparare: toNumOrNull,
   pret_cumparare_usd: toNumOrNull,
   link_cumparare: toTextOrNull,
+  moneda_fabrica: toMoneda,
+  nr_bucati: toIntOrNull,
+  link_ali: toTextOrNull,
+  link_amz: toTextOrNull,
+  ce: toTextOrNull,
+  decizie: toTextOrNull,
   emag_offer_id: toTextOrNull,
   part_number: toTextOrNull,
   part_number_key: toTextOrNull,
@@ -628,6 +726,10 @@ async function updateProduct(productId, fields) {
     if (ext != null) {
       await upsertEmagListingFields(id, ext, listingPayload, now);
     }
+  }
+
+  if (touchesPretCumparareInputs(payload)) {
+    await recalcPretCumparare([id]);
   }
 
   const { rows } = await query(
@@ -847,6 +949,7 @@ async function updateCatalogPurchaseMeta(items) {
       if (rowCount > 0) updated += rowCount;
       else unmatched += 1;
     }
+    await recalcPretCumparare(null, client);
   });
 
   return { updated, unmatched };
@@ -1283,4 +1386,5 @@ module.exports = {
   getChannelStats,
   getListingCosts,
   lookupCatalogPretCumparare,
+  recalcPretCumparare,
 };

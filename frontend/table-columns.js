@@ -267,8 +267,19 @@
    * @param {string} opts.orderKey      cheia localStorage pentru ordine
    * @param {string} [opts.widthsKey]   cheia localStorage pentru latimile coloanelor
    * @param {(cols: string[]) => string[]} [opts.migrate] normalizeaza valorile vechi salvate
+   * @param {() => void} [opts.onVisibilityChange] apelat cand userul bifeaza/debifeaza din meniu
    */
-  function create({ table, tbody, menuEl, buttonEl, hiddenKey, orderKey, widthsKey, migrate }) {
+  function create({
+    table,
+    tbody,
+    menuEl,
+    buttonEl,
+    hiddenKey,
+    orderKey,
+    widthsKey,
+    migrate,
+    onVisibilityChange,
+  }) {
     const headerLabelRow = table.querySelector("thead tr:not(.filter-row)");
     const headerCells = [...headerLabelRow.querySelectorAll("th[data-col]")];
     const defaultOrder = headerCells.map((th) => th.dataset.col);
@@ -377,6 +388,27 @@
       return parts.length ? ` class="${parts.join(" ")}"` : "";
     }
 
+    /** Pune coloanele date primele, in ordinea data; restul raman dupa, in ordinea curenta. */
+    function setOrder(cols) {
+      const valid = new Set(order);
+      const first = [...new Set((cols || []).filter((c) => valid.has(c)))];
+      const firstSet = new Set(first);
+      const next = [...first, ...order.filter((c) => !firstSet.has(c))];
+      order.splice(0, order.length, ...next);
+      saveOrder();
+      applyOrder();
+      buildMenu();
+    }
+
+    /** Inlocuieste setul de coloane ascunse (ex. dintr-un preset). */
+    function setHidden(cols) {
+      const valid = new Set(defaultOrder);
+      hidden = [...new Set((cols || []).filter((c) => valid.has(c)))];
+      saveHidden();
+      applyVisibility();
+      buildMenu();
+    }
+
     function applyVisibility() {
       const hiddenSet = new Set(hidden);
       table.querySelectorAll("[data-col]").forEach((el) => {
@@ -437,6 +469,7 @@
       }
       saveHidden();
       applyVisibility();
+      if (typeof onVisibilityChange === "function") onVisibilityChange();
     });
 
     menuEl.addEventListener("dragstart", (e) => {
@@ -504,6 +537,9 @@
       labels,
       sources,
       isHidden,
+      getHidden: () => [...hidden],
+      setHidden,
+      setOrder,
       cellClass,
       applyVisibility,
       applyOrder,

@@ -2,8 +2,6 @@ const btnLoad = document.getElementById("btn-load");
 const btnMore = document.getElementById("btn-more");
 const statusEl = document.getElementById("status");
 const ordersBody = document.getElementById("orders-body");
-const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
-const displayProcentajAlte = document.getElementById("procentaj-alte-costuri-display");
 const inputCreatedAfter = document.getElementById("created-after");
 const inputCreatedBefore = document.getElementById("created-before");
 const selectStatus = document.getElementById("order-status");
@@ -98,24 +96,10 @@ function parseAlteCosturi(raw) {
   return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
 }
 
-function alteFromProcentaj(procentaj, pretCumparare) {
-  const buy = Number(pretCumparare);
-  const pct = Number(procentaj);
-  if (!Number.isFinite(buy) || buy <= 0 || !Number.isFinite(pct)) {
-    return DEFAULT_ALTE_COSTURI;
-  }
-  return Math.round(buy * (pct / 100) * 100) / 100;
-}
 
-function resolveAlteCosturi(product) {
-  if (product.transport_override != null && Number.isFinite(Number(product.transport_override))) {
-    return Number(product.transport_override);
-  }
-  const pctRaw = inputProcentajAlte?.value;
-  if (pctRaw == null || pctRaw === "") return DEFAULT_ALTE_COSTURI;
-  const pct = Number(pctRaw);
-  if (!Number.isFinite(pct)) return DEFAULT_ALTE_COSTURI;
-  return alteFromProcentaj(pct, product.pret_cumparare);
+/* Pretul de cumparare e costul final din calculator (include transportul) → fara cost separat. */
+function resolveAlteCosturi() {
+  return DEFAULT_ALTE_COSTURI;
 }
 
 function hasStoredProcentajEmag(product) {
@@ -398,7 +382,6 @@ function renderProductRows(order) {
             <th>Cant.</th>
             <th>Preț vânzare</th>
             <th>Preț cumpărare</th>
-            <th>Pret transport</th>
             <th>Comision eMAG %</th>
             <th>Profit / buc</th>
             <th>Profit × cant.</th>
@@ -408,7 +391,6 @@ function renderProductRows(order) {
           ${products
             .map((p) => {
               const line = productLineProfit(p);
-              const alte = line?.alte ?? resolveAlteCosturi(p);
               const pctEmag = resolveProcentajEmag(p);
               const pctStored = hasStoredProcentajEmag(p);
               const currency = p.currency || "RON";
@@ -420,7 +402,6 @@ function renderProductRows(order) {
                 <td>${escapeHtml(p.quantity ?? "—")}</td>
                 <td>${formatPrice(p.sale_price, currency)}</td>
                 <td class="${buyMissing ? "is-missing" : ""}">${buyMissing ? "—" : formatPrice(p.pret_cumparare, currency)}</td>
-                <td>${formatPrice(alte, currency)}</td>
                 <td class="${pctStored ? "" : "is-missing"}" title="${pctStored ? "Comision din DB" : `Fallback ${DEFAULT_PROcentaj_EMAG}%`}">${escapeHtml(pctEmag.toFixed(2))}${pctStored ? "" : ' <span class="muted">(default)</span>'}</td>
                 <td>${line ? formatPrice(line.perUnit, currency) : "—"}</td>
                 <td>${line ? formatPrice(line.total, currency) : "—"}</td>
@@ -517,12 +498,6 @@ async function loadSettings() {
     const res = await fetch("/api/settings");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Eroare setări");
-    const alte =
-      data.procentaj_alte_costuri != null ? data.procentaj_alte_costuri : "";
-    inputProcentajAlte.value = alte;
-    if (displayProcentajAlte) {
-      displayProcentajAlte.textContent = formatPctDisplay(alte);
-    }
   } catch (err) {
     console.warn("setări:", err.message);
   }

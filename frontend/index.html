@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Produse</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260921-3" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -57,17 +57,6 @@
       <div class="toolbar">
         <div class="toolbar-fields">
           <label class="field">
-            <span title="Procentaj pentru Pret transport (%)">Procentaj pentru Pret transport (%)</span>
-            <input
-              type="number"
-              id="procentaj-alte-costuri"
-              name="procentaj-alte-costuri"
-              min="0"
-              step="0.01"
-              placeholder="0"
-            />
-          </label>
-          <label class="field">
             <span title="Multiplicator preț recomandat (PRP)">Multiplicator preț recomandat (PRP)</span>
             <input
               type="number"
@@ -100,10 +89,6 @@
               placeholder="1.30"
             />
           </label>
-          <label class="field">
-            <span title="Total preț transport × stoc">Total preț transport × stoc</span>
-            <input type="text" id="total-alte-stoc" readonly tabindex="-1" value="—" />
-          </label>
           <button type="button" id="btn-save-settings" class="btn btn-secondary" disabled>
             Salvează
           </button>
@@ -112,6 +97,10 @@
           <button type="button" id="btn-more" class="btn btn-secondary" hidden>
             Pagina următoare
           </button>
+          <div class="col-preset-wrap">
+            <select id="col-preset" class="col-preset-select" aria-label="Preset coloane" title="Preset coloane"></select>
+            <button type="button" id="btn-col-preset-delete" class="btn btn-secondary btn-col-preset-delete" hidden title="Șterge presetul salvat" aria-label="Șterge presetul salvat">×</button>
+          </div>
           <div class="col-menu-wrap">
             <button type="button" id="btn-columns" class="btn btn-secondary btn-with-icon" aria-expanded="false" aria-controls="col-menu">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -176,6 +165,91 @@
         </div>
       </div>
 
+      <details id="calc-params" class="calc-params">
+        <summary>Parametri calculator <span id="calc-params-summary" class="calc-params-summary"></span></summary>
+        <div class="calc-params-body">
+          <div class="calc-params-grid">
+            <label class="field field-wide">
+              <span>Regim fiscal</span>
+              <select data-calc-param="regim" id="calc-regim"></select>
+            </label>
+            <label class="field">
+              <span>Preț cumpărare din</span>
+              <select data-calc-param="transport_cumparare">
+                <option value="tren">Tren/Mare</option>
+                <option value="aer">Aer</option>
+              </select>
+            </label>
+            <label class="field" title="Cursul folosit de agent">
+              <span>Curs RMB → lei</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="curs_rmb" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
+            </label>
+            <label class="field" title="Cursul folosit de agent">
+              <span>Curs $ → lei</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="curs_usd" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
+            </label>
+            <label class="field">
+              <span>Cost trans. Aer</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="transport_aer_usd_kg" min="0" step="0.01" /><span class="calc-unit">$/kg</span></span>
+            </label>
+            <label class="field">
+              <span>Cost trans. Aer</span>
+              <span class="calc-input-wrap"><input type="text" id="calc-aer-ron" readonly tabindex="-1" value="—" /><span class="calc-unit">lei/kg</span></span>
+            </label>
+            <label class="field">
+              <span>Cost trans. Tren/mare</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="transport_tren_usd_kg" min="0" step="0.01" /><span class="calc-unit">$/kg</span></span>
+            </label>
+            <label class="field">
+              <span>Cost trans. Tren/mare</span>
+              <span class="calc-input-wrap"><input type="text" id="calc-tren-ron" readonly tabindex="-1" value="—" /><span class="calc-unit">lei/kg</span></span>
+            </label>
+            <label class="field" title="0,5-2% din prețul produsului; dacă nu ai contactat agentul poți trece 2%">
+              <span>Transport fabrică-agent</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="transport_fabrica_agent" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field">
+              <span>Comision agent</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="comision_agent" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field">
+              <span>TVA</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="tva" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field" title="Diferă în funcție de produs; 5% pentru a fi acoperit complet">
+              <span>Taxe vamale</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="taxe_vamale" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field" title="Folosit la regimurile Impozit pe profit">
+              <span>Impozit pe profit</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="impozit_profit" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field" title="Folosit la regimurile Microîntreprindere">
+              <span>Impozit micro</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="impozit_micro" min="0" step="0.01" /><span class="calc-unit">%</span></span>
+            </label>
+            <label class="field" title="Consumabile-împachetare / produs, cu TVA">
+              <span>Consumabile / produs</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="consumabile" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
+            </label>
+            <label class="field" title="Cost curierat conform contract, cu TVA. Pentru Easybox: 0">
+              <span>Curierat contract</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="curierat_contract" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
+            </label>
+            <label class="field" title="Cost curierat facturat către client, cu TVA. Pentru Easybox: 0">
+              <span>Curierat facturat client</span>
+              <span class="calc-input-wrap"><input type="number" data-calc-param="curierat_client" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
+            </label>
+          </div>
+          <ul class="calc-params-notes">
+            <li>Greutatea folosită e valoarea mai mare dintre greutatea fizică și cea volumetrică (L × l × H / 5000, în cm).</li>
+            <li>Comisionul eMAG maxim este 27%; peste 30% calculul nu mai are sens.</li>
+            <li>Pentru livrare în Easybox pune 0 la ambele costuri de curierat.</li>
+            <li>„Preț cumpărare” se calculează automat (cost final pe ruta aleasă) și e folosit și în Sincronizare / Comenzi.</li>
+          </ul>
+        </div>
+      </details>
+
       <div class="table-wrap" id="products-wrap">
         <table id="products-table">
           <thead>
@@ -189,20 +263,53 @@
               <th data-col="part_number" data-src="channel">Part number</th>
               <th data-col="id_familie" data-src="channel">ID familie</th>
               <th data-col="familie" data-src="channel">Familie</th>
-              <th data-col="pret_cumparare" data-src="db">Preț cumpărare</th>
-              <th data-col="pret_cumparare_usd" data-src="db">Preț cumpărare USD</th>
-              <th data-col="link_cumparare" data-src="db">Link cumpărare</th>
-              <th data-col="transport_override" data-src="calc">Pret transport</th>
-              <th data-col="pret_emag" data-src="db" class="col-pret-emag">Preț vânzare</th>
-              <th data-col="prp" data-src="channel">PRP</th>
-              <th data-col="pret_minim" data-src="channel">Pret minim</th>
-              <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
-              <th data-col="stoc" data-src="channel">Stoc</th>
+              <th data-col="moneda_fabrica" data-src="db">Monedă fabrică</th>
+              <th data-col="pret_cumparare_usd" data-src="db">Preț fabrică ($/RMB)</th>
+              <th data-col="pret_achiz_china" data-src="calc">Preț achiz. China</th>
               <th data-col="greutate" data-src="db">Greutate (kg)</th>
               <th data-col="greutate_volumetrica" data-src="calc">Greutate vol. (kg)</th>
               <th data-col="inaltime" data-src="db">Înălțime (cm)</th>
               <th data-col="lungime" data-src="db">Lungime (cm)</th>
               <th data-col="latime" data-src="db">Lățime (cm)</th>
+              <th data-col="transport_aer" data-src="calc">Cost transport Aer</th>
+              <th data-col="transport_tren" data-src="calc">Cost transport Tren/Mare</th>
+              <th data-col="taxe_vamale_aer" data-src="calc">Taxe vamale Aer</th>
+              <th data-col="taxe_vamale_tren" data-src="calc">Taxe vamale Tren/Mare</th>
+              <th data-col="tva_import_aer" data-src="calc">TVA import Aer</th>
+              <th data-col="tva_import_tren" data-src="calc">TVA import Tren/Mare</th>
+              <th data-col="cost_final_aer" data-src="calc">Cost final achiz. Aer</th>
+              <th data-col="cost_final_tren" data-src="calc">Cost final achiz. Tren/Mare</th>
+              <th data-col="diferenta_aer_tren" data-src="calc">Diferență Aer − Tren/Mare</th>
+              <th data-col="cat_salvezi" data-src="calc">Cât salvezi din transport</th>
+              <th data-col="pret_cumparare" data-src="calc">Preț cumpărare</th>
+              <th data-col="pret_emag" data-src="db" class="col-pret-emag">Preț vânzare</th>
+              <th data-col="procentaj_emag" data-src="db">Com. eMAG (%)</th>
+              <th data-col="pret_vanzare_fara_tva" data-src="calc">Preț vânzare fără TVA</th>
+              <th data-col="comision_valoare" data-src="calc">Valoare comision eMAG</th>
+              <th data-col="comision_tva" data-src="calc">TVA comision eMAG</th>
+              <th data-col="impozit_aer" data-src="calc">Impozit Aer</th>
+              <th data-col="impozit_tren" data-src="calc">Impozit Tren/Mare</th>
+              <th data-col="tva_colectat_aer" data-src="calc">TVA colectat Aer</th>
+              <th data-col="tva_colectat_tren" data-src="calc">TVA colectat Tren/Mare</th>
+              <th data-col="profit_aer" data-src="calc">Profit final Aer</th>
+              <th data-col="procent_profit_aer" data-src="calc">% Profit Aer</th>
+              <th data-col="profit_tren" data-src="calc">Profit final Tren/Mare</th>
+              <th data-col="procent_profit_tren" data-src="calc">% Profit Tren/Mare</th>
+              <th data-col="break_even_aer" data-src="calc">Break even Aer</th>
+              <th data-col="break_even_tren" data-src="calc">Break even Tren/Mare</th>
+              <th data-col="nr_bucati" data-src="db">Nr bucăți</th>
+              <th data-col="cost_comanda_aer" data-src="calc">Cost comandă Aer ($)</th>
+              <th data-col="cost_comanda_tren" data-src="calc">Cost comandă Tren/Mare ($)</th>
+              <th data-col="prp" data-src="channel">PRP</th>
+              <th data-col="pret_minim" data-src="channel">Pret minim</th>
+              <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
+              <th data-col="stoc" data-src="channel">Stoc</th>
+              <th data-col="link_emag" data-src="calc">Link eMAG</th>
+              <th data-col="link_cumparare" data-src="db">Link 1688</th>
+              <th data-col="link_ali" data-src="db">Link ALI</th>
+              <th data-col="link_amz" data-src="db">Link AMZ</th>
+              <th data-col="ce" data-src="db">CE</th>
+              <th data-col="decizie" data-src="db">Decizie</th>
               <th data-col="ean" data-src="channel">EAN</th>
               <th data-col="pnk" data-src="channel">PNK</th>
             </tr>
@@ -216,27 +323,60 @@
               <th data-col="part_number"><input type="search" class="col-filter" data-filter-col="part_number" placeholder="Filtrează…" aria-label="Filtrează Part number" /></th>
               <th data-col="id_familie"><input type="search" class="col-filter" data-filter-col="id_familie" placeholder="Filtrează…" aria-label="Filtrează ID familie" /></th>
               <th data-col="familie"><input type="search" class="col-filter" data-filter-col="familie" placeholder="Filtrează…" aria-label="Filtrează Familie" /></th>
+              <th data-col="moneda_fabrica"><input type="search" class="col-filter" data-filter-col="moneda_fabrica" placeholder="Filtrează…" aria-label="Filtrează Monedă fabrică" /></th>
+              <th data-col="pret_cumparare_usd"><input type="search" class="col-filter" data-filter-col="pret_cumparare_usd" placeholder="Filtrează…" aria-label="Filtrează Preț fabrică ($/RMB)" /></th>
+              <th data-col="pret_achiz_china"><input type="search" class="col-filter" data-filter-col="pret_achiz_china" placeholder="Filtrează…" aria-label="Filtrează Preț achiz. China" /></th>
+              <th data-col="greutate"><input type="search" class="col-filter" data-filter-col="greutate" placeholder="Filtrează…" aria-label="Filtrează Greutate (kg)" /></th>
+              <th data-col="greutate_volumetrica"><input type="search" class="col-filter" data-filter-col="greutate_volumetrica" placeholder="Filtrează…" aria-label="Filtrează Greutate vol. (kg)" /></th>
+              <th data-col="inaltime"><input type="search" class="col-filter" data-filter-col="inaltime" placeholder="Filtrează…" aria-label="Filtrează Înălțime (cm)" /></th>
+              <th data-col="lungime"><input type="search" class="col-filter" data-filter-col="lungime" placeholder="Filtrează…" aria-label="Filtrează Lungime (cm)" /></th>
+              <th data-col="latime"><input type="search" class="col-filter" data-filter-col="latime" placeholder="Filtrează…" aria-label="Filtrează Lățime (cm)" /></th>
+              <th data-col="transport_aer"><input type="search" class="col-filter" data-filter-col="transport_aer" placeholder="Filtrează…" aria-label="Filtrează Cost transport Aer" /></th>
+              <th data-col="transport_tren"><input type="search" class="col-filter" data-filter-col="transport_tren" placeholder="Filtrează…" aria-label="Filtrează Cost transport Tren/Mare" /></th>
+              <th data-col="taxe_vamale_aer"><input type="search" class="col-filter" data-filter-col="taxe_vamale_aer" placeholder="Filtrează…" aria-label="Filtrează Taxe vamale Aer" /></th>
+              <th data-col="taxe_vamale_tren"><input type="search" class="col-filter" data-filter-col="taxe_vamale_tren" placeholder="Filtrează…" aria-label="Filtrează Taxe vamale Tren/Mare" /></th>
+              <th data-col="tva_import_aer"><input type="search" class="col-filter" data-filter-col="tva_import_aer" placeholder="Filtrează…" aria-label="Filtrează TVA import Aer" /></th>
+              <th data-col="tva_import_tren"><input type="search" class="col-filter" data-filter-col="tva_import_tren" placeholder="Filtrează…" aria-label="Filtrează TVA import Tren/Mare" /></th>
+              <th data-col="cost_final_aer"><input type="search" class="col-filter" data-filter-col="cost_final_aer" placeholder="Filtrează…" aria-label="Filtrează Cost final achiz. Aer" /></th>
+              <th data-col="cost_final_tren"><input type="search" class="col-filter" data-filter-col="cost_final_tren" placeholder="Filtrează…" aria-label="Filtrează Cost final achiz. Tren/Mare" /></th>
+              <th data-col="diferenta_aer_tren"><input type="search" class="col-filter" data-filter-col="diferenta_aer_tren" placeholder="Filtrează…" aria-label="Filtrează Diferență Aer − Tren/Mare" /></th>
+              <th data-col="cat_salvezi"><input type="search" class="col-filter" data-filter-col="cat_salvezi" placeholder="Filtrează…" aria-label="Filtrează Cât salvezi din transport" /></th>
               <th data-col="pret_cumparare"><input type="search" class="col-filter" data-filter-col="pret_cumparare" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare" /></th>
-              <th data-col="pret_cumparare_usd"><input type="search" class="col-filter" data-filter-col="pret_cumparare_usd" placeholder="Filtrează…" aria-label="Filtrează Preț cumpărare USD" /></th>
-              <th data-col="link_cumparare"><input type="search" class="col-filter" data-filter-col="link_cumparare" placeholder="Filtrează…" aria-label="Filtrează Link cumpărare" /></th>
-              <th data-col="transport_override"><input type="search" class="col-filter" data-filter-col="transport_override" placeholder="Filtrează…" aria-label="Filtrează Pret transport" /></th>
               <th data-col="pret_emag"><input type="search" class="col-filter" data-filter-col="pret_emag" placeholder="Filtrează…" aria-label="Filtrează Preț vânzare" /></th>
+              <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Com. eMAG (%)" /></th>
+              <th data-col="pret_vanzare_fara_tva"><input type="search" class="col-filter" data-filter-col="pret_vanzare_fara_tva" placeholder="Filtrează…" aria-label="Filtrează Preț vânzare fără TVA" /></th>
+              <th data-col="comision_valoare"><input type="search" class="col-filter" data-filter-col="comision_valoare" placeholder="Filtrează…" aria-label="Filtrează Valoare comision eMAG" /></th>
+              <th data-col="comision_tva"><input type="search" class="col-filter" data-filter-col="comision_tva" placeholder="Filtrează…" aria-label="Filtrează TVA comision eMAG" /></th>
+              <th data-col="impozit_aer"><input type="search" class="col-filter" data-filter-col="impozit_aer" placeholder="Filtrează…" aria-label="Filtrează Impozit Aer" /></th>
+              <th data-col="impozit_tren"><input type="search" class="col-filter" data-filter-col="impozit_tren" placeholder="Filtrează…" aria-label="Filtrează Impozit Tren/Mare" /></th>
+              <th data-col="tva_colectat_aer"><input type="search" class="col-filter" data-filter-col="tva_colectat_aer" placeholder="Filtrează…" aria-label="Filtrează TVA colectat Aer" /></th>
+              <th data-col="tva_colectat_tren"><input type="search" class="col-filter" data-filter-col="tva_colectat_tren" placeholder="Filtrează…" aria-label="Filtrează TVA colectat Tren/Mare" /></th>
+              <th data-col="profit_aer"><input type="search" class="col-filter" data-filter-col="profit_aer" placeholder="Filtrează…" aria-label="Filtrează Profit final Aer" /></th>
+              <th data-col="procent_profit_aer"><input type="search" class="col-filter" data-filter-col="procent_profit_aer" placeholder="Filtrează…" aria-label="Filtrează % Profit Aer" /></th>
+              <th data-col="profit_tren"><input type="search" class="col-filter" data-filter-col="profit_tren" placeholder="Filtrează…" aria-label="Filtrează Profit final Tren/Mare" /></th>
+              <th data-col="procent_profit_tren"><input type="search" class="col-filter" data-filter-col="procent_profit_tren" placeholder="Filtrează…" aria-label="Filtrează % Profit Tren/Mare" /></th>
+              <th data-col="break_even_aer"><input type="search" class="col-filter" data-filter-col="break_even_aer" placeholder="Filtrează…" aria-label="Filtrează Break even Aer" /></th>
+              <th data-col="break_even_tren"><input type="search" class="col-filter" data-filter-col="break_even_tren" placeholder="Filtrează…" aria-label="Filtrează Break even Tren/Mare" /></th>
+              <th data-col="nr_bucati"><input type="search" class="col-filter" data-filter-col="nr_bucati" placeholder="Filtrează…" aria-label="Filtrează Nr bucăți" /></th>
+              <th data-col="cost_comanda_aer"><input type="search" class="col-filter" data-filter-col="cost_comanda_aer" placeholder="Filtrează…" aria-label="Filtrează Cost comandă Aer ($)" /></th>
+              <th data-col="cost_comanda_tren"><input type="search" class="col-filter" data-filter-col="cost_comanda_tren" placeholder="Filtrează…" aria-label="Filtrează Cost comandă Tren/Mare ($)" /></th>
               <th data-col="prp"><input type="search" class="col-filter" data-filter-col="prp" placeholder="Filtrează…" aria-label="Filtrează PRP" /></th>
               <th data-col="pret_minim"><input type="search" class="col-filter" data-filter-col="pret_minim" placeholder="Filtrează…" aria-label="Filtrează Pret minim" /></th>
               <th data-col="pret_maxim"><input type="search" class="col-filter" data-filter-col="pret_maxim" placeholder="Filtrează…" aria-label="Filtrează Pret maxim" /></th>
               <th data-col="stoc"><input type="search" class="col-filter" data-filter-col="stoc" placeholder="Filtrează…" aria-label="Filtrează Stoc" /></th>
-              <th data-col="greutate"><input type="search" class="col-filter" data-filter-col="greutate" placeholder="Filtrează…" aria-label="Filtrează Greutate" /></th>
-              <th data-col="greutate_volumetrica"><input type="search" class="col-filter" data-filter-col="greutate_volumetrica" placeholder="Filtrează…" aria-label="Filtrează Greutate volumetrică" /></th>
-              <th data-col="inaltime"><input type="search" class="col-filter" data-filter-col="inaltime" placeholder="Filtrează…" aria-label="Filtrează Înălțime" /></th>
-              <th data-col="lungime"><input type="search" class="col-filter" data-filter-col="lungime" placeholder="Filtrează…" aria-label="Filtrează Lungime" /></th>
-              <th data-col="latime"><input type="search" class="col-filter" data-filter-col="latime" placeholder="Filtrează…" aria-label="Filtrează Lățime" /></th>
+              <th data-col="link_emag"></th>
+              <th data-col="link_cumparare"><input type="search" class="col-filter" data-filter-col="link_cumparare" placeholder="Filtrează…" aria-label="Filtrează Link 1688" /></th>
+              <th data-col="link_ali"><input type="search" class="col-filter" data-filter-col="link_ali" placeholder="Filtrează…" aria-label="Filtrează Link ALI" /></th>
+              <th data-col="link_amz"><input type="search" class="col-filter" data-filter-col="link_amz" placeholder="Filtrează…" aria-label="Filtrează Link AMZ" /></th>
+              <th data-col="ce"><input type="search" class="col-filter" data-filter-col="ce" placeholder="Filtrează…" aria-label="Filtrează CE" /></th>
+              <th data-col="decizie"><input type="search" class="col-filter" data-filter-col="decizie" placeholder="Filtrează…" aria-label="Filtrează Decizie" /></th>
               <th data-col="ean"><input type="search" class="col-filter" data-filter-col="ean" placeholder="Filtrează…" aria-label="Filtrează EAN" /></th>
               <th data-col="pnk"><input type="search" class="col-filter" data-filter-col="pnk" placeholder="Filtrează…" aria-label="Filtrează PNK" /></th>
             </tr>
           </thead>
           <tbody id="products-body">
             <tr class="empty-row">
-              <td colspan="23">Se încarcă din baza de date…</td>
+              <td colspan="99">Se încarcă din baza de date…</td>
             </tr>
           </tbody>
         </table>
@@ -256,8 +396,9 @@
         </div>
       </div>
     </div>
-    <script src="pricing.js?v=20260916-2"></script>
-    <script src="table-columns.js?v=20260916-2"></script>
-    <script src="app.js?v=20260916-2"></script>
+    <script src="/api/calculator.js?v=20260921-1"></script>
+    <script src="pricing.js?v=20260921-1"></script>
+    <script src="table-columns.js?v=20260921-2"></script>
+    <script src="app.js?v=20260921-2"></script>
   </body>
 </html>

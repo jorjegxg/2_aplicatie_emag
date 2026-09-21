@@ -365,7 +365,6 @@ const {
   formatPercent,
   relativeTimeRo,
   parseSortNumber,
-  alteFromProcentaj,
   calcProfit,
   calcPretMinimProfit,
   calcProcentajProfit,
@@ -533,22 +532,17 @@ function channelCellWithDiff(offerId, col, theirsText, currency, theirsRaw) {
   };
 }
 
-/** pret_transport / alte_costuri (vechi) → transport_override; evita drop din sync-column-order. */
+/** "Pret transport" (transport_override, fost pret_transport/alte_costuri) a fost inlocuit de calculator. */
 function migrateLegacyCostCols(cols) {
-  const OLD = new Set(["procentaj_alte_costuri"]);
-  const RENAMED = new Set(["pret_transport", "alte_costuri"]);
+  const REMOVED = new Set([
+    "procentaj_alte_costuri",
+    "pret_transport",
+    "alte_costuri",
+    "transport_override",
+  ]);
   const out = [];
-  let insertedAlte = false;
   for (const c of cols) {
-    if (RENAMED.has(c)) {
-      if (!insertedAlte && !out.includes("transport_override")) {
-        out.push("transport_override");
-        insertedAlte = true;
-      }
-      continue;
-    }
-    if (OLD.has(c)) continue;
-    if (out.includes(c)) continue;
+    if (REMOVED.has(c) || out.includes(c)) continue;
     out.push(c);
   }
   return out;
@@ -581,21 +575,9 @@ const schedulePersistListing = createPersister({
   onError: (err) => setStatus(err.message || "Eroare la salvare", "error"),
 });
 
-function globalPct(key) {
-  const raw = settings[key];
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Costurile derivate: override pe catalog, altfel procentaj global × preț cumpărare. */
+/** Pretul de cumparare e costul final din calculator (include transport, taxe, TVA import). */
 function rowCosts(product) {
-  const pretCumparare = product.pret_cumparare ?? "";
-  const alte =
-    product.transport_override != null && Number.isFinite(Number(product.transport_override))
-      ? Number(product.transport_override)
-      : alteFromProcentaj(globalPct("procentaj_alte_costuri") ?? "", pretCumparare);
-  return { pretCumparare, alte };
+  return { pretCumparare: product.pret_cumparare ?? "", alte: 0 };
 }
 
 /**
@@ -813,10 +795,6 @@ function pricingRowHtml(product, index) {
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
       "pret_cumparare"
     )}>${formatPrice(pretCumparare, currency)}</td>`,
-    transport_override: `<td data-col="transport_override"${cellClass("transport_override")}>${formatPrice(
-      alte,
-      currency
-    )}</td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass(
       "pret_emag",
       "col-pret-emag"
@@ -1419,7 +1397,6 @@ const NUMERIC_PRICING_COLS = new Set([
   "id",
   "id_familie",
   "pret_cumparare",
-  "transport_override",
   "pret_emag",
   "prp",
   "pret_minim",

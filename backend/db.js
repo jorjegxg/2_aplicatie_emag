@@ -1,4 +1,5 @@
 const { query, withTransaction, ensureSchema } = require("./pg");
+const { normalizeParams } = require("./calculator");
 
 async function lookupPretCumparare(partNumber, name) {
   await ensureSchema();
@@ -33,7 +34,7 @@ async function getSettings() {
   await ensureSchema();
   const { rows } = await query(
     `SELECT procentaj_emag, procentaj_alte_costuri,
-            mult_prp, mult_min, mult_max
+            mult_prp, mult_min, mult_max, calculator_params
      FROM settings WHERE id = 1`
   );
   const row = rows[0];
@@ -44,6 +45,7 @@ async function getSettings() {
     mult_prp: row?.mult_prp != null ? Number(row.mult_prp) : null,
     mult_min: row?.mult_min != null ? Number(row.mult_min) : null,
     mult_max: row?.mult_max != null ? Number(row.mult_max) : null,
+    calculator_params: normalizeParams(row?.calculator_params),
   };
 }
 
@@ -52,6 +54,7 @@ async function saveSettings({
   mult_prp,
   mult_min,
   mult_max,
+  calculator_params,
 }) {
   await ensureSchema();
   await query(
@@ -63,6 +66,11 @@ async function saveSettings({
      WHERE id = 1`,
     [procentaj_alte_costuri, mult_prp, mult_min, mult_max]
   );
+  if (calculator_params !== undefined) {
+    await query("UPDATE settings SET calculator_params = $1 WHERE id = 1", [
+      JSON.stringify(normalizeParams(calculator_params)),
+    ]);
+  }
   return getSettings();
 }
 

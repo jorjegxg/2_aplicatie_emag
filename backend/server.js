@@ -26,6 +26,7 @@ const {
   getChannelStats,
   getListingCosts,
   lookupCatalogPretCumparare,
+  recalcPretCumparare,
   ensureSchema,
 } = require("./marketplace-db");
 const {
@@ -295,6 +296,13 @@ async function mapOrder(order) {
 
 /* ---------------- setari ---------------- */
 
+// Formulele calculatorului, aceleasi in browser (window.Calculator) si pe server.
+app.get("/api/calculator.js", (_req, res) => {
+  res.set("Cache-Control", "no-cache");
+  res.type("application/javascript");
+  return res.sendFile(path.join(__dirname, "calculator.js"));
+});
+
 app.get("/api/settings", async (_req, res) => {
   try {
     return res.json(await getSettings());
@@ -317,7 +325,15 @@ app.post("/api/settings", async (req, res) => {
       mult_prp: toNum(req.body?.mult_prp),
       mult_min: toNum(req.body?.mult_min),
       mult_max: toNum(req.body?.mult_max),
+      calculator_params:
+        req.body?.calculator_params && typeof req.body.calculator_params === "object"
+          ? req.body.calculator_params
+          : undefined,
     });
+    // Parametrii calculatorului schimba costul final → pret_cumparare pe tot catalogul.
+    if (saved.calculator_params && req.body?.calculator_params) {
+      await recalcPretCumparare(null);
+    }
 
     return res.json(saved);
   } catch (err) {

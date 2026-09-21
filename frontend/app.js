@@ -1,20 +1,21 @@
 /* Calculele si formatarile comune stau in pricing.js (incarcat inaintea acestui fisier). */
 const {
-  DEFAULT_ALTE_COSTURI,
+  DEFAULT_PROcentaj_EMAG,
   escapeHtml,
   formatPrice,
+  formatPercent,
   relativeTimeRo,
   stalenessClass,
   numOrNull,
   parseJsonAttr,
   parseSortNumber,
-  parseAlteCosturi,
   roundPrice,
   pricesEqual,
   stockSumFromArr,
-  alteFromProcentaj,
   createPersister,
 } = window.Pricing;
+/* Formulele din "CALCULATOR INFINITE VENTURES.xlsx" (servite de backend la /api/calculator.js). */
+const Calc = window.Calculator;
 
 const btnMore = document.getElementById("btn-more");
 const btnSaveSettings = document.getElementById("btn-save-settings");
@@ -30,11 +31,14 @@ const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const productsWrap = document.getElementById("products-wrap");
 const pageEl = document.querySelector(".page");
-const inputProcentajAlte = document.getElementById("procentaj-alte-costuri");
 const inputMultPrp = document.getElementById("mult-prp");
 const inputMultMin = document.getElementById("mult-min");
 const inputMultMax = document.getElementById("mult-max");
-const inputTotalAlteStoc = document.getElementById("total-alte-stoc");
+const calcParamInputs = [...document.querySelectorAll("[data-calc-param]")];
+const calcRegimSelect = document.getElementById("calc-regim");
+const calcAerRon = document.getElementById("calc-aer-ron");
+const calcTrenRon = document.getElementById("calc-tren-ron");
+const calcParamsSummary = document.getElementById("calc-params-summary");
 const orderHistoryModal = document.getElementById("order-history-modal");
 const orderHistoryClose = document.getElementById("order-history-close");
 const orderHistoryBody = document.getElementById("order-history-body");
@@ -58,21 +62,17 @@ let savedSettingsSnapshot = null;
 let sortCol = null;
 let sortDir = "asc";
 
+/** "Pret transport" (transport_override, fost pret_transport/alte_costuri) a fost inlocuit de calculator. */
 function migrateLegacyCostCols(cols) {
-  const OLD = new Set(["procentaj_alte_costuri"]);
-  const RENAMED = new Set(["pret_transport", "alte_costuri"]);
+  const REMOVED = new Set([
+    "procentaj_alte_costuri",
+    "pret_transport",
+    "alte_costuri",
+    "transport_override",
+  ]);
   const out = [];
-  let insertedAlte = false;
   for (const c of cols) {
-    if (RENAMED.has(c)) {
-      if (!insertedAlte && !out.includes("transport_override")) {
-        out.push("transport_override");
-        insertedAlte = true;
-      }
-      continue;
-    }
-    if (OLD.has(c)) continue;
-    if (out.includes(c)) continue;
+    if (REMOVED.has(c) || out.includes(c)) continue;
     out.push(c);
   }
   return out;
@@ -87,7 +87,251 @@ const columns = window.TableColumns.create({
   orderKey: COL_ORDER_KEY,
   widthsKey: "emag-column-widths",
   migrate: migrateLegacyCostCols,
+  onVisibilityChange: () => markPresetCustom(),
 });
+
+/* ---------- Preseturi de coloane ---------- */
+
+const colPresetSelect = document.getElementById("col-preset");
+const btnColPresetDelete = document.getElementById("btn-col-preset-delete");
+const COL_PRESET_KEY = "emag-column-preset";
+const CUSTOM_PRESETS_KEY = "emag-column-presets-custom";
+const PRESET_BASE = ["index", "images", "part_number"];
+
+/** Coloanele vizibile pentru fiecare preset; restul se ascund. Ordinea ramane cea din tabel, cu exceptia presetelor `ordered`. */
+const BUILTIN_PRESETS = [
+  { id: "toate", label: "Toate coloanele", cols: null },
+  {
+    id: "texte",
+    label: "Titluri și descrieri",
+    cols: [...PRESET_BASE, "id", "name", "description", "familie", "ean", "pnk"],
+  },
+  {
+    id: "preturi",
+    label: "Prețuri și profit",
+    cols: [
+      ...PRESET_BASE,
+      "order_history",
+      "pret_cumparare",
+      "pret_emag",
+      "procentaj_emag",
+      "profit_tren",
+      "procent_profit_tren",
+      "profit_aer",
+      "procent_profit_aer",
+      "break_even_tren",
+      "break_even_aer",
+      "stoc",
+    ],
+  },
+  {
+    id: "calculator",
+    label: "Calculator (Excel)",
+    /** Ordinea coloanelor din fisierul Excel CALCULATOR INFINITE VENTURES. */
+    ordered: true,
+    cols: [
+      "index",
+      "name",
+      "images",
+      "part_number",
+      "moneda_fabrica",
+      "pret_cumparare_usd",
+      "pret_achiz_china",
+      "greutate",
+      "greutate_volumetrica",
+      "transport_aer",
+      "transport_tren",
+      "taxe_vamale_aer",
+      "taxe_vamale_tren",
+      "tva_import_aer",
+      "tva_import_tren",
+      "cost_final_aer",
+      "cost_final_tren",
+      "diferenta_aer_tren",
+      "cat_salvezi",
+      "pret_cumparare",
+      "pret_emag",
+      "procentaj_emag",
+      "pret_vanzare_fara_tva",
+      "comision_valoare",
+      "comision_tva",
+      "impozit_aer",
+      "impozit_tren",
+      "tva_colectat_aer",
+      "tva_colectat_tren",
+      "profit_aer",
+      "procent_profit_aer",
+      "profit_tren",
+      "procent_profit_tren",
+      "break_even_aer",
+      "break_even_tren",
+      "nr_bucati",
+      "cost_comanda_aer",
+      "cost_comanda_tren",
+      "link_emag",
+      "link_cumparare",
+      "link_ali",
+      "link_amz",
+      "ce",
+      "decizie",
+    ],
+  },
+  {
+    id: "dimensiuni",
+    label: "Greutate și dimensiuni",
+    cols: [
+      ...PRESET_BASE,
+      "greutate",
+      "greutate_volumetrica",
+      "inaltime",
+      "lungime",
+      "latime",
+      "transport_aer",
+      "transport_tren",
+    ],
+  },
+  {
+    id: "aprovizionare",
+    label: "Aprovizionare (stoc, linkuri, decizie)",
+    cols: [
+      ...PRESET_BASE,
+      "order_history",
+      "stoc",
+      "moneda_fabrica",
+      "pret_cumparare_usd",
+      "profit_tren",
+      "procent_profit_tren",
+      "nr_bucati",
+      "cost_comanda_aer",
+      "cost_comanda_tren",
+      "link_emag",
+      "link_cumparare",
+      "link_ali",
+      "link_amz",
+      "ce",
+      "decizie",
+    ],
+  },
+];
+
+function readStorageJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Preseturile salvate de user: [{ id, label, cols }]. */
+function loadCustomPresets() {
+  const list = readStorageJson(CUSTOM_PRESETS_KEY, []);
+  return Array.isArray(list)
+    ? list.filter((p) => p && typeof p.id === "string" && Array.isArray(p.cols))
+    : [];
+}
+
+function findPreset(id) {
+  return (
+    BUILTIN_PRESETS.find((p) => p.id === id) ||
+    loadCustomPresets().find((p) => p.id === id) ||
+    null
+  );
+}
+
+function renderPresetOptions(selected) {
+  if (!colPresetSelect) return;
+  const custom = loadCustomPresets();
+  const opt = (value, label) =>
+    `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  colPresetSelect.innerHTML = [
+    opt("", "Coloane: personalizat"),
+    `<optgroup label="Preseturi">${BUILTIN_PRESETS.map((p) => opt(p.id, p.label)).join("")}</optgroup>`,
+    custom.length
+      ? `<optgroup label="Salvate de tine">${custom.map((p) => opt(p.id, `★ ${p.label}`)).join("")}</optgroup>`
+      : "",
+    opt("__save__", "+ Salvează coloanele curente ca preset…"),
+  ].join("");
+  if (btnColPresetDelete) btnColPresetDelete.hidden = !selected.startsWith("custom:");
+}
+
+function applyPreset(id) {
+  const preset = findPreset(id);
+  if (!preset) return;
+  if (preset.ordered && preset.cols) columns.setOrder(preset.cols);
+  const visible = preset.cols ? new Set(preset.cols) : null;
+  columns.setHidden(visible ? columns.order.filter((c) => !visible.has(c)) : []);
+  writeStorage(COL_PRESET_KEY, id);
+  renderPresetOptions(id);
+}
+
+function markPresetCustom() {
+  writeStorage(COL_PRESET_KEY, "");
+  renderPresetOptions("");
+}
+
+function saveCurrentAsPreset() {
+  const name = String(window.prompt("Numele presetului:") || "").trim();
+  if (!name) return null;
+  const hidden = new Set(columns.getHidden());
+  const custom = loadCustomPresets().filter((p) => p.label !== name);
+  const preset = {
+    id: `custom:${Date.now()}`,
+    label: name,
+    cols: columns.order.filter((c) => !hidden.has(c)),
+  };
+  custom.push(preset);
+  writeStorage(CUSTOM_PRESETS_KEY, custom);
+  return preset.id;
+}
+
+colPresetSelect?.addEventListener("change", () => {
+  const value = colPresetSelect.value;
+  if (value === "__save__") {
+    const id = saveCurrentAsPreset();
+    if (id) {
+      writeStorage(COL_PRESET_KEY, id);
+      renderPresetOptions(id);
+      setStatus("Preset salvat.", "ok");
+    } else {
+      renderPresetOptions(readSavedPresetId());
+    }
+    return;
+  }
+  if (value) applyPreset(value);
+  else markPresetCustom();
+});
+
+btnColPresetDelete?.addEventListener("click", () => {
+  const id = colPresetSelect?.value || "";
+  const preset = loadCustomPresets().find((p) => p.id === id);
+  if (!preset || !window.confirm(`Ștergi presetul „${preset.label}”?`)) return;
+  writeStorage(
+    CUSTOM_PRESETS_KEY,
+    loadCustomPresets().filter((p) => p.id !== id)
+  );
+  markPresetCustom();
+});
+
+function readSavedPresetId() {
+  let saved = "";
+  try {
+    saved = localStorage.getItem(COL_PRESET_KEY) || "";
+  } catch {
+    /* ignore */
+  }
+  return findPreset(saved) ? saved : "";
+}
+
+renderPresetOptions(readSavedPresetId());
 
 function setStatus(text, type = "") {
   statusEl.textContent = text;
@@ -95,10 +339,12 @@ function setStatus(text, type = "") {
 }
 
 function fillSettings(settings) {
-  inputProcentajAlte.value =
-    settings.procentaj_alte_costuri != null
-      ? settings.procentaj_alte_costuri
-      : "";
+  const calcParams = Calc.normalizeParams(settings.calculator_params);
+  calcParamInputs.forEach((el) => {
+    const v = calcParams[el.dataset.calcParam];
+    el.value = v == null ? "" : String(v);
+  });
+  updateCalcParamsDerived();
   inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
   inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
   inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
@@ -106,12 +352,50 @@ function fillSettings(settings) {
 }
 
 function readSettingsFromForm() {
-  return {
-    procentaj_alte_costuri: inputProcentajAlte.value,
+  const out = {
     mult_prp: inputMultPrp.value,
     mult_min: inputMultMin.value,
     mult_max: inputMultMax.value,
   };
+  calcParamInputs.forEach((el) => {
+    out[`calc.${el.dataset.calcParam}`] = el.value;
+  });
+  return out;
+}
+
+/** Parametrii calculatorului asa cum sunt acum in formular (inclusiv nesalvati). */
+function getCalcParams() {
+  const raw = {};
+  calcParamInputs.forEach((el) => {
+    raw[el.dataset.calcParam] = el.value;
+  });
+  return Calc.normalizeParams(raw);
+}
+
+function settingsRequestBody() {
+  return {
+    mult_prp: inputMultPrp.value,
+    mult_min: inputMultMin.value,
+    mult_max: inputMultMax.value,
+    calculator_params: getCalcParams(),
+  };
+}
+
+function formatNum(n, digits = 2) {
+  return n == null || !Number.isFinite(n) ? "—" : n.toFixed(digits);
+}
+
+/** Valorile derivate din panou (RON/kg) + rezumatul din titlul panoului. */
+function updateCalcParamsDerived() {
+  const p = getCalcParams();
+  if (calcAerRon) calcAerRon.value = formatNum(p.transport_aer_usd_kg * p.curs_usd);
+  if (calcTrenRon) calcTrenRon.value = formatNum(p.transport_tren_usd_kg * p.curs_usd);
+  if (calcParamsSummary) {
+    const regim = Calc.REGIMURI.find((r) => r.value === p.regim)?.label || "";
+    calcParamsSummary.textContent = `${regim} · $ ${p.curs_usd} · RMB ${p.curs_rmb} · preț cumpărare din ${
+      p.transport_cumparare === "aer" ? "Aer" : "Tren/Mare"
+    }`;
+  }
 }
 
 function snapshotSettings() {
@@ -155,7 +439,7 @@ async function saveSettings() {
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(readSettingsFromForm()),
+      body: JSON.stringify(settingsRequestBody()),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
@@ -203,41 +487,7 @@ function derivePrices(salePrice) {
 
 
 
-function getGlobalProcentajAlte() {
-  const raw = inputProcentajAlte?.value;
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
 
-function getRowAlteCosturi(tr) {
-  if (hasAlteOverride(tr)) {
-    return parseAlteCosturi(tr.dataset.alteOverride);
-  }
-  const pct = getGlobalProcentajAlte();
-  if (pct == null) return DEFAULT_ALTE_COSTURI;
-  return alteFromProcentaj(pct, tr?.dataset?.pretCumparare ?? "");
-}
-
-function hasAlteOverride(tr) {
-  return tr?.dataset?.alteOverride != null && tr.dataset.alteOverride !== "";
-}
-
-function syncAlteCosturiCell(tr, alteCosturi) {
-  const alteCell = tr.querySelector("td[data-col='transport_override']");
-  if (!alteCell) return;
-  const input = alteCell.querySelector("input.input-alte-costuri");
-  const resetBtn = alteCell.querySelector("button.btn-reset-alte");
-  const overridden = hasAlteOverride(tr);
-  if (input && !overridden) {
-    input.value =
-      alteCosturi == null || !Number.isFinite(Number(alteCosturi))
-        ? ""
-        : String(alteCosturi);
-  }
-  if (resetBtn) resetBtn.hidden = !overridden;
-  alteCell.classList.toggle("is-alte-override", overridden);
-}
 
 
 
@@ -338,23 +588,6 @@ function isDescriptionDirty(tr) {
   );
 }
 
-function updateTotalAlteStoc() {
-  if (!inputTotalAlteStoc) return;
-  const rows = tbody.querySelectorAll("tr[data-offer-id]");
-  if (!rows.length) {
-    inputTotalAlteStoc.value = "—";
-    return;
-  }
-  let total = 0;
-  rows.forEach((tr) => {
-    total += getRowAlteCosturi(tr) * getRowStock(tr);
-  });
-  inputTotalAlteStoc.value = total.toFixed(2);
-}
-
-function updateToolbarTotals() {
-  updateTotalAlteStoc();
-}
 
 /** PRP sub pretul de vanzare = configurare gresita; evidentiez celula. */
 function syncPrpVsSale(tr, salePrice) {
@@ -378,7 +611,6 @@ function updateDirtyStatus() {
 
 function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const currency = tr.dataset.currency || "RON";
-  const alteCosturi = getRowAlteCosturi(tr);
   const derived = derivePrices(salePrice);
 
   const prpCell = tr.querySelector("td[data-col='prp']");
@@ -403,7 +635,6 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   const stocCell = tr.querySelector("td[data-col='stoc']");
   const nameCell = tr.querySelector("td[data-col='name']");
   const descriptionCell = tr.querySelector("td[data-col='description']");
-  syncAlteCosturiCell(tr, alteCosturi);
   const original = tr.dataset.originalSale ?? "";
   const priceDirty =
     markDirty &&
@@ -442,6 +673,7 @@ function applyRowPrices(tr, salePrice, { markDirty = true } = {}) {
   }
 
   syncPrpVsSale(tr, salePrice);
+  recalcRow(tr);
   updateDirtyStatus();
 }
 
@@ -451,7 +683,6 @@ function updateDerivedCells() {
     if (!input) return;
     applyRowPrices(tr, input.value);
   });
-  updateToolbarTotals();
   updateDirtyStatus();
 }
 
@@ -554,6 +785,106 @@ function isEvening() {
   return new Date().getHours() >= 18;
 }
 
+/* ---------- Calculator (coloanele din Excel) ---------- */
+
+/** [cheie din Calc.calcProduct, format]: lei | pct (fractie) | usd */
+const CALC_COLS = [
+  ["pret_achiz_china", "lei"],
+  ["transport_aer", "lei"],
+  ["transport_tren", "lei"],
+  ["taxe_vamale_aer", "lei"],
+  ["taxe_vamale_tren", "lei"],
+  ["tva_import_aer", "lei"],
+  ["tva_import_tren", "lei"],
+  ["cost_final_aer", "lei"],
+  ["cost_final_tren", "lei"],
+  ["diferenta_aer_tren", "lei"],
+  ["cat_salvezi", "pct"],
+  ["pret_vanzare_fara_tva", "lei"],
+  ["comision_valoare", "lei"],
+  ["comision_tva", "lei"],
+  ["impozit_aer", "lei"],
+  ["impozit_tren", "lei"],
+  ["tva_colectat_aer", "lei"],
+  ["tva_colectat_tren", "lei"],
+  ["profit_aer", "lei"],
+  ["procent_profit_aer", "pct"],
+  ["profit_tren", "lei"],
+  ["procent_profit_tren", "pct"],
+  ["break_even_aer", "lei"],
+  ["break_even_tren", "lei"],
+  ["cost_comanda_aer", "usd"],
+  ["cost_comanda_tren", "usd"],
+];
+const CALC_KEYS = new Set(CALC_COLS.map(([key]) => key));
+const PROFIT_KEYS = new Set([
+  "profit_aer",
+  "profit_tren",
+  "procent_profit_aer",
+  "procent_profit_tren",
+]);
+
+function formatCalcValue(value, kind) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (kind === "pct") return formatPercent(value * 100);
+  if (kind === "usd") return `$ ${value.toFixed(2)}`;
+  return formatPrice(value, "RON");
+}
+
+function readRowCalcInput(tr) {
+  const val = (sel) => tr.querySelector(sel)?.value ?? "";
+  const dim = (field) => val(`input.input-dim[data-dim-field="${field}"]`);
+  const pct = val("input.input-procentaj-emag");
+  return {
+    pret_fabrica: val("input.input-pret-cumparare-usd"),
+    moneda: val("select.input-moneda") || "USD",
+    greutate: dim("greutate"),
+    inaltime: dim("inaltime"),
+    lungime: dim("lungime"),
+    latime: dim("latime"),
+    pret_vanzare: val("input.input-sale-price"),
+    comision_emag: pct === "" ? DEFAULT_PROcentaj_EMAG : pct,
+    nr_bucati: val("input.input-nr-bucati"),
+  };
+}
+
+/** Recalculeaza toate coloanele calculatorului pe un rand (formulele din Excel). */
+function recalcRow(tr, params = getCalcParams()) {
+  const out = Calc.calcProduct(readRowCalcInput(tr), params);
+  for (const [key, kind] of CALC_COLS) {
+    const td = tr.querySelector(`td[data-col="${key}"]`);
+    if (!td) continue;
+    const v = out ? out[key] : null;
+    const ok = v != null && Number.isFinite(v);
+    td.dataset.value = ok ? String(kind === "pct" ? v * 100 : v) : "";
+    td.textContent = formatCalcValue(v, kind);
+    if (PROFIT_KEYS.has(key)) {
+      td.classList.toggle("is-calc-negative", ok && v < 0);
+      td.classList.toggle("is-calc-positive", ok && v >= 0);
+    }
+  }
+
+  // Fara pret fabrica/greutate ramane pretul de cumparare salvat anterior (marcat).
+  const buyTd = tr.querySelector('td[data-col="pret_cumparare"]');
+  if (out) tr.dataset.pretCumparare = String(roundPrice(out.pret_cumparare));
+  if (buyTd) {
+    const buy = tr.dataset.pretCumparare ?? "";
+    buyTd.dataset.value = buy;
+    buyTd.innerHTML = formatPrice(buy === "" ? null : buy, tr.dataset.currency || "RON");
+    buyTd.classList.toggle("is-cost-legacy", !out && buy !== "");
+    buyTd.title = out
+      ? "Cost final calculat (Parametri calculator)"
+      : buy !== ""
+        ? "Valoare veche: completează prețul de fabrică și greutatea ca să se calculeze"
+        : "";
+  }
+}
+
+function recalcAllRows() {
+  const params = getCalcParams();
+  tbody.querySelectorAll("tr[data-offer-id]").forEach((tr) => recalcRow(tr, params));
+}
+
 function rowHtml(product, index) {
   const currency = product.currency || "RON";
   const salePrice = product.sale_price ?? "";
@@ -569,13 +900,6 @@ function rowHtml(product, index) {
   const linkCumparareSafe = /^https?:\/\//i.test(linkCumparare) ? linkCumparare : "";
   const cellClass = (col, extra = "") => columns.cellClass(col, extra);
   const saleAttr = salePrice === "" || salePrice == null ? "" : Number(salePrice);
-  const hasOverride =
-    product.transport_override != null && Number.isFinite(Number(product.transport_override));
-  const alte = hasOverride
-    ? Number(product.transport_override)
-    : alteFromProcentaj(getGlobalProcentajAlte() ?? "", pretCumparare);
-  const alteInputVal =
-    alte == null || !Number.isFinite(Number(alte)) ? "" : Number(alte);
   const hasMinOverrideFlag =
     product.pret_minim_override != null &&
     Number.isFinite(Number(product.pret_minim_override));
@@ -625,6 +949,18 @@ function rowHtml(product, index) {
   } else if (volOk) {
     volExtra = "is-dim-gray";
   }
+  const monedaFabrica = product.moneda_fabrica === "RMB" ? "RMB" : "USD";
+  const procentajEmag =
+    product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))
+      ? Number(product.procentaj_emag)
+      : DEFAULT_PROcentaj_EMAG;
+  const pnk = String(product.part_number_key || "").trim();
+  const linkEmag = pnk ? `https://www.emag.ro/-/pd/${encodeURIComponent(pnk)}/` : "";
+  const linkInputCell = (field, value) => {
+    const v = value || "";
+    const safe = /^https?:\/\//i.test(v) ? v : "";
+    return `<td data-col="${field}"${cellClass(field, "col-link-cumparare")}><div class="link-cumparare-wrap"><input type="url" class="input-link-extra" data-field="${field}" placeholder="https://…" value="${escapeHtml(v)}" /><a class="btn-open-link"${safe ? ` href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer"` : " hidden"} title="Deschide link" aria-label="Deschide link">↗</a></div></td>`;
+  };
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
@@ -635,10 +971,9 @@ function rowHtml(product, index) {
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
-    pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-pret-cumparare")}><input type="number" class="input-pret-cumparare" min="0" step="0.01" value="${escapeHtml(pretCumparare)}" /></td>`,
+    pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-calc")} data-value="${escapeHtml(pretCumparare)}">${formatPrice(pretCumparare, currency)}</td>`,
     pret_cumparare_usd: `<td data-col="pret_cumparare_usd"${cellClass("pret_cumparare_usd", "col-pret-cumparare-usd")}><input type="number" class="input-pret-cumparare-usd" min="0" step="0.01" value="${escapeHtml(pretCumparareUsd)}" /></td>`,
     link_cumparare: `<td data-col="link_cumparare"${cellClass("link_cumparare", "col-link-cumparare")}><div class="link-cumparare-wrap"><input type="url" class="input-link-cumparare" placeholder="https://…" value="${escapeHtml(linkCumparare)}" /><a class="btn-open-link"${linkCumparareSafe ? ` href="${escapeHtml(linkCumparareSafe)}" target="_blank" rel="noopener noreferrer"` : " hidden"} title="Deschide link" aria-label="Deschide link">↗</a></div></td>`,
-    transport_override: `<td data-col="transport_override"${cellClass("transport_override", hasOverride ? "col-alte-costuri is-alte-override" : "col-alte-costuri")}><div class="alte-costuri-wrap"><input type="number" class="input-alte-costuri" min="0" step="0.01" value="${escapeHtml(alteInputVal)}" /><button type="button" class="btn-reset-alte"${hasOverride ? "" : " hidden"} aria-label="Revine la procentaj">×</button></div></td>`,
     pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
@@ -651,8 +986,22 @@ function rowHtml(product, index) {
     latime: `<td data-col="latime"${cellClass("latime", "col-dim")}><input type="number" class="input-dim" data-dim-field="latime" min="0" step="0.01" value="${escapeHtml(latime)}" /></td>`,
     ean: `<td data-col="ean"${cellClass("ean")}>${eanCell(product)}</td>`,
     pnk: `<td data-col="pnk"${cellClass("pnk")}>${pnkCell(product)}</td>`,
+    moneda_fabrica: `<td data-col="moneda_fabrica"${cellClass("moneda_fabrica")}><select class="input-moneda"><option value="USD"${monedaFabrica === "USD" ? " selected" : ""}>$</option><option value="RMB"${monedaFabrica === "RMB" ? " selected" : ""}>RMB</option></select></td>`,
+    procentaj_emag: `<td data-col="procentaj_emag"${cellClass("procentaj_emag", "col-procentaj-emag")}><input type="number" class="input-procentaj-emag" min="0" max="100" step="0.01" value="${escapeHtml(procentajEmag)}" /></td>`,
+    nr_bucati: `<td data-col="nr_bucati"${cellClass("nr_bucati")}><input type="number" class="input-nr-bucati" min="0" step="1" value="${escapeHtml(product.nr_bucati ?? "")}" /></td>`,
+    link_emag: `<td data-col="link_emag"${cellClass("link_emag")}>${linkEmag ? `<a href="${escapeHtml(linkEmag)}" target="_blank" rel="noopener noreferrer">eMAG ↗</a>` : "—"}</td>`,
+    link_ali: linkInputCell("link_ali", product.link_ali),
+    link_amz: linkInputCell("link_amz", product.link_amz),
+    ce: `<td data-col="ce"${cellClass("ce")}><input type="text" class="input-text-field" data-field="ce" value="${escapeHtml(product.ce || "")}" /></td>`,
+    decizie: `<td data-col="decizie"${cellClass("decizie")}><input type="text" class="input-text-field" data-field="decizie" value="${escapeHtml(product.decizie || "")}" /></td>`,
+    ...Object.fromEntries(
+      CALC_COLS.map(([key]) => [
+        key,
+        `<td data-col="${key}"${cellClass(key, "col-calc")} data-value="">—</td>`,
+      ])
+    ),
   };
-  return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr}${rowClasses ? ` class="${rowClasses}"` : ""} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasOverride ? ` data-alte-override="${escapeHtml(alteInputVal)}"` : ""}${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
+  return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr}${rowClasses ? ` class="${rowClasses}"` : ""} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columns.order.map((col) => cells[col] || "").join("")}
   </tr>`;
 }
@@ -662,7 +1011,23 @@ function getCellSortValue(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return null;
 
-  if (col === "pret_emag" || col === "transport_override" || col === "pret_minim") {
+  if (CALC_KEYS.has(col) || col === "pret_cumparare") {
+    return parseSortNumber(td.dataset.value);
+  }
+  if (col === "procentaj_emag" || col === "nr_bucati") {
+    return parseSortNumber(td.querySelector("input")?.value ?? "");
+  }
+  if (
+    col === "moneda_fabrica" ||
+    col === "link_ali" ||
+    col === "link_amz" ||
+    col === "ce" ||
+    col === "decizie"
+  ) {
+    return String(td.querySelector("input, select")?.value ?? "").trim().toLowerCase() || null;
+  }
+
+  if (col === "pret_emag" || col === "pret_minim") {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
@@ -680,7 +1045,7 @@ function getCellSortValue(tr, col) {
     const description = getRowDescription(tr);
     return description ? description.toLowerCase() : null;
   }
-  if (col === "pret_cumparare" || col === "pret_cumparare_usd") {
+  if (col === "pret_cumparare_usd") {
     return parseSortNumber(td.querySelector("input")?.value ?? "");
   }
   if (col === "link_cumparare") {
@@ -741,11 +1106,30 @@ function getCellFilterText(tr, col) {
   const td = tr.querySelector(`td[data-col="${col}"]`);
   if (!td) return "";
 
+  if (CALC_KEYS.has(col) || col === "pret_cumparare") {
+    const raw = td.dataset.value;
+    return raw == null || raw === "" ? "" : String(roundPrice(Number(raw)));
+  }
+  if (col === "moneda_fabrica") {
+    return td.querySelector("select")?.value === "RMB" ? "RMB" : "$";
+  }
+  if (
+    col === "procentaj_emag" ||
+    col === "nr_bucati" ||
+    col === "link_ali" ||
+    col === "link_amz" ||
+    col === "ce" ||
+    col === "decizie"
+  ) {
+    return String(td.querySelector("input")?.value ?? "").trim();
+  }
+  if (col === "link_emag") {
+    return td.querySelector("a")?.href || "";
+  }
+
   if (
     col === "pret_emag" ||
-    col === "transport_override" ||
     col === "pret_minim" ||
-    col === "pret_cumparare" ||
     col === "pret_cumparare_usd" ||
     col === "link_cumparare" ||
     col === "stoc" ||
@@ -856,17 +1240,6 @@ function sortProductsTable() {
   applyColumnFilters();
 }
 
-function applyCostOverrideToProduct(product, override) {
-  if (!override) return product;
-  const next = { ...product };
-  if ("transport_override" in override) {
-    next.transport_override =
-      override.transport_override == null || !Number.isFinite(Number(override.transport_override))
-        ? null
-        : Number(override.transport_override);
-  }
-  return next;
-}
 
 
 function renderProducts(products, append) {
@@ -878,7 +1251,6 @@ function renderProducts(products, append) {
     tbody.innerHTML =
       '<tr class="empty-row"><td colspan="23">Niciun produs găsit.</td></tr>';
     updateDirtyStatus();
-    updateToolbarTotals();
     return;
   }
 
@@ -899,6 +1271,7 @@ function renderProducts(products, append) {
     // Descrieri lungi/HTML: set via dataset, nu în atribut HTML (newlines sparg atributul)
     tr.dataset.originalDescription = String(p.description || "");
   });
+  recalcAllRows();
   tbody
     .querySelectorAll("textarea.input-name")
     .forEach((el) => autosizeNameTextarea(el));
@@ -908,7 +1281,6 @@ function renderProducts(products, append) {
   if (sortCol) sortProductsTable();
   else applyColumnFilters();
   updateDirtyStatus();
-  updateToolbarTotals();
 }
 
 async function loadProducts() {
@@ -1046,39 +1418,36 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-/** Pretul de cumparare se editeaza doar dupa confirmare explicita. */
 tbody.addEventListener("change", (e) => {
   const imagesInput = e.target.closest("input.input-product-images");
-  if (imagesInput) {
-    void handleProductImagesSelected(imagesInput);
-    return;
-  }
-
-  const input = e.target.closest("input.input-pret-cumparare");
-  if (!input) return;
-  const tr = input.closest("tr[data-offer-id]");
-  if (!tr) return;
-
-  const prev = tr.dataset.pretCumparare ?? "";
-  const next = input.value;
-  if (String(prev) === String(next)) return;
-
-  const ok = window.confirm(
-    "Ești sigur că vrei să schimbi prețul de cumpărare?"
-  );
-  if (!ok) {
-    input.value = prev;
-    return;
-  }
-
-  tr.dataset.pretCumparare = next;
-  const saleInput = tr.querySelector("input.input-sale-price");
-  applyRowPrices(tr, saleInput?.value ?? "");
-  updateToolbarTotals();
-  schedulePersistPretCumparare(tr.dataset.offerId, next);
+  if (imagesInput) void handleProductImagesSelected(imagesInput);
 });
 
 tbody.addEventListener("change", (e) => {
+  const monedaSelect = e.target.closest("select.input-moneda");
+  if (monedaSelect) {
+    const tr = monedaSelect.closest("tr[data-offer-id]");
+    if (!tr) return;
+    recalcRow(tr);
+    schedulePersistListing(
+      tr.dataset.offerId,
+      { moneda_fabrica: monedaSelect.value === "RMB" ? "RMB" : "USD" },
+      "moneda-fabrica"
+    );
+    return;
+  }
+
+  const textInput = e.target.closest("input.input-text-field, input.input-link-extra");
+  if (textInput) {
+    const tr = textInput.closest("tr[data-offer-id]");
+    const field = textInput.dataset.field;
+    if (!tr || !field) return;
+    const value = String(textInput.value || "").trim();
+    textInput.value = value;
+    schedulePersistListing(tr.dataset.offerId, { [field]: value || null }, field);
+    return;
+  }
+
   const usdInput = e.target.closest("input.input-pret-cumparare-usd");
   if (usdInput) {
     const tr = usdInput.closest("tr[data-offer-id]");
@@ -1097,7 +1466,7 @@ tbody.addEventListener("change", (e) => {
   if (!tr) return;
   const value = String(linkInput.value || "").trim();
   linkInput.value = value;
-  const openBtn = tr.querySelector("a.btn-open-link");
+  const openBtn = linkInput.closest("td")?.querySelector("a.btn-open-link");
   if (openBtn) {
     const safe = /^https?:\/\//i.test(value) ? value : "";
     if (safe) {
@@ -1361,19 +1730,35 @@ tbody.addEventListener("focusout", (e) => {
 });
 
 tbody.addEventListener("input", (e) => {
-  const alteInput = e.target.closest("input.input-alte-costuri");
-  if (alteInput) {
-    const tr = alteInput.closest("tr[data-offer-id]");
+  const usdInput = e.target.closest("input.input-pret-cumparare-usd");
+  if (usdInput) {
+    const tr = usdInput.closest("tr[data-offer-id]");
+    if (tr) recalcRow(tr);
+    return;
+  }
+
+  const nrBucatiInput = e.target.closest("input.input-nr-bucati");
+  if (nrBucatiInput) {
+    const tr = nrBucatiInput.closest("tr[data-offer-id]");
     if (!tr) return;
-    tr.dataset.alteOverride =
-      alteInput.value === "" ? "0" : alteInput.value;
-    syncAlteCosturiCell(tr, getRowAlteCosturi(tr));
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
-    schedulePersistAlteCosturi(
+    recalcRow(tr);
+    schedulePersistListing(
       tr.dataset.offerId,
-      alteInput.value === "" ? 0 : alteInput.value
+      { nr_bucati: numOrNull(nrBucatiInput.value) },
+      "nr-bucati"
+    );
+    return;
+  }
+
+  const procentajInput = e.target.closest("input.input-procentaj-emag");
+  if (procentajInput) {
+    const tr = procentajInput.closest("tr[data-offer-id]");
+    if (!tr) return;
+    recalcRow(tr);
+    schedulePersistListing(
+      tr.dataset.offerId,
+      { procentaj_emag: numOrNull(procentajInput.value) },
+      "procentaj-emag"
     );
     return;
   }
@@ -1385,7 +1770,6 @@ tbody.addEventListener("input", (e) => {
     tr.dataset.minOverride = minInput.value === "" ? "0" : minInput.value;
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
     schedulePersistPretMinim(
       tr.dataset.offerId,
       minInput.value === "" ? 0 : minInput.value
@@ -1400,7 +1784,6 @@ tbody.addEventListener("input", (e) => {
     setRowStock(tr, stockInput.value === "" ? 0 : stockInput.value);
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
     schedulePersistStock(tr.dataset.offerId, parseJsonAttr(tr.dataset.stock, []));
     return;
   }
@@ -1411,6 +1794,7 @@ tbody.addEventListener("input", (e) => {
     const field = dimInput.dataset.dimField;
     if (!tr || !field) return;
     applyWeightHighlight(tr);
+    recalcRow(tr);
     schedulePersistListing(
       tr.dataset.offerId,
       { [field]: numOrNull(dimInput.value) },
@@ -1419,11 +1803,11 @@ tbody.addEventListener("input", (e) => {
     return;
   }
 
-  const linkInput = e.target.closest("input.input-link-cumparare");
+  const linkInput = e.target.closest("input.input-link-cumparare, input.input-link-extra");
   if (linkInput) {
     const tr = linkInput.closest("tr[data-offer-id]");
     if (!tr) return;
-    const openBtn = tr.querySelector("a.btn-open-link");
+    const openBtn = linkInput.closest("td")?.querySelector("a.btn-open-link");
     if (!openBtn) return;
     const value = String(linkInput.value || "").trim();
     const safe = /^https?:\/\//i.test(value) ? value : "";
@@ -1444,7 +1828,6 @@ tbody.addEventListener("input", (e) => {
     autosizeNameTextarea(nameInput);
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
     schedulePersistName(tr.dataset.offerId, nameInput.value);
     return;
   }
@@ -1456,7 +1839,6 @@ tbody.addEventListener("input", (e) => {
     autosizeDescriptionTextarea(descriptionInput);
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
     schedulePersistDescription(tr.dataset.offerId, descriptionInput.value);
     return;
   }
@@ -1466,31 +1848,11 @@ tbody.addEventListener("input", (e) => {
   const tr = input.closest("tr[data-offer-id]");
   if (!tr) return;
   applyRowPrices(tr, input.value);
-  updateToolbarTotals();
   schedulePersistSalePrice(tr.dataset.offerId, input.value);
   schedulePersistDerived(tr);
 });
 
 tbody.addEventListener("click", (e) => {
-  const resetAlteBtn = e.target.closest("button.btn-reset-alte");
-  if (resetAlteBtn) {
-    const tr = resetAlteBtn.closest("tr[data-offer-id]");
-    if (!tr) return;
-    delete tr.dataset.alteOverride;
-    const linked = getRowAlteCosturi(tr);
-    const alteInput = tr.querySelector("input.input-alte-costuri");
-    if (alteInput) {
-      alteInput.value =
-        linked == null || !Number.isFinite(Number(linked)) ? "" : String(linked);
-    }
-    syncAlteCosturiCell(tr, linked);
-    const saleInput = tr.querySelector("input.input-sale-price");
-    applyRowPrices(tr, saleInput?.value ?? "");
-    updateToolbarTotals();
-    schedulePersistAlteCosturi(tr.dataset.offerId, null);
-    return;
-  }
-
   const resetMinBtn = e.target.closest("button.btn-reset-min");
   if (!resetMinBtn) return;
   const tr = resetMinBtn.closest("tr[data-offer-id]");
@@ -1505,7 +1867,6 @@ tbody.addEventListener("click", (e) => {
       linked == null || !Number.isFinite(Number(linked)) ? "" : String(linked);
   }
   applyRowPrices(tr, sale);
-  updateToolbarTotals();
   schedulePersistPretMinim(tr.dataset.offerId, null);
   schedulePersistDerived(tr);
 });
@@ -1524,13 +1885,7 @@ function patchLoadedProduct(id, fields) {
   loadedProducts[idx] = { ...loadedProducts[idx], ...fields };
 }
 
-function schedulePersistAlteCosturi(offerId, value) {
-  schedulePersistListing(offerId, { transport_override: numOrNull(value) }, "alte-costuri");
-}
 
-function schedulePersistPretCumparare(offerId, value) {
-  schedulePersistListing(offerId, { pret_cumparare: numOrNull(value) }, "pret-cumparare");
-}
 
 function schedulePersistPretMinim(offerId, value) {
   schedulePersistListing(
@@ -1594,8 +1949,10 @@ const EXPORT_NUMERIC_COLS = new Set([
   "id_familie",
   "pret_cumparare",
   "pret_cumparare_usd",
-  "transport_override",
   "pret_emag",
+  "procentaj_emag",
+  "nr_bucati",
+  ...CALC_KEYS,
   "prp",
   "pret_minim",
   "pret_maxim",
@@ -1746,8 +2103,9 @@ table.querySelector("thead tr.filter-row")?.addEventListener("click", (e) => {
   e.stopPropagation();
 });
 
-function onSettingsInput() {
-  updateDerivedCells();
+function onCalcParamInput() {
+  updateCalcParamsDerived();
+  recalcAllRows();
   updateSaveDirtyState();
 }
 
@@ -1757,7 +2115,12 @@ function onMultInput() {
   updateSaveDirtyState();
 }
 
-inputProcentajAlte.addEventListener("input", onSettingsInput);
+calcParamInputs.forEach((el) => el.addEventListener("input", onCalcParamInput));
+if (calcRegimSelect) {
+  calcRegimSelect.innerHTML = Calc.REGIMURI.map(
+    (r) => `<option value="${escapeHtml(r.value)}">${escapeHtml(r.label)}</option>`
+  ).join("");
+}
 inputMultPrp.addEventListener("input", onMultInput);
 inputMultMin.addEventListener("input", onMultInput);
 inputMultMax.addEventListener("input", onMultInput);

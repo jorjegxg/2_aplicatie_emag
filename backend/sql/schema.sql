@@ -279,6 +279,16 @@ ALTER TABLE order_line_history
 CREATE INDEX IF NOT EXISTS idx_order_line_order
   ON order_line_history (order_id);
 
+-- Calculatorul din "CALCULATOR INFINITE VENTURES.xlsx": parametri globali + campuri pe produs.
+-- pret_cumparare_usd = pretul de fabrica in moneda_fabrica (USD/RMB); pret_cumparare = cost final calculat.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS calculator_params JSONB;
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS moneda_fabrica TEXT NOT NULL DEFAULT 'USD';
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS nr_bucati INTEGER DEFAULT 5;
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS link_ali TEXT;
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS link_amz TEXT;
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS ce TEXT;
+ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS decizie TEXT;
+
 INSERT INTO settings (id, pret_transport, procentaj_emag, numar_produse, mult_prp, mult_min, mult_max, alte_costuri)
 VALUES (1, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
