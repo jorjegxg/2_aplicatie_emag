@@ -11,6 +11,8 @@
  *   POST /inventory/sellers/{id}/products/price-and-inventory — pret/stoc
  *   POST /product/sellers/{id}/products/content-bulk-update — titlu/descriere
  *   filtre pull: ?barcode= / ?stockCode=, paginare 0-based (?page=&size=)
+ *   GET  /order/sellers/{id}/orders — pachete de comanda (poller stoc)
+ *   GET/POST /webhook/sellers/{id}/webhooks — webhook comenzi
  * Auth: Basic base64(apiKey:apiSecret) + User-Agent "{sellerId} - SelfIntegration".
  * Header obligatoriu: storeFrontCode (RO = piața / moneda storefront-ului).
  * Accept-Language: limba titlu/descriere/categorii (ro pe RO; fără el API-ul
@@ -567,6 +569,43 @@ async function pushListings(offers) {
   };
 }
 
+/* ---------------- comenzi ---------------- */
+
+const ORDERS_PAGE_SIZE = 200;
+
+/** O pagina de pachete de comanda, modificate in [startDate, endDate] (ms). */
+async function fetchOrders({ startDate, endDate, page = 0, size = ORDERS_PAGE_SIZE } = {}) {
+  const creds = await requireConfigured();
+  const json = await trendyolGet(creds, `/order/sellers/${creds.SUPPLIER_ID}/orders`, {
+    startDate,
+    endDate,
+    page,
+    size,
+    orderByField: "PackageLastModifiedDate",
+    orderByDirection: "DESC",
+  });
+  return {
+    content: Array.isArray(json?.content) ? json.content : [],
+    totalPages: Number(json?.totalPages) || 0,
+  };
+}
+
+async function listWebhooks() {
+  const creds = await requireConfigured();
+  const json = await trendyolGet(creds, `/webhook/sellers/${creds.SUPPLIER_ID}/webhooks`);
+  return Array.isArray(json) ? json : Array.isArray(json?.content) ? json.content : [];
+}
+
+async function registerOrderWebhook({ url, apiKey, subscribedStatuses }) {
+  const creds = await requireConfigured();
+  return trendyolPost(creds, `/webhook/sellers/${creds.SUPPLIER_ID}/webhooks`, {
+    url,
+    authenticationType: "API_KEY",
+    apiKey,
+    subscribedStatuses,
+  });
+}
+
 async function fetchCommission() {
   await requireConfigured();
   const err = new Error("Trendyol: comisionul nu e implementat încă");
@@ -590,4 +629,8 @@ module.exports = {
   mergeLocalWithRemoteCache,
   fetchCommission,
   resolveCommissionAuth,
+  fetchOrders,
+  listWebhooks,
+  registerOrderWebhook,
+  ORDERS_PAGE_SIZE,
 };

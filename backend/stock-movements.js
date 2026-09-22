@@ -29,12 +29,12 @@ function sumMoney(items, field) {
  * Momentul de la care comenzile scad stocul. Setat o singura data (prima rulare),
  * ca poller-ul sa nu scada stoc pentru comenzi vechi care doar si-au schimbat statusul.
  */
-async function stockSince(client) {
+async function stockSince(client, key = SINCE_KEY) {
   await client.query(
     `INSERT INTO app_meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
-    [SINCE_KEY, new Date().toISOString()]
+    [key, new Date().toISOString()]
   );
-  const { rows } = await client.query(`SELECT value FROM app_meta WHERE key = $1`, [SINCE_KEY]);
+  const { rows } = await client.query(`SELECT value FROM app_meta WHERE key = $1`, [key]);
   return rows[0].value;
 }
 
@@ -181,14 +181,17 @@ async function applyDelta(client, movementId, productId, offerId, delta) {
   }
 }
 
-async function insertMovement(client, { productId, orderId, lineId, offerId, kind, delta, note }) {
+async function insertMovement(
+  client,
+  { channel = "emag", productId, orderId, lineId, offerId, kind, delta, note }
+) {
   const { rows } = await client.query(
     `INSERT INTO stock_movements (product_id, channel, order_id, line_id, offer_id, kind, delta, note)
-     VALUES ($1, 'emag', $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $8, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (channel, order_id, line_id, kind) WHERE kind IN ('order', 'order-cancel')
      DO NOTHING
      RETURNING id`,
-    [productId, orderId, lineId, offerId, kind, delta, note || null]
+    [productId, orderId, lineId, offerId, kind, delta, note || null, channel]
   );
   return rows[0]?.id ?? null;
 }
@@ -402,6 +405,10 @@ async function listStockMovements({ limit = 100 } = {}) {
 }
 
 module.exports = {
+  toNum,
+  stockSince,
+  applyDelta,
+  insertMovement,
   applyEmagOrder,
   processEmagOrderId,
   pollRecentEmagOrders,

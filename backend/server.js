@@ -61,6 +61,7 @@ const {
   listNewLocalOrders,
   listStockMovements,
 } = require("./stock-movements");
+const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const {
   initPush,
   getPublicKey,
@@ -93,8 +94,8 @@ app.post("/api/auth/logout", authLogoutHandler);
 
 // Callback eMAG la comanda noua: GET/POST ...?token=SECRET&order_id=123.
 // Public (eMAG nu are cookie), protejat prin EMAG_WEBHOOK_TOKEN.
-function webhookTokenOk(provided) {
-  const expected = String(process.env.EMAG_WEBHOOK_TOKEN || "").trim();
+function webhookTokenOk(provided, envName = "EMAG_WEBHOOK_TOKEN") {
+  const expected = String(process.env[envName] || "").trim();
   if (!expected) return false;
   const a = crypto.createHash("sha256").update(String(provided || "")).digest();
   const b = crypto.createHash("sha256").update(expected).digest();
@@ -124,6 +125,29 @@ function emagOrderWebhook(req, res) {
 
 app.get("/api/webhooks/emag/order", emagOrderWebhook);
 app.post("/api/webhooks/emag/order", express.urlencoded({ extended: false }), emagOrderWebhook);
+
+// Webhook Trendyol: POST cu pachetul complet in body, header x-api-key = TRENDYOL_WEBHOOK_TOKEN.
+// Inregistrare: node scripts/register-trendyol-webhook.js https://<domeniu>/api/webhooks/ty/order
+app.post("/api/webhooks/ty/order", (req, res) => {
+  if (!webhookTokenOk(req.get("x-api-key"), "TRENDYOL_WEBHOOK_TOKEN")) {
+    return res.status(403).json({ error: "Token invalid" });
+  }
+  const pkg = req.body;
+  if (!pkg || !pkg.orderNumber) {
+    return res.status(400).json({ error: "orderNumber lipsa" });
+  }
+  res.json({ ok: true });
+  applyTrendyolPackage(pkg, { via: "webhook" }).catch((err) => {
+    console.error(`[webhook:trendyol] comanda ${pkg.orderNumber}:`, err.message);
+    void log({
+      level: "error",
+      source: "server",
+      category: "webhook-trendyol",
+      message: `Webhook comanda Trendyol ${pkg.orderNumber} esuat: ${err.message}`,
+      detail: { orderNumber: pkg.orderNumber, packageId: pkg.id, stack: err.stack },
+    });
+  });
+});
 
 app.use(requireAppAuth);
 
@@ -1384,6 +1408,7 @@ async function start() {
     console.log(`Server pornit: http://localhost:${PORT}`);
   });
   startEmagOrderPoller();
+  startTrendyolOrderPoller();
 }
 
 // Plasa de siguranta pentru webhook-uri pierdute si anulari (eMAG nu trimite callback la anulare).
@@ -1417,6 +1442,40 @@ function startEmagOrderPoller() {
   setInterval(tick, minutes * 60 * 1000);
   setTimeout(tick, 15 * 1000);
   console.log(`[order-poll] pornit la fiecare ${minutes} min`);
+}
+
+// Plasa de siguranta pentru Trendyol: merge si fara webhook; acopera si anularile din ultimele zile.
+function startTrendyolOrderPoller() {
+  const minutes = Number(process.env.TRENDYOL_ORDER_POLL_MINUTES ?? 5);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    console.log("[trendyol-order-poll] dezactivat (TRENDYOL_ORDER_POLL_MINUTES=0)");
+    return;
+  }
+  const lookbackHours = Number(process.env.TRENDYOL_ORDER_LOOKBACK_HOURS ?? 72);
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await pollRecentTrendyolOrders({ lookbackMinutes: Math.max(60, lookbackHours * 60) });
+    } catch (err) {
+      if (err?.code !== "CREDENTIALS_MISSING") {
+        console.error("[trendyol-order-poll]", err.message);
+        void log({
+          level: "error",
+          source: "server",
+          category: "webhook-trendyol",
+          message: `Poll comenzi Trendyol esuat: ${err.message}`,
+          detail: { stack: err.stack },
+        });
+      }
+    } finally {
+      running = false;
+    }
+  };
+  setInterval(tick, minutes * 60 * 1000);
+  setTimeout(tick, 20 * 1000);
+  console.log(`[trendyol-order-poll] pornit la fiecare ${minutes} min`);
 }
 
 start().catch((err) => {
