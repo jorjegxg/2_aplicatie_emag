@@ -531,6 +531,81 @@
       if (!menuEl.hidden) setMenuOpen(false);
     });
 
+    /* ---------- Click dreapta pe antet: ascunde coloana ---------- */
+
+    const ctxMenu = document.createElement("div");
+    ctxMenu.className = "col-ctx-menu";
+    ctxMenu.hidden = true;
+    ctxMenu.setAttribute("role", "menu");
+    document.body.appendChild(ctxMenu);
+
+    function closeCtxMenu() {
+      ctxMenu.hidden = true;
+    }
+
+    function setColumnHidden(col, hide) {
+      if (hide) {
+        if (!hidden.includes(col)) hidden.push(col);
+      } else {
+        hidden = hidden.filter((c) => c !== col);
+      }
+      saveHidden();
+      applyVisibility();
+      buildMenu();
+      if (typeof onVisibilityChange === "function") onVisibilityChange();
+    }
+
+    headerLabelRow.addEventListener("contextmenu", (e) => {
+      const th = e.target.closest("th[data-col]");
+      if (!th || !headerLabelRow.contains(th)) return;
+      e.preventDefault();
+      const col = th.dataset.col;
+      const label = labels[col] || col;
+      const visibleCount = order.filter((c) => !isHidden(c)).length;
+      ctxMenu.innerHTML = [
+        visibleCount > 1
+          ? `<button type="button" role="menuitem" data-ctx="hide">Ascunde „${escapeHtml(label)}”</button>`
+          : "",
+        hidden.length
+          ? `<button type="button" role="menuitem" data-ctx="show-all">Afișează toate coloanele (${hidden.length} ascunse)</button>`
+          : "",
+      ].join("");
+      if (!ctxMenu.innerHTML) return;
+      ctxMenu.dataset.col = col;
+      ctxMenu.hidden = false;
+      const rect = ctxMenu.getBoundingClientRect();
+      const x = Math.min(e.clientX, window.innerWidth - rect.width - 8);
+      const y = Math.min(e.clientY, window.innerHeight - rect.height - 8);
+      ctxMenu.style.left = `${Math.max(8, x)}px`;
+      ctxMenu.style.top = `${Math.max(8, y)}px`;
+    });
+
+    ctxMenu.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const btn = e.target.closest("button[data-ctx]");
+      if (!btn) return;
+      if (btn.dataset.ctx === "hide") {
+        setColumnHidden(ctxMenu.dataset.col, true);
+      } else if (btn.dataset.ctx === "show-all") {
+        hidden = [];
+        saveHidden();
+        applyVisibility();
+        buildMenu();
+        if (typeof onVisibilityChange === "function") onVisibilityChange();
+      }
+      closeCtxMenu();
+    });
+
+    document.addEventListener("click", closeCtxMenu);
+    document.addEventListener("scroll", closeCtxMenu, true);
+    window.addEventListener("resize", closeCtxMenu);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeCtxMenu();
+    });
+    document.addEventListener("contextmenu", (e) => {
+      if (!headerLabelRow.contains(e.target)) closeCtxMenu();
+    });
+
     return {
       order,
       defaultOrder,

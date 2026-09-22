@@ -1402,6 +1402,40 @@ td.col-procentaj-profit.pct-2 {
   box-shadow: 0 8px 24px var(--shadow-2);
 }
 
+.col-ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 12rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow-2);
+}
+
+.col-ctx-menu[hidden] {
+  display: none;
+}
+
+.col-ctx-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.col-ctx-menu button:hover,
+.col-ctx-menu button:focus-visible {
+  background: var(--surface-alt);
+}
+
 .col-menu-item {
   display: flex;
   align-items: center;
