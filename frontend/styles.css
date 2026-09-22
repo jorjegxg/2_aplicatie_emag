@@ -527,6 +527,26 @@ body.is-col-resizing * {
   cursor: col-resize !important;
 }
 
+th.is-col-dragging {
+  opacity: 0.45;
+}
+
+thead tr:not(.filter-row) th.is-col-drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+thead tr:not(.filter-row) th.is-col-drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+body.is-col-dragging {
+  user-select: none !important;
+}
+
+body.is-col-dragging * {
+  cursor: grabbing !important;
+}
+
 th.is-col-resized .th-label {
   max-width: 100%;
 }
@@ -2624,6 +2644,23 @@ button.sync-chip.is-diff.is-active strong {
   color: inherit;
   background: transparent;
   font-weight: inherit;
+}
+
+/* Pretul de pe canal ramane evidentiat (violet), ca sa iasa in ochi in tabel. */
+#pricing-table thead tr:not(.filter-row) th.col-pret-emag,
+#pricing-table thead tr:not(.filter-row) th.col-pret-emag:hover {
+  color: var(--emag-price);
+  font-weight: 700;
+}
+
+#pricing-table td.col-pret-emag {
+  background: var(--tint-violet);
+}
+
+#pricing-table td.col-pret-emag .diff-mine,
+#pricing-table td.col-pret-emag:not(.is-diff) {
+  color: var(--emag-price);
+  font-weight: 700;
 }
 
 #pricing-table td.is-diff {

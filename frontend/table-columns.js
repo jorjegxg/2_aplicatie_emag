@@ -1,6 +1,5 @@
 /*
- * Coloane de tabel: ascundere, reordonare prin drag, meniul "Coloane" si redimensionare.
- * Folosit de tabelul de produse (index.html) si de cel de preturi (sync.html).
+ * Coloane de tabel: ascundere, reordonare prin drag (antet sau meniu), meniul "Coloane" si redimensionare.
  * Ordinea implicita, etichetele si sursele vin din <th data-col data-src> din thead.
  * enableResize() poate fi folosit si pe tabele fara meniu de coloane.
  */
@@ -509,26 +508,133 @@
       e.preventDefault();
       const item = e.target.closest(".col-menu-item");
       if (!item || !dragCol || item.dataset.col === dragCol) return;
-      const from = order.indexOf(dragCol);
-      const toCol = item.dataset.col;
-      let to = order.indexOf(toCol);
-      if (from < 0 || to < 0) return;
       const rect = item.getBoundingClientRect();
       const before = e.clientY < rect.top + rect.height / 2;
-      if (!before) to += 1;
-      if (from < to) to -= 1;
-      if (from === to) return;
-      order.splice(from, 1);
-      order.splice(to, 0, dragCol);
-      saveOrder();
-      applyOrder();
-      buildMenu();
+      moveColumn(dragCol, item.dataset.col, before);
     });
 
     menuEl.addEventListener("click", (e) => e.stopPropagation());
 
     document.addEventListener("click", () => {
       if (!menuEl.hidden) setMenuOpen(false);
+    });
+
+    /* ---------- Drag pe antet: reordoneaza coloanele direct in tabel ---------- */
+
+    const DRAG_THRESHOLD = 5;
+    const AUTO_SCROLL_EDGE = 40;
+
+    function scrollParent(el) {
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll)/.test(style.overflowX) && node.scrollWidth > node.clientWidth) {
+          return node;
+        }
+      }
+      return null;
+    }
+
+    function clearHeaderDropMarks() {
+      headerLabelRow.querySelectorAll(".is-col-drop-before, .is-col-drop-after").forEach((el) => {
+        el.classList.remove("is-col-drop-before", "is-col-drop-after");
+      });
+    }
+
+    /** Muta coloana `col` inainte/dupa `targetCol`; intoarce true daca ordinea s-a schimbat. */
+    function moveColumn(col, targetCol, before) {
+      const from = order.indexOf(col);
+      let to = order.indexOf(targetCol);
+      if (from < 0 || to < 0 || col === targetCol) return false;
+      if (!before) to += 1;
+      if (from < to) to -= 1;
+      if (from === to) return false;
+      order.splice(from, 1);
+      order.splice(to, 0, col);
+      saveOrder();
+      applyOrder();
+      buildMenu();
+      return true;
+    }
+
+    headerLabelRow.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest(".col-resize-handle, input, select, button, a")) return;
+      const th = e.target.closest("th[data-col]");
+      if (!th || !headerLabelRow.contains(th)) return;
+
+      const col = th.dataset.col;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const scroller = scrollParent(table);
+      let dragging = false;
+      let drop = null;
+      let lastX = startX;
+      let lastY = startY;
+      let scrollRaf = 0;
+
+      function updateDrop(x, y) {
+        clearHeaderDropMarks();
+        drop = null;
+        const target = document.elementFromPoint(x, y)?.closest?.("th[data-col]");
+        if (!target || !headerLabelRow.contains(target) || target.dataset.col === col) return;
+        const rect = target.getBoundingClientRect();
+        const before = x < rect.left + rect.width / 2;
+        target.classList.add(before ? "is-col-drop-before" : "is-col-drop-after");
+        drop = { col: target.dataset.col, before };
+      }
+
+      function autoScroll() {
+        scrollRaf = 0;
+        if (!dragging || !scroller) return;
+        const rect = scroller.getBoundingClientRect();
+        let dx = 0;
+        if (lastX < rect.left + AUTO_SCROLL_EDGE) dx = -12;
+        else if (lastX > rect.right - AUTO_SCROLL_EDGE) dx = 12;
+        if (!dx) return;
+        scroller.scrollLeft += dx;
+        updateDrop(lastX, lastY);
+        scrollRaf = requestAnimationFrame(autoScroll);
+      }
+
+      function onMove(ev) {
+        lastX = ev.clientX;
+        lastY = ev.clientY;
+        if (!dragging) {
+          if (Math.abs(lastX - startX) < DRAG_THRESHOLD && Math.abs(lastY - startY) < DRAG_THRESHOLD) {
+            return;
+          }
+          dragging = true;
+          closeCtxMenu();
+          th.classList.add("is-col-dragging");
+          document.body.classList.add("is-col-dragging");
+        }
+        ev.preventDefault();
+        updateDrop(lastX, lastY);
+        if (!scrollRaf) scrollRaf = requestAnimationFrame(autoScroll);
+      }
+
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        if (scrollRaf) cancelAnimationFrame(scrollRaf);
+        if (!dragging) return;
+        dragging = false;
+        th.classList.remove("is-col-dragging");
+        document.body.classList.remove("is-col-dragging");
+        clearHeaderDropMarks();
+        if (drop) moveColumn(col, drop.col, drop.before);
+        /* Drag-ul nu trebuie sa declanseze si sortarea pe click. */
+        const blockClick = (clickEv) => {
+          clickEv.stopPropagation();
+          clickEv.preventDefault();
+          document.removeEventListener("click", blockClick, true);
+        };
+        document.addEventListener("click", blockClick, true);
+        setTimeout(() => document.removeEventListener("click", blockClick, true), 0);
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
     });
 
     /* ---------- Click dreapta pe antet: ascunde coloana ---------- */
