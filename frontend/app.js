@@ -214,124 +214,19 @@ const BUILTIN_PRESETS = [
   },
 ];
 
-function readStorageJson(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStorage(key, value) {
-  try {
-    localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Preseturile salvate de user: [{ id, label, cols }]. */
-function loadCustomPresets() {
-  const list = readStorageJson(CUSTOM_PRESETS_KEY, []);
-  return Array.isArray(list)
-    ? list.filter((p) => p && typeof p.id === "string" && Array.isArray(p.cols))
-    : [];
-}
-
-function findPreset(id) {
-  return (
-    BUILTIN_PRESETS.find((p) => p.id === id) ||
-    loadCustomPresets().find((p) => p.id === id) ||
-    null
-  );
-}
-
-function renderPresetOptions(selected) {
-  if (!colPresetSelect) return;
-  const custom = loadCustomPresets();
-  const opt = (value, label) =>
-    `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
-  colPresetSelect.innerHTML = [
-    opt("", "Coloane: personalizat"),
-    `<optgroup label="Preseturi">${BUILTIN_PRESETS.map((p) => opt(p.id, p.label)).join("")}</optgroup>`,
-    custom.length
-      ? `<optgroup label="Salvate de tine">${custom.map((p) => opt(p.id, `★ ${p.label}`)).join("")}</optgroup>`
-      : "",
-    opt("__save__", "+ Salvează coloanele curente ca preset…"),
-  ].join("");
-  if (btnColPresetDelete) btnColPresetDelete.hidden = !selected.startsWith("custom:");
-}
-
-function applyPreset(id) {
-  const preset = findPreset(id);
-  if (!preset) return;
-  if (preset.ordered && preset.cols) columns.setOrder(preset.cols);
-  const visible = preset.cols ? new Set(preset.cols) : null;
-  columns.setHidden(visible ? columns.order.filter((c) => !visible.has(c)) : []);
-  writeStorage(COL_PRESET_KEY, id);
-  renderPresetOptions(id);
-}
+const colPresets = window.TableColumns.createPresets({
+  columns,
+  selectEl: colPresetSelect,
+  deleteBtn: btnColPresetDelete,
+  presetKey: COL_PRESET_KEY,
+  customKey: CUSTOM_PRESETS_KEY,
+  builtins: BUILTIN_PRESETS,
+  onSaved: () => setStatus("Preset salvat.", "ok"),
+});
 
 function markPresetCustom() {
-  writeStorage(COL_PRESET_KEY, "");
-  renderPresetOptions("");
+  colPresets.markCustom();
 }
-
-function saveCurrentAsPreset() {
-  const name = String(window.prompt("Numele presetului:") || "").trim();
-  if (!name) return null;
-  const hidden = new Set(columns.getHidden());
-  const custom = loadCustomPresets().filter((p) => p.label !== name);
-  const preset = {
-    id: `custom:${Date.now()}`,
-    label: name,
-    cols: columns.order.filter((c) => !hidden.has(c)),
-  };
-  custom.push(preset);
-  writeStorage(CUSTOM_PRESETS_KEY, custom);
-  return preset.id;
-}
-
-colPresetSelect?.addEventListener("change", () => {
-  const value = colPresetSelect.value;
-  if (value === "__save__") {
-    const id = saveCurrentAsPreset();
-    if (id) {
-      writeStorage(COL_PRESET_KEY, id);
-      renderPresetOptions(id);
-      setStatus("Preset salvat.", "ok");
-    } else {
-      renderPresetOptions(readSavedPresetId());
-    }
-    return;
-  }
-  if (value) applyPreset(value);
-  else markPresetCustom();
-});
-
-btnColPresetDelete?.addEventListener("click", () => {
-  const id = colPresetSelect?.value || "";
-  const preset = loadCustomPresets().find((p) => p.id === id);
-  if (!preset || !window.confirm(`Ștergi presetul „${preset.label}”?`)) return;
-  writeStorage(
-    CUSTOM_PRESETS_KEY,
-    loadCustomPresets().filter((p) => p.id !== id)
-  );
-  markPresetCustom();
-});
-
-function readSavedPresetId() {
-  let saved = "";
-  try {
-    saved = localStorage.getItem(COL_PRESET_KEY) || "";
-  } catch {
-    /* ignore */
-  }
-  return findPreset(saved) ? saved : "";
-}
-
-renderPresetOptions(readSavedPresetId());
 
 function setStatus(text, type = "") {
   statusEl.textContent = text;

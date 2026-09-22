@@ -556,6 +556,71 @@ const columns = window.TableColumns.create({
   orderKey: "sync-column-order",
   widthsKey: "sync-column-widths",
   migrate: migrateLegacyCostCols,
+  onVisibilityChange: () => colPresets.markCustom(),
+});
+
+/* Coloanele de actiune raman in toate preseturile. */
+const SYNC_PRESET_BASE = ["index", "part_number", "name"];
+const SYNC_PRESET_ACTIONS = ["pret_emag_schimbat", "istoric", "push", "pull"];
+
+/** Coloanele vizibile pentru fiecare preset; restul se ascund. */
+const SYNC_BUILTIN_PRESETS = [
+  { id: "toate", label: "Toate coloanele", cols: null },
+  {
+    id: "preturi",
+    label: "Prețuri și stoc",
+    cols: [
+      ...SYNC_PRESET_BASE,
+      "pret_cumparare",
+      "pret_emag",
+      "prp",
+      "stoc",
+      ...SYNC_PRESET_ACTIONS,
+    ],
+  },
+  {
+    id: "profit",
+    label: "Profit și break-even",
+    cols: [
+      ...SYNC_PRESET_BASE,
+      "pret_cumparare",
+      "pret_emag",
+      "procentaj_emag",
+      "cost_final_aer",
+      "cost_final_tren",
+      "profit_aer",
+      "procent_profit_aer",
+      "profit_tren",
+      "procent_profit_tren",
+      "break_even_aer",
+      "break_even_tren",
+      ...SYNC_PRESET_ACTIONS,
+    ],
+  },
+  {
+    id: "texte",
+    label: "Titluri și identificatori",
+    cols: [
+      ...SYNC_PRESET_BASE,
+      "id",
+      "id_familie",
+      "familie",
+      "description",
+      "ean",
+      "pnk",
+      ...SYNC_PRESET_ACTIONS,
+    ],
+  },
+];
+
+const colPresets = window.TableColumns.createPresets({
+  columns,
+  selectEl: document.getElementById("col-preset"),
+  deleteBtn: document.getElementById("btn-col-preset-delete"),
+  presetKey: "sync-column-preset",
+  customKey: "sync-column-presets-custom",
+  builtins: SYNC_BUILTIN_PRESETS,
+  onSaved: () => setStatus("Preset salvat.", "ok"),
 });
 
 const PRICING_COL_COUNT = columns.defaultOrder.length;

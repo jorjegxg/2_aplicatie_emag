@@ -550,5 +550,137 @@
     };
   }
 
-  global.TableColumns = { create, enableResize };
+  /**
+   * Selector de preseturi de coloane ("Coloane: personalizat", preseturi incorporate
+   * si preseturi salvate de user in localStorage).
+   * @param {object} opts
+   * @param {ReturnType<typeof create>} opts.columns
+   * @param {HTMLSelectElement} opts.selectEl
+   * @param {HTMLElement} [opts.deleteBtn]
+   * @param {string} opts.presetKey    cheia localStorage pentru presetul curent
+   * @param {string} opts.customKey    cheia localStorage pentru preseturile salvate
+   * @param {{id: string, label: string, cols: string[] | null, ordered?: boolean}[]} opts.builtins
+   * @param {() => void} [opts.onSaved]
+   * @returns {{ markCustom: () => void }}
+   */
+  function createPresets({ columns, selectEl, deleteBtn, presetKey, customKey, builtins, onSaved }) {
+    if (!columns || !selectEl) return { markCustom() {} };
+
+    function readJson(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function write(key, value) {
+      try {
+        localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /** Preseturile salvate de user: [{ id, label, cols }]. */
+    function loadCustom() {
+      const list = readJson(customKey, []);
+      return Array.isArray(list)
+        ? list.filter((p) => p && typeof p.id === "string" && Array.isArray(p.cols))
+        : [];
+    }
+
+    function find(id) {
+      return builtins.find((p) => p.id === id) || loadCustom().find((p) => p.id === id) || null;
+    }
+
+    function render(selected) {
+      const custom = loadCustom();
+      const opt = (value, label) =>
+        `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+      selectEl.innerHTML = [
+        opt("", "Coloane: personalizat"),
+        `<optgroup label="Preseturi">${builtins.map((p) => opt(p.id, p.label)).join("")}</optgroup>`,
+        custom.length
+          ? `<optgroup label="Salvate de tine">${custom.map((p) => opt(p.id, `★ ${p.label}`)).join("")}</optgroup>`
+          : "",
+        opt("__save__", "+ Salvează coloanele curente ca preset…"),
+      ].join("");
+      if (deleteBtn) deleteBtn.hidden = !selected.startsWith("custom:");
+    }
+
+    function apply(id) {
+      const preset = find(id);
+      if (!preset) return;
+      if (preset.ordered && preset.cols) columns.setOrder(preset.cols);
+      const visible = preset.cols ? new Set(preset.cols) : null;
+      columns.setHidden(visible ? columns.order.filter((c) => !visible.has(c)) : []);
+      write(presetKey, id);
+      render(id);
+    }
+
+    function markCustom() {
+      write(presetKey, "");
+      render("");
+    }
+
+    function saveCurrent() {
+      const name = String(window.prompt("Numele presetului:") || "").trim();
+      if (!name) return null;
+      const hidden = new Set(columns.getHidden());
+      const custom = loadCustom().filter((p) => p.label !== name);
+      const preset = {
+        id: `custom:${Date.now()}`,
+        label: name,
+        cols: columns.order.filter((c) => !hidden.has(c)),
+      };
+      custom.push(preset);
+      write(customKey, custom);
+      return preset.id;
+    }
+
+    function readSavedId() {
+      let saved = "";
+      try {
+        saved = localStorage.getItem(presetKey) || "";
+      } catch {
+        /* ignore */
+      }
+      return find(saved) ? saved : "";
+    }
+
+    selectEl.addEventListener("change", () => {
+      const value = selectEl.value;
+      if (value === "__save__") {
+        const id = saveCurrent();
+        if (id) {
+          write(presetKey, id);
+          render(id);
+          if (typeof onSaved === "function") onSaved();
+        } else {
+          render(readSavedId());
+        }
+        return;
+      }
+      if (value) apply(value);
+      else markCustom();
+    });
+
+    deleteBtn?.addEventListener("click", () => {
+      const id = selectEl.value || "";
+      const preset = loadCustom().find((p) => p.id === id);
+      if (!preset || !window.confirm(`Ștergi presetul „${preset.label}”?`)) return;
+      write(
+        customKey,
+        loadCustom().filter((p) => p.id !== id)
+      );
+      markCustom();
+    });
+
+    render(readSavedId());
+    return { markCustom };
+  }
+
+  global.TableColumns = { create, enableResize, createPresets };
 })(window);

@@ -79,6 +79,10 @@
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary">
             Preia comision eMAG
           </button>
+          <div class="col-preset-wrap">
+            <select id="col-preset" class="col-preset-select" aria-label="Preset coloane" title="Preset coloane"></select>
+            <button type="button" id="btn-col-preset-delete" class="btn btn-secondary btn-col-preset-delete" hidden title="Șterge presetul salvat" aria-label="Șterge presetul salvat">×</button>
+          </div>
           <div class="col-menu-wrap">
             <button type="button" id="btn-columns" class="btn btn-secondary btn-with-icon" aria-expanded="false" aria-controls="col-menu">
               <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -193,8 +197,8 @@
     <div id="push-queue-panel" class="push-queue" hidden role="status" aria-live="polite"></div>
     <script src="/api/calculator.js?v=20260921-1"></script>
     <script src="pricing.js"></script>
-    <script src="table-columns.js"></script>
+    <script src="table-columns.js?v=20260922-1"></script>
     <script src="history-modal.js"></script>
-    <script src="sync.js"></script>
+    <script src="sync.js?v=20260922-2"></script>
   </body>
 </html>
