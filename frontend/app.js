@@ -25,6 +25,7 @@ const btnExportMenu = document.getElementById("btn-export-menu");
 const exportMenu = document.getElementById("export-menu");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const btnCompactProducts = document.getElementById("btn-compact-products");
+const btnPushAll = document.getElementById("btn-sync");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
 const tbody = document.getElementById("products-body");
@@ -2082,6 +2083,36 @@ try {
 } catch {
   setCompactProducts(false);
 }
+
+/** Publica toate modificarile pe toate canalele configurate (backend-ul preia oglinda daca lipseste). */
+async function pushAllChannels() {
+  if (!confirm("Trimit toate modificările pe toate canalele configurate?")) return;
+  btnPushAll.disabled = true;
+  setStatus("Se publică pe canale…", "loading");
+  try {
+    const res = await fetch("/api/sync/push-all", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Eroare ${res.status}`);
+    const results = data.results || [];
+    if (results.length === 0) {
+      setStatus("Niciun canal configurat", "error");
+      return;
+    }
+    const summary = results
+      .map((r) => {
+        if (!r.ok) return `${r.label}: eroare — ${r.error}`;
+        return `${r.label}: ${r.count > 0 ? `${r.count} trimise` : "nimic de trimis"}`;
+      })
+      .join(" · ");
+    setStatus(summary, data.ok ? "ok" : "error");
+  } catch (err) {
+    setStatus(err.message || "Eroare la publicare pe canale", "error");
+  } finally {
+    btnPushAll.disabled = false;
+  }
+}
+
+btnPushAll?.addEventListener("click", pushAllChannels);
 
 document.addEventListener("click", () => {
   if (exportMenu && !exportMenu.hidden) setExportMenuOpen(false);

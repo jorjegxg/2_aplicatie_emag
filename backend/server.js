@@ -583,13 +583,26 @@ app.get("/api/sync/channel-view", async (req, res) => {
   }
 });
 
-/** Trage oferte: oglinda remote merge in cache; catalogul local ramane neatins. */
-app.post("/api/sync/pull", async (req, res) => {
-  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+/** Eroare "asteptata" (validare) — raspuns JSON simplu, fara log de canal. */
+function httpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.expected = true;
+  return err;
+}
+
+function sendSyncError(res, err, fallback) {
+  if (err?.expected) return res.status(err.status).json({ error: err.message });
+  return sendChannelError(res, err, fallback);
+}
+
+/** Preia toate ofertele canalului in oglinda remote (catalogul local ramane neatins). */
+async function pullChannel(channelName) {
   if (activePulls.has(channelName)) {
-    return res.status(409).json({
-      error: `Sincronizarea pentru ${channelName} este deja în curs. Așteaptă finalizarea ei.`,
-    });
+    throw httpError(
+      409,
+      `Sincronizarea pentru ${channelName} este deja în curs. Așteaptă finalizarea ei.`
+    );
   }
   activePulls.add(channelName);
   try {
@@ -625,21 +638,22 @@ app.post("/api/sync/pull", async (req, res) => {
     console.log(
       `[sync-pull] ${channelName}: ${total} oferte în cache (fără scriere catalog)`
     );
-    return res.json({
-      ok: true,
-      channel: channelName,
-      count: total,
-      cache_only: true,
-      pages: page,
-      authUsed,
-      last_sync: stats.last_sync,
-    });
-  } catch (err) {
-    console.error("[sync-pull]", err.message);
-    logCaught("sync-pull", err);
-    return sendChannelError(res, err, "Eroare la preluare de la canal");
+    return { count: total, pages: page, authUsed, last_sync: stats.last_sync };
   } finally {
     activePulls.delete(channelName);
+  }
+}
+
+/** Trage oferte: oglinda remote merge in cache; catalogul local ramane neatins. */
+app.post("/api/sync/pull", async (req, res) => {
+  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
+  try {
+    const result = await pullChannel(channelName);
+    return res.json({ ok: true, channel: channelName, cache_only: true, ...result });
+  } catch (err) {
+    console.error("[sync-pull]", err.message);
+    if (!err?.expected) logCaught("sync-pull", err);
+    return sendSyncError(res, err, "Eroare la preluare de la canal");
   }
 });
 
@@ -690,125 +704,190 @@ app.post("/api/sync/pull-offer", async (req, res) => {
 });
 
 /** Trimite catre canal: catalog SoT + status/vat/handling din oglinda remote. */
+async function pushOffersForChannel(channelName, rawOffers, { includeContentAll = false } = {}) {
+  const channel = getChannel(channelName);
+
+  // Id-uri + flag-uri per câmp care diferă; valorile = catalog.
+  // Compat: includeContent global/per-ofertă ⇒ name+description.
+  const contentFlagsById = new Map();
+  const ids = [];
+
+  const emptyFlags = () => ({
+    includeName: false,
+    includeDescription: false,
+    includeSalePrice: false,
+    includeRecommendedPrice: false,
+    includeMinSalePrice: false,
+    includeMaxSalePrice: false,
+    includeStock: false,
+  });
+
+  for (const o of rawOffers) {
+    const isObj = o && typeof o === "object";
+    const id = String((isObj ? o.id : o) ?? "").trim();
+    if (!id) continue;
+    ids.push(id);
+    if (!isObj) {
+      const flags = emptyFlags();
+      if (includeContentAll) {
+        flags.includeName = true;
+        flags.includeDescription = true;
+      }
+      contentFlagsById.set(id, flags);
+      continue;
+    }
+    const both = includeContentAll || o.includeContent === true;
+    contentFlagsById.set(id, {
+      includeName: both || o.includeName === true,
+      includeDescription: both || o.includeDescription === true,
+      includeSalePrice: o.includeSalePrice === true,
+      includeRecommendedPrice: o.includeRecommendedPrice === true,
+      includeMinSalePrice: o.includeMinSalePrice === true,
+      includeMaxSalePrice: o.includeMaxSalePrice === true,
+      includeStock: o.includeStock === true,
+    });
+  }
+
+  if (ids.length === 0) {
+    throw httpError(400, "Nicio ofertă de sincronizat");
+  }
+
+  const listings = await getListings(channelName, ids);
+  if (listings.length === 0) {
+    throw httpError(
+      404,
+      channelName === "trendyol"
+        ? "Ofertele nu există în catalog — leagă EAN-ul produsului de barcode-ul Trendyol"
+        : "Ofertele nu există în catalog — leagă emag_offer_id pe produs"
+    );
+  }
+
+  const remoteCache = getChannelRemotes(channelName);
+  if (!remoteCache) {
+    throw httpError(
+      400,
+      `Lipsește oglinda ${channel.label} din memorie — preia întâi ofertele de la marketplace`
+    );
+  }
+
+  if (typeof channel.mergeLocalWithRemoteCache !== "function") {
+    throw httpError(501, `Canalul ${channel.label}: merge pentru publicare nu e implementat`);
+  }
+
+  const offers = [];
+  for (const l of listings) {
+    const effectiveMin =
+      l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
+        ? Number(l.pret_minim_override)
+        : l.min_sale_price;
+
+    const remote = remoteCache.byId.get(String(l.external_id));
+    const merged = channel.mergeLocalWithRemoteCache(
+      {
+        id: l.external_id,
+        name: l.name,
+        description: l.description,
+        sale_price: l.sale_price,
+        recommended_price: l.recommended_price,
+        min_sale_price: effectiveMin,
+        max_sale_price: l.max_sale_price,
+        general_stock: l.general_stock,
+      },
+      remote
+    );
+    const flags = contentFlagsById.get(String(l.external_id)) || emptyFlags();
+    offers.push(channel.buildPushPayload(merged, flags));
+  }
+
+  const result = await channel.pushListings(offers);
+
+  // Marketplace-urile proceseaza asincron — NU actualizam oglinda local;
+  // confirmarea vine la urmatorul pull. Retinem doar istoricul de pret trimis.
+  for (const o of offers) {
+    const sale = o.sale_price ?? o.inventory?.salePrice;
+    if (sale == null) continue;
+    try {
+      await recordPretEmagIfChanged(o.id, sale, "RON", "sync", channelName);
+    } catch (histErr) {
+      console.warn("[sync-prices] istoric pret:", histErr.message);
+    }
+  }
+
+  return result;
+}
+
 app.post("/api/products/sync-prices", async (req, res) => {
   const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
   try {
-    const channel = getChannel(channelName);
-
-    // Frontend-ul trimite id-urile + flag-uri per câmp care diferă; valorile = catalog.
-    // Compat: includeContent global/per-ofertă ⇒ name+description.
-    const includeContentAll = req.body?.includeContent === true;
     const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
-    const contentFlagsById = new Map();
-    const ids = [];
-
-    const emptyFlags = () => ({
-      includeName: false,
-      includeDescription: false,
-      includeSalePrice: false,
-      includeRecommendedPrice: false,
-      includeMinSalePrice: false,
-      includeMaxSalePrice: false,
-      includeStock: false,
+    const result = await pushOffersForChannel(channelName, rawOffers, {
+      includeContentAll: req.body?.includeContent === true,
     });
-
-    for (const o of rawOffers) {
-      const isObj = o && typeof o === "object";
-      const id = String((isObj ? o.id : o) ?? "").trim();
-      if (!id) continue;
-      ids.push(id);
-      if (!isObj) {
-        const flags = emptyFlags();
-        if (includeContentAll) {
-          flags.includeName = true;
-          flags.includeDescription = true;
-        }
-        contentFlagsById.set(id, flags);
-        continue;
-      }
-      const both = includeContentAll || o.includeContent === true;
-      contentFlagsById.set(id, {
-        includeName: both || o.includeName === true,
-        includeDescription: both || o.includeDescription === true,
-        includeSalePrice: o.includeSalePrice === true,
-        includeRecommendedPrice: o.includeRecommendedPrice === true,
-        includeMinSalePrice: o.includeMinSalePrice === true,
-        includeMaxSalePrice: o.includeMaxSalePrice === true,
-        includeStock: o.includeStock === true,
-      });
-    }
-
-    if (ids.length === 0) {
-      return res.status(400).json({ error: "Nicio ofertă de sincronizat" });
-    }
-
-    const listings = await getListings(channelName, ids);
-    if (listings.length === 0) {
-      return res.status(404).json({
-        error:
-          channelName === "trendyol"
-            ? "Ofertele nu există în catalog — leagă EAN-ul produsului de barcode-ul Trendyol"
-            : "Ofertele nu există în catalog — leagă emag_offer_id pe produs",
-      });
-    }
-
-    const remoteCache = getChannelRemotes(channelName);
-    if (!remoteCache) {
-      return res.status(400).json({
-        error: `Lipsește oglinda ${channel.label} din memorie — preia întâi ofertele de la marketplace`,
-      });
-    }
-
-    if (typeof channel.mergeLocalWithRemoteCache !== "function") {
-      return res.status(501).json({
-        error: `Canalul ${channel.label}: merge pentru publicare nu e implementat`,
-      });
-    }
-
-    const offers = [];
-    for (const l of listings) {
-      const effectiveMin =
-        l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
-          ? Number(l.pret_minim_override)
-          : l.min_sale_price;
-
-      const remote = remoteCache.byId.get(String(l.external_id));
-      const merged = channel.mergeLocalWithRemoteCache(
-        {
-          id: l.external_id,
-          name: l.name,
-          description: l.description,
-          sale_price: l.sale_price,
-          recommended_price: l.recommended_price,
-          min_sale_price: effectiveMin,
-          max_sale_price: l.max_sale_price,
-          general_stock: l.general_stock,
-        },
-        remote
-      );
-      const flags = contentFlagsById.get(String(l.external_id)) || emptyFlags();
-      offers.push(channel.buildPushPayload(merged, flags));
-    }
-
-    const result = await channel.pushListings(offers);
-
-    // Marketplace-urile proceseaza asincron — NU actualizam oglinda local;
-    // confirmarea vine la urmatorul pull. Retinem doar istoricul de pret trimis.
-    for (const o of offers) {
-      const sale = o.sale_price ?? o.inventory?.salePrice;
-      if (sale == null) continue;
-      try {
-        await recordPretEmagIfChanged(o.id, sale, "RON", "sync", channelName);
-      } catch (histErr) {
-        console.warn("[sync-prices] istoric pret:", histErr.message);
-      }
-    }
-
     return res.json({ ok: true, channel: channelName, pending: true, ...result });
   } catch (err) {
     console.error("[sync-prices]", err.message);
-    logCaught("sync-prices", err);
-    return sendChannelError(res, err, "Eroare la sync prețuri");
+    if (!err?.expected) logCaught("sync-prices", err);
+    return sendSyncError(res, err, "Eroare la sync prețuri");
+  }
+});
+
+/** Flag-uri de publicare pentru un rand din diff (doar campurile care difera), sau null. */
+function pushFlagsFromDiffRow(row) {
+  const changed = new Set((row.fields || []).filter((f) => f.differs).map((f) => f.key));
+  if (changed.size === 0) return null;
+  return {
+    id: row.external_id,
+    includeName: changed.has("name"),
+    includeDescription: changed.has("description"),
+    includeSalePrice: changed.has("sale_price"),
+    includeRecommendedPrice: changed.has("recommended_price"),
+    includeMinSalePrice: changed.has("min_sale_price"),
+    includeMaxSalePrice: changed.has("max_sale_price"),
+    includeStock: changed.has("general_stock"),
+  };
+}
+
+let pushAllRunning = false;
+
+/** Publica toate modificarile pe toate canalele configurate (preia oglinda daca lipseste). */
+app.post("/api/sync/push-all", async (req, res) => {
+  if (pushAllRunning) {
+    return res.status(409).json({ error: "Publicarea pe toate canalele este deja în curs." });
+  }
+  pushAllRunning = true;
+  try {
+    const channels = (await listChannels()).filter((c) => c.configured);
+    const results = [];
+    for (const ch of channels) {
+      const entry = { channel: ch.id, label: ch.label, pulled: false, count: 0, ok: true };
+      try {
+        if (!getChannelRemotes(ch.id)) {
+          await pullChannel(ch.id);
+          entry.pulled = true;
+        }
+        const diff = await getChannelDiff(ch.id);
+        const offers = (diff.matched || []).map(pushFlagsFromDiffRow).filter(Boolean);
+        if (offers.length > 0) {
+          const result = await pushOffersForChannel(ch.id, offers);
+          entry.count = offers.length;
+          entry.messages = result?.messages || [];
+        }
+        console.log(`[push-all] ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
+      } catch (err) {
+        console.error(`[push-all] ${ch.id}:`, err.message);
+        if (!err?.expected) logCaught("push-all", err);
+        entry.ok = false;
+        entry.error = err.message || "Eroare la publicare";
+      }
+      results.push(entry);
+    }
+    return res.json({ ok: results.every((r) => r.ok), results });
+  } catch (err) {
+    console.error("[push-all]", err.message);
+    logCaught("push-all", err);
+    return res.status(500).json({ error: err.message || "Eroare la publicare pe canale" });
+  } finally {
+    pushAllRunning = false;
   }
 });
 

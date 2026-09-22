@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Produse</title>
-    <link rel="stylesheet" href="styles.css?v=20260922-1" />
+    <link rel="stylesheet" href="styles.css?v=20260922-3" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -158,6 +158,12 @@
               </button>
             </div>
           </div>
+          <button type="button" id="btn-sync" class="btn btn-with-icon" title="Trimite toate modificările pe toate canalele configurate (preia ofertele dacă e nevoie)">
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0-5 5m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+            </svg>
+            Publică tot pe canale
+          </button>
           <span id="status" class="status" aria-live="polite"></span>
           <button type="button" id="btn-compact-products" class="btn btn-secondary btn-compact" aria-pressed="false">
             Compact
@@ -398,7 +404,7 @@
     </div>
     <script src="/api/calculator.js?v=20260921-1"></script>
     <script src="pricing.js?v=20260921-1"></script>
-    <script src="table-columns.js?v=20260922-2"></script>
-    <script src="app.js?v=20260922-1"></script>
+    <script src="table-columns.js?v=20260922-3"></script>
+    <script src="app.js?v=20260922-2"></script>
   </body>
 </html>
