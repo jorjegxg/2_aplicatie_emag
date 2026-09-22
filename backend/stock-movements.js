@@ -287,6 +287,8 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
     });
   }
 
+  scheduleStockPushFor(summary, "emag");
+
   if (isNewOrder) {
     try {
       const { notifyNewOrder } = require("./push-notifications");
@@ -302,6 +304,18 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
   }
 
   return summary;
+}
+
+/** Trimite stocul nou pe celelalte canale pentru produsele atinse de comanda. */
+function scheduleStockPushFor(summary, originChannel) {
+  const ids = [...summary.deducted, ...summary.restored].map((x) => x.product_id);
+  if (ids.length === 0) return;
+  try {
+    // require lazy: stock-push → channels → ... evita ciclul la incarcare.
+    require("./stock-push").scheduleStockPush(ids, { originChannel });
+  } catch (err) {
+    console.warn("[stock-push] skip:", err.message);
+  }
 }
 
 /** Citeste o comanda din eMAG (retry cu auth proaspat la 401/403). */
@@ -409,6 +423,7 @@ module.exports = {
   stockSince,
   applyDelta,
   insertMovement,
+  scheduleStockPushFor,
   applyEmagOrder,
   processEmagOrderId,
   pollRecentEmagOrders,

@@ -1,5 +1,5 @@
 const { withTransaction, ensureSchema } = require("./pg");
-const { toNum, stockSince, applyDelta, insertMovement } = require("./stock-movements");
+const { toNum, stockSince, applyDelta, insertMovement, scheduleStockPushFor } = require("./stock-movements");
 const trendyol = require("./channels/trendyol");
 const { log } = require("./logs-db");
 
@@ -128,6 +128,7 @@ async function applyTrendyolPackage(pkg, { via = "webhook" } = {}) {
       detail: summary,
     });
   }
+  scheduleStockPushFor(summary, CHANNEL);
   return summary;
 }
 
