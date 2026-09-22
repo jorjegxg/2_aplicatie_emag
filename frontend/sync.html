@@ -138,9 +138,14 @@
               <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
               <th data-col="stoc" data-src="channel">Stoc</th>
               <th data-col="procentaj_emag" data-src="listing" id="th-comision" class="col-procentaj-emag">Comision %</th>
-              <th data-col="pret_minim_profit" data-src="calc">Preț minim pentru profit</th>
-              <th data-col="profit" data-src="calc" class="col-profit">Profit</th>
-              <th data-col="procentaj_profit" data-src="calc" class="col-procentaj-profit">Procentaj profit %</th>
+              <th data-col="cost_final_aer" data-src="calc">Cost final Aer</th>
+              <th data-col="cost_final_tren" data-src="calc">Cost final Tren/Mare</th>
+              <th data-col="profit_aer" data-src="calc">Profit Aer</th>
+              <th data-col="procent_profit_aer" data-src="calc">% profit Aer</th>
+              <th data-col="profit_tren" data-src="calc">Profit Tren/Mare</th>
+              <th data-col="procent_profit_tren" data-src="calc">% profit Tren/Mare</th>
+              <th data-col="break_even_aer" data-src="calc">Break-even Aer</th>
+              <th data-col="break_even_tren" data-src="calc">Break-even Tren/Mare</th>
               <th data-col="ean" data-src="channel">EAN</th>
               <th data-col="pnk" data-src="channel">PNK</th>
               <th data-col="pret_emag_schimbat" data-src="calc">Pret schimbat</th>
@@ -163,9 +168,14 @@
               <th data-col="pret_maxim"><input type="search" class="col-filter" data-filter-col="pret_maxim" placeholder="Filtrează…" aria-label="Filtrează Pret maxim" /></th>
               <th data-col="stoc"><input type="search" class="col-filter" data-filter-col="stoc" placeholder="Filtrează…" aria-label="Filtrează Stoc" /></th>
               <th data-col="procentaj_emag"><input type="search" class="col-filter" data-filter-col="procentaj_emag" placeholder="Filtrează…" aria-label="Filtrează Comision" /></th>
-              <th data-col="pret_minim_profit"><input type="search" class="col-filter" data-filter-col="pret_minim_profit" placeholder="Filtrează…" aria-label="Filtrează Preț minim pentru profit" /></th>
-              <th data-col="profit"><input type="search" class="col-filter" data-filter-col="profit" placeholder="Filtrează…" aria-label="Filtrează Profit" /></th>
-              <th data-col="procentaj_profit"><input type="search" class="col-filter" data-filter-col="procentaj_profit" placeholder="Filtrează…" aria-label="Filtrează Procentaj profit" /></th>
+              <th data-col="cost_final_aer"><input type="search" class="col-filter" data-filter-col="cost_final_aer" placeholder="Filtrează…" aria-label="Filtrează Cost final Aer" /></th>
+              <th data-col="cost_final_tren"><input type="search" class="col-filter" data-filter-col="cost_final_tren" placeholder="Filtrează…" aria-label="Filtrează Cost final Tren/Mare" /></th>
+              <th data-col="profit_aer"><input type="search" class="col-filter" data-filter-col="profit_aer" placeholder="Filtrează…" aria-label="Filtrează Profit Aer" /></th>
+              <th data-col="procent_profit_aer"><input type="search" class="col-filter" data-filter-col="procent_profit_aer" placeholder="Filtrează…" aria-label="Filtrează % profit Aer" /></th>
+              <th data-col="profit_tren"><input type="search" class="col-filter" data-filter-col="profit_tren" placeholder="Filtrează…" aria-label="Filtrează Profit Tren/Mare" /></th>
+              <th data-col="procent_profit_tren"><input type="search" class="col-filter" data-filter-col="procent_profit_tren" placeholder="Filtrează…" aria-label="Filtrează % profit Tren/Mare" /></th>
+              <th data-col="break_even_aer"><input type="search" class="col-filter" data-filter-col="break_even_aer" placeholder="Filtrează…" aria-label="Filtrează Break-even Aer" /></th>
+              <th data-col="break_even_tren"><input type="search" class="col-filter" data-filter-col="break_even_tren" placeholder="Filtrează…" aria-label="Filtrează Break-even Tren/Mare" /></th>
               <th data-col="ean"><input type="search" class="col-filter" data-filter-col="ean" placeholder="Filtrează…" aria-label="Filtrează EAN" /></th>
               <th data-col="pnk"><input type="search" class="col-filter" data-filter-col="pnk" placeholder="Filtrează…" aria-label="Filtrează PNK" /></th>
               <th data-col="pret_emag_schimbat"></th>
@@ -180,6 +190,8 @@
         </table>
       </div>
     </div>
+    <div id="push-queue-panel" class="push-queue" hidden role="status" aria-live="polite"></div>
+    <script src="/api/calculator.js?v=20260921-1"></script>
     <script src="pricing.js"></script>
     <script src="table-columns.js"></script>
     <script src="history-modal.js"></script>

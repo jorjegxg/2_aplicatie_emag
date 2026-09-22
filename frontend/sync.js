@@ -292,6 +292,7 @@ async function pullFromChannel() {
       showApiError(data, `HTTP ${res.status}`);
       return;
     }
+    clearFinishedPushJobs();
     setStatus(
       `Preluate ${data.count} oferte în cache (comparație) — catalogul local neschimbat.`,
       "ok"
@@ -365,9 +366,6 @@ const {
   formatPercent,
   relativeTimeRo,
   parseSortNumber,
-  calcProfit,
-  calcPretMinimProfit,
-  calcProcentajProfit,
   isEmagCommissionFetched,
   formatProcentajEmagDisplay,
   procentajEmagTooltip,
@@ -568,16 +566,89 @@ let remoteFetchedAt = null;
 let settings = {};
 let pricingSortCol = null;
 let pricingSortDir = "asc";
-let pushing = false;
+let bulkPushing = false;
+
+/**
+ * Coada de publicare individuala: offerId -> job. Starea ramane pana la
+ * urmatoarea preluare (marketplace-ul confirma asincron).
+ * @type {Map<string, {offerId: string, offer: object, channel: string, label: string, name: string, status: "queued"|"sending"|"done"|"error", error?: string}>}
+ */
+const pushJobs = new Map();
+let pushWorkerRunning = false;
 
 const schedulePersistListing = createPersister({
   getChannel: () => currentChannel,
   onError: (err) => setStatus(err.message || "Eroare la salvare", "error"),
 });
 
-/** Pretul de cumparare e costul final din calculator (include transport, taxe, TVA import). */
-function rowCosts(product) {
-  return { pretCumparare: product.pret_cumparare ?? "", alte: 0 };
+/* Formulele din "CALCULATOR INFINITE VENTURES.xlsx" (servite de backend la /api/calculator.js). */
+const Calc = window.Calculator;
+
+/** [cheie din Calc.calcProduct, format]: lei | pct (fractie) — coloanele Aer si Tren/Mare. */
+const CALC_COLS = [
+  ["cost_final_aer", "lei"],
+  ["cost_final_tren", "lei"],
+  ["profit_aer", "lei"],
+  ["procent_profit_aer", "pct"],
+  ["profit_tren", "lei"],
+  ["procent_profit_tren", "pct"],
+  ["break_even_aer", "lei"],
+  ["break_even_tren", "lei"],
+];
+const PROFIT_KEYS = new Set([
+  "profit_aer",
+  "profit_tren",
+  "procent_profit_aer",
+  "procent_profit_tren",
+]);
+
+/**
+ * Calculatorul pe un rand: costul final (transport China, taxe vamale, TVA import)
+ * si profitul Aer/Tren cu pretul si comisionul de pe canal. null daca lipsesc
+ * pretul de fabrica sau greutatea.
+ */
+function rowCalc(product) {
+  return Calc.calcProduct(
+    {
+      pret_fabrica: product.pret_cumparare_usd,
+      moneda: product.moneda_fabrica || "USD",
+      greutate: product.greutate,
+      latime: product.latime,
+      lungime: product.lungime,
+      inaltime: product.inaltime,
+      pret_vanzare: rowSalePrice(product),
+      comision_emag: rowPctEmag(product),
+    },
+    Calc.normalizeParams(settings.calculator_params)
+  );
+}
+
+function calcCellState(out, key, kind, currency) {
+  const v = out ? out[key] : null;
+  const ok = v != null && Number.isFinite(v);
+  let cls = "col-calc";
+  if (PROFIT_KEYS.has(key) && ok) cls += v < 0 ? " is-calc-negative" : " is-calc-positive";
+  return {
+    cls,
+    value: ok ? String(kind === "pct" ? v * 100 : v) : "",
+    text: !ok ? "—" : kind === "pct" ? formatPercent(v * 100) : formatPrice(v, currency),
+  };
+}
+
+/** Costul final calculat; fara date de calculator ramane pretul salvat (marcat). */
+function buyCellState(product, out, currency) {
+  const buy = out ? out.pret_cumparare : product.pret_cumparare;
+  const legacy = !out && buy != null && buy !== "";
+  return {
+    cls: legacy ? "col-calc is-cost-legacy" : "col-calc",
+    value: buy != null && buy !== "" ? String(buy) : "",
+    text: formatPrice(buy, currency),
+    title: out
+      ? "Cost final calculat (Parametri calculator)"
+      : legacy
+        ? "Valoare veche: completează prețul de fabrică și greutatea ca să se calculeze"
+        : "",
+  };
 }
 
 /**
@@ -640,17 +711,48 @@ function pushContentLabel(offer) {
   return parts.length ? parts.join(" + ") : "nimic";
 }
 
-/** Butonul de publicare pe rand: activ doar cand randul chiar are ce trimite. */
+/**
+ * Butonul de publicare pe rand. Reflecta starea din coada de publicare
+ * (in coada / se trimite / trimis / eroare); altfel e activ doar cand randul are ce trimite.
+ */
+function pushButtonHtml(offerId) {
+  const job = pushJobs.get(String(offerId));
+  const offer = pushableOffer(offerId);
+  let cls = "btn-push-row";
+  let label = "⬆";
+  let title;
+  let disabled = false;
+  if (job?.status === "queued") {
+    cls += " is-queued";
+    label = `#${queuePosition(job)}`;
+    title = `În coadă (${job.label}) — click ca să anulezi`;
+  } else if (job?.status === "sending") {
+    cls += " is-sending";
+    label = "";
+    title = `Se trimite pe ${job.channel} (${job.label})…`;
+    disabled = true;
+  } else if (job?.status === "done") {
+    cls += " is-done";
+    label = "✓";
+    title = `Trimis pe ${job.channel} (${job.label}) — confirmă cu „Preia”. Click ca să retrimiți.`;
+    disabled = !offer;
+  } else if (job?.status === "error") {
+    cls += " is-error";
+    label = "!";
+    title = `Eroare: ${job.error} — click ca să reîncerci`;
+  } else if (offer) {
+    title = `Publică pe canal doar acest rând: ${pushContentLabel(offer)}`;
+  } else {
+    title = "Nimic de publicat — rândul nu diferă față de ultima preluare";
+    disabled = true;
+  }
+  return `<button type="button" class="${cls}" data-offer-id="${escapeHtml(offerId)}"${
+    disabled ? " disabled" : ""
+  } title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+}
+
 function pushCellHtml(product, cellClass) {
-  const offer = pushableOffer(product.id);
-  const title = offer
-    ? `Publică pe canal doar acest rând: ${pushContentLabel(offer)}`
-    : "Nimic de publicat — rândul nu diferă față de ultima preluare";
-  return `<td data-col="push"${cellClass("push", "col-push")}><button type="button" class="btn-push-row" data-offer-id="${escapeHtml(
-    product.id
-  )}"${offer ? "" : " disabled"} title="${escapeHtml(title)}" aria-label="${escapeHtml(
-    title
-  )}">⬆</button></td>`;
+  return `<td data-col="push"${cellClass("push", "col-push")}>${pushButtonHtml(product.id)}</td>`;
 }
 
 /** Butonul de preluare pe rand: reimprospateaza doar oferta asta de pe canal. */
@@ -672,7 +774,6 @@ function srcClass(col) {
 
 function pricingRowHtml(product, index) {
   const currency = product.currency || "RON";
-  const { pretCumparare, alte } = rowCosts(product);
   const pct = rowPctEmag(product);
   const commissionValue =
     product.commission_value != null && Number.isFinite(Number(product.commission_value))
@@ -684,9 +785,7 @@ function pricingRowHtml(product, index) {
   const hasOverride = !isFetched && Number(pct) !== DEFAULT_PROcentaj_EMAG;
 
   const emagPrice = rowSalePrice(product);
-  const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
-  const profit = calcProfit(emagPrice, pretCumparare, alte, pct);
-  const procentaj = calcProcentajProfit(emagPrice, pretCumparare, alte, pct);
+  const calc = rowCalc(product);
 
   const diffKeys = diffKeysForOffer(product.id);
   const colDiff = (col) => {
@@ -792,9 +891,12 @@ function pricingRowHtml(product, index) {
       "description",
       "col-description-ro"
     )}${descDiff.dataVal}${descDiff.title}>${descDiff.html}</td>`,
-    pret_cumparare: `<td data-col="pret_cumparare"${cellClass(
-      "pret_cumparare"
-    )}>${formatPrice(pretCumparare, currency)}</td>`,
+    pret_cumparare: (() => {
+      const st = buyCellState(product, calc, currency);
+      return `<td data-col="pret_cumparare"${cellClass("pret_cumparare", st.cls)} data-value="${escapeHtml(
+        st.value
+      )}"${st.title ? ` title="${escapeHtml(st.title)}"` : ""}>${st.text}</td>`;
+    })(),
     pret_emag: `<td data-col="pret_emag"${cellClass(
       "pret_emag",
       "col-pret-emag"
@@ -812,17 +914,17 @@ function pricingRowHtml(product, index) {
       stocDiff.html
     }</td>`,
     procentaj_emag: commissionCell,
-    pret_minim_profit: `<td data-col="pret_minim_profit"${cellClass(
-      "pret_minim_profit"
-    )}>${formatPrice(minProfit, currency)}</td>`,
-    profit: `<td data-col="profit"${cellClass("profit", "col-profit")}>${formatPrice(
-      profit,
-      currency
-    )}</td>`,
-    procentaj_profit: `<td data-col="procentaj_profit"${cellClass(
-      "procentaj_profit",
-      "col-procentaj-profit"
-    )}>${formatPercent(procentaj)}</td>`,
+    ...Object.fromEntries(
+      CALC_COLS.map(([key, kind]) => {
+        const st = calcCellState(calc, key, kind, currency);
+        return [
+          key,
+          `<td data-col="${key}"${cellClass(key, st.cls)} data-value="${escapeHtml(st.value)}">${
+            st.text
+          }</td>`,
+        ];
+      })
+    ),
     ean: `<td data-col="ean"${cellClass("ean")}${titleAttr(product.ean)}>${
       escapeHtml(product.ean) || "—"
     }</td>`,
@@ -848,9 +950,11 @@ function pricingRowHtml(product, index) {
     pull: pullCellHtml(product, cellClass),
   };
 
+  const pushJob = pushJobs.get(String(product.id));
   const rowCls = [
     diffKeys.size > 0 ? "has-diff" : "",
     product.has_local === false ? "is-remote-only" : "",
+    pushJob ? `is-push-${pushJob.status}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -880,25 +984,22 @@ function renderPricing() {
   applyPricingFilters();
 }
 
-/** Recalculeaza pe loc marja unui rand dupa ce s-a schimbat comisionul. */
+/** Recalculeaza pe loc costul final si profitul Aer/Tren dupa ce s-a schimbat comisionul. */
 function refreshPricingRow(tr, product) {
   const currency = product.currency || "RON";
-  const { pretCumparare, alte } = rowCosts(product);
-  const pct = rowPctEmag(product);
-  const emagPrice = rowSalePrice(product);
-  const minProfit = calcPretMinimProfit(pretCumparare, alte, pct);
-  const profit = calcProfit(emagPrice, pretCumparare, alte, pct);
-  const procentaj = calcProcentajProfit(emagPrice, pretCumparare, alte, pct);
-
-  const minCell = tr.querySelector("td[data-col='pret_minim_profit']");
-  if (minCell) minCell.textContent = formatPrice(minProfit, currency);
-  const profitCell = tr.querySelector("td[data-col='profit']");
-  if (profitCell) profitCell.textContent = formatPrice(profit, currency);
-  const pctCell = tr.querySelector("td[data-col='procentaj_profit']");
-  if (pctCell) {
-    pctCell.textContent = formatPercent(procentaj);
-    pctCell.classList.remove("pct-1", "pct-2", "is-below-emag");
-  }
+  const calc = rowCalc(product);
+  const setCell = (col, st) => {
+    const td = tr.querySelector(`td[data-col="${col}"]`);
+    if (!td) return;
+    for (const c of ["is-calc-negative", "is-calc-positive", "is-cost-legacy"]) {
+      td.classList.toggle(c, st.cls.split(" ").includes(c));
+    }
+    td.dataset.value = st.value;
+    td.textContent = st.text;
+    if (st.title != null) td.title = st.title;
+  };
+  setCell("pret_cumparare", buyCellState(product, calc, currency));
+  for (const [key, kind] of CALC_COLS) setCell(key, calcCellState(calc, key, kind, currency));
 }
 
 async function loadPricing() {
@@ -1013,7 +1114,7 @@ pricingBody.addEventListener("input", (e) => {
 pricingBody.addEventListener("click", (e) => {
   const pushBtn = e.target.closest("button.btn-push-row");
   if (pushBtn) {
-    pushSingleOffer(pushBtn.dataset.offerId, pushBtn);
+    enqueuePush(pushBtn.dataset.offerId);
     return;
   }
 
@@ -1403,9 +1504,7 @@ const NUMERIC_PRICING_COLS = new Set([
   "pret_maxim",
   "stoc",
   "procentaj_emag",
-  "pret_minim_profit",
-  "profit",
-  "procentaj_profit",
+  ...CALC_COLS.map(([key]) => key),
 ]);
 
 function sortPricingTable() {
@@ -1490,41 +1589,36 @@ function pushOffersContentLabel(offers) {
   return pushContentLabel(union);
 }
 
-/** Trimite pe canal lista de oferte data si reincarca tabelul. */
-async function sendOffers(offers, { startMsg, okMsg, button }) {
-  pushing = true;
-  btnPush.disabled = true;
-  if (button) button.disabled = true;
-  setStatus(startMsg, "loading");
+/** POST catre canal; intoarce { ok, data, status } fara efecte secundare pe UI. */
+async function postOffers(channel, offers) {
+  const res = await fetch(`/api/products/sync-prices?channel=${encodeURIComponent(channel)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ offers }),
+  });
+  let data = null;
   try {
-    const res = await fetch(
-      `/api/products/sync-prices?channel=${encodeURIComponent(currentChannel)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offers }),
-      }
-    );
-    const data = await res.json();
-    if (!res.ok) {
-      showApiError(data, `HTTP ${res.status}`);
-      return;
-    }
-    if (syncInfoBanner) syncInfoBanner.hidden = false;
-    await Promise.all([loadDiff(), loadPricing()]);
-    setStatus(okMsg, "ok");
-  } catch (err) {
-    setStatus(err.message || "Eroare la publicare", "error");
-  } finally {
-    pushing = false;
-    btnPush.disabled = false;
-    if (button && button.isConnected) button.disabled = false;
+    data = await res.json();
+  } catch {
+    /* raspuns fara JSON */
   }
+  return { ok: res.ok, data, status: res.status };
+}
+
+function isPushQueueActive() {
+  for (const job of pushJobs.values()) {
+    if (job.status === "queued" || job.status === "sending") return true;
+  }
+  return false;
+}
+
+function syncBulkPushButton() {
+  btnPush.disabled = bulkPushing || isPushQueueActive();
 }
 
 /** Trimite ofertele care difera fata de ultima preluare; catalogul e sursa prețurilor. */
 async function pushToChannel() {
-  if (pushing) return;
+  if (bulkPushing || isPushQueueActive()) return;
   if (warnIfChannelUnconfigured()) return;
   if (!currentData) {
     setStatus("Încarcă întâi comparația.", "error");
@@ -1542,32 +1636,284 @@ async function pushToChannel() {
   }
 
   const contentLabel = pushOffersContentLabel(offers);
-  await sendOffers(offers, {
-    startMsg: `Se publică ${offers.length} oferte (${contentLabel})…`,
-    okMsg: `Trimise ${offers.length} oferte pe ${currentChannel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
-  });
+  const channel = currentChannel;
+  bulkPushing = true;
+  syncBulkPushButton();
+  setStatus(`Se publică ${offers.length} oferte (${contentLabel})…`, "loading");
+  try {
+    const { ok, data, status } = await postOffers(channel, offers);
+    if (!ok) {
+      showApiError(data, `HTTP ${status}`);
+      return;
+    }
+    if (syncInfoBanner) syncInfoBanner.hidden = false;
+    await Promise.all([loadDiff(), loadPricing()]);
+    setStatus(
+      `Trimise ${offers.length} oferte pe ${channel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+      "ok"
+    );
+  } catch (err) {
+    setStatus(err.message || "Eroare la publicare", "error");
+  } finally {
+    bulkPushing = false;
+    syncBulkPushButton();
+    // Randurile puse in coada cat a rulat publicarea in masa pornesc acum.
+    runPushQueue();
+  }
 }
 
-/** Publică un singur rând din tabel. */
-async function pushSingleOffer(offerId, button) {
-  if (pushing) return;
+/* ---------- coada de publicare pe rand ---------- */
+
+const pushQueuePanel = document.getElementById("push-queue-panel");
+let pushPanelDismissed = false;
+let pushPanelHideTimer = null;
+let pushJobSeq = 0;
+/** Panoul arata doar lotul curent (de la primul click dupa o coada goala) + erorile. */
+let pushBatchStart = 0;
+
+function panelPushJobs() {
+  return [...pushJobs.values()].filter((j) => j.seq >= pushBatchStart || j.status === "error");
+}
+
+function queuePosition(job) {
+  let pos = 0;
+  for (const j of pushJobs.values()) {
+    if (j.status === "queued") pos++;
+    if (j === job) return pos;
+  }
+  return pos;
+}
+
+/** Actualizeaza doar butonul + clasa randului, fara re-randarea tabelului. */
+function updatePushRow(offerId) {
+  const id = String(offerId);
+  const tr = pricingBody.querySelector(`tr[data-offer-id="${CSS.escape(id)}"]`);
+  if (!tr) return;
+  const btn = tr.querySelector("button.btn-push-row");
+  if (btn) btn.outerHTML = pushButtonHtml(id);
+  tr.classList.remove("is-push-queued", "is-push-sending", "is-push-done", "is-push-error");
+  const job = pushJobs.get(id);
+  if (job) tr.classList.add(`is-push-${job.status}`);
+}
+
+/** Pozitiile din coada se schimba cand un job porneste/e anulat. */
+function updateQueuedRows() {
+  for (const job of pushJobs.values()) {
+    if (job.status === "queued") updatePushRow(job.offerId);
+  }
+}
+
+function enqueuePush(offerId) {
+  const id = String(offerId);
+  const existing = pushJobs.get(id);
+  if (existing?.status === "sending") return;
+  if (existing?.status === "queued") {
+    pushJobs.delete(id);
+    updatePushRow(id);
+    updateQueuedRows();
+    renderPushQueue();
+    syncBulkPushButton();
+    return;
+  }
   if (warnIfChannelUnconfigured()) return;
   if (!currentData) {
     setStatus("Încarcă întâi comparația.", "error");
     return;
   }
-  const offer = pushableOffer(offerId);
+  const offer = pushableOffer(id);
   if (!offer) {
-    setStatus(`Nimic de publicat pentru oferta ${offerId}.`, "ok");
+    setStatus(`Nimic de publicat pentru oferta ${id}.`, "ok");
     return;
   }
-  const contentLabel = pushContentLabel(offer);
-  await sendOffers([offer], {
-    startMsg: `Se publică oferta ${offerId} (${contentLabel})…`,
-    okMsg: `Oferta ${offerId} a fost trimisă pe ${currentChannel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
-    button,
+  const product = findProduct(id);
+  if (!isPushQueueActive()) pushBatchStart = pushJobSeq + 1;
+  // Re-inserare ca sa ajunga la coada cozii (Map pastreaza ordinea insertiei).
+  pushJobs.delete(id);
+  pushJobs.set(id, {
+    offerId: id,
+    offer,
+    channel: currentChannel,
+    label: pushContentLabel(offer),
+    name: product?.name || "",
+    status: "queued",
+    seq: ++pushJobSeq,
   });
+  pushPanelDismissed = false;
+  updatePushRow(id);
+  renderPushQueue();
+  syncBulkPushButton();
+  runPushQueue();
 }
+
+async function runPushQueue() {
+  if (pushWorkerRunning || bulkPushing) return;
+  pushWorkerRunning = true;
+  let sentAny = false;
+  try {
+    for (;;) {
+      const job = [...pushJobs.values()].find((j) => j.status === "queued");
+      if (!job) break;
+      job.status = "sending";
+      updatePushRow(job.offerId);
+      updateQueuedRows();
+      renderPushQueue();
+      try {
+        const { ok, data, status } = await postOffers(job.channel, [job.offer]);
+        if (ok) {
+          job.status = "done";
+          sentAny = true;
+        } else {
+          job.status = "error";
+          job.error = (data && data.error) || `HTTP ${status}`;
+        }
+      } catch (err) {
+        job.status = "error";
+        job.error = err.message || "Eroare de rețea";
+      }
+      // Jobul poate fi fost scos intre timp (ex. schimbare canal) — nu-l readuce.
+      if (pushJobs.get(job.offerId) === job) updatePushRow(job.offerId);
+      renderPushQueue();
+    }
+  } finally {
+    pushWorkerRunning = false;
+    syncBulkPushButton();
+  }
+  if (sentAny) {
+    if (syncInfoBanner) syncInfoBanner.hidden = false;
+    await Promise.all([loadDiff(), loadPricing()]);
+  }
+  reportPushQueueResult();
+}
+
+function reportPushQueueResult() {
+  const jobs = panelPushJobs();
+  const done = jobs.filter((j) => j.status === "done").length;
+  const failed = jobs.filter((j) => j.status === "error");
+  if (!done && !failed.length) return;
+  if (failed.length) {
+    setStatus(
+      `Trimise ${done}/${done + failed.length} oferte · ${failed.length} cu eroare (${failed[0].error}).`,
+      "error"
+    );
+  } else {
+    setStatus(
+      `Trimise ${done} oferte pe ${jobs[0].channel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+      "ok"
+    );
+  }
+}
+
+/** Sterge starile finale (dupa preluare / schimbare canal). */
+function clearFinishedPushJobs(onlyId) {
+  for (const [id, job] of [...pushJobs]) {
+    if (onlyId != null && id !== String(onlyId)) continue;
+    if (job.status === "done" || job.status === "error") {
+      pushJobs.delete(id);
+      updatePushRow(id);
+    }
+  }
+  renderPushQueue();
+}
+
+const PUSH_STATUS_ICONS = { queued: "⏳", sending: "", done: "✓", error: "!" };
+const PUSH_STATUS_TEXT = {
+  queued: "în coadă",
+  sending: "se trimite…",
+  done: "trimis",
+  error: "eroare",
+};
+
+function renderPushQueue() {
+  if (!pushQueuePanel) return;
+  clearTimeout(pushPanelHideTimer);
+  const jobs = panelPushJobs();
+  if (!jobs.length || pushPanelDismissed) {
+    pushQueuePanel.hidden = true;
+    return;
+  }
+  const finished = jobs.filter((j) => j.status === "done" || j.status === "error").length;
+  const failed = jobs.filter((j) => j.status === "error").length;
+  const active = finished < jobs.length;
+  const pct = Math.round((finished / jobs.length) * 100);
+  const channel = jobs[jobs.length - 1].channel;
+  const title = active
+    ? `Publicare pe ${channel} · ${finished}/${jobs.length}`
+    : failed
+    ? `Finalizat · ${failed} cu eroare`
+    : `Trimise ${jobs.length} oferte pe ${channel}`;
+
+  const items = jobs
+    .map((j) => {
+      const action =
+        j.status === "queued"
+          ? `<button type="button" class="push-queue-action" data-action="cancel" data-offer-id="${escapeHtml(j.offerId)}">Anulează</button>`
+          : j.status === "error"
+          ? `<button type="button" class="push-queue-action" data-action="retry" data-offer-id="${escapeHtml(j.offerId)}">Reîncearcă</button>`
+          : "";
+      const detail = j.status === "error" ? j.error : j.label;
+      return `<li class="push-queue-item is-${j.status}">
+        <span class="push-queue-icon" aria-hidden="true">${PUSH_STATUS_ICONS[j.status]}</span>
+        <span class="push-queue-text">
+          <span class="push-queue-name" title="${escapeHtml(j.name || j.offerId)}">${escapeHtml(j.name || `Oferta ${j.offerId}`)}</span>
+          <span class="push-queue-detail">${escapeHtml(j.offerId)} · ${escapeHtml(PUSH_STATUS_TEXT[j.status])} · ${escapeHtml(detail)}</span>
+        </span>
+        ${action}
+      </li>`;
+    })
+    .join("");
+
+  pushQueuePanel.innerHTML = `
+    <div class="push-queue-head">
+      <strong>${escapeHtml(title)}</strong>
+      <div class="push-queue-head-actions">
+        ${finished ? `<button type="button" class="push-queue-action" data-action="clear">Golește finalizate</button>` : ""}
+        <button type="button" class="push-queue-close" data-action="close" aria-label="Ascunde">×</button>
+      </div>
+    </div>
+    <div class="push-queue-progress${failed ? " has-error" : ""}"><span style="width:${pct}%"></span></div>
+    <ul class="push-queue-list">${items}</ul>
+    ${active ? "" : `<p class="push-queue-hint">Confirmă cu „Preia de la marketplace” peste 5-10 min.</p>`}`;
+  pushQueuePanel.hidden = false;
+
+  if (!active && !failed) {
+    pushPanelHideTimer = setTimeout(() => {
+      pushQueuePanel.hidden = true;
+    }, 6000);
+  }
+}
+
+pushQueuePanel?.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const { action, offerId } = btn.dataset;
+  if (action === "close") {
+    pushPanelDismissed = true;
+    renderPushQueue();
+  } else if (action === "clear") {
+    clearFinishedPushJobs();
+  } else if (action === "cancel" || action === "retry") {
+    enqueuePush(offerId);
+  }
+});
+
+// Pastreaza panoul vizibil cat timp mouse-ul e pe el (nu dispare in timp ce citesti).
+pushQueuePanel?.addEventListener("mouseenter", () => clearTimeout(pushPanelHideTimer));
+pushQueuePanel?.addEventListener("mouseleave", () => {
+  if (!pushQueuePanel.hidden && !isPushQueueActive()) {
+    const hasErrors = [...pushJobs.values()].some((j) => j.status === "error");
+    if (!hasErrors) {
+      pushPanelHideTimer = setTimeout(() => {
+        pushQueuePanel.hidden = true;
+      }, 3000);
+    }
+  }
+});
+
+window.addEventListener("beforeunload", (e) => {
+  if (!isPushQueueActive()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 
 /** Preia de pe canal un singur rand din tabel. */
 async function pullSingleOffer(offerId, button) {
@@ -1591,6 +1937,7 @@ async function pullSingleOffer(offerId, button) {
       showApiError(data, `HTTP ${res.status}`);
       return;
     }
+    clearFinishedPushJobs(offerId);
     await Promise.all([loadDiff(), loadPricing()]);
     setStatus(`Oferta ${offerId} a fost preluată de pe ${currentChannel}.`, "ok");
   } catch (err) {
@@ -1690,6 +2037,7 @@ channelSelect.value = currentChannel;
 syncCommissionControls();
 channelSelect.addEventListener("change", async () => {
   currentChannel = channelSelect.value || "emag";
+  clearFinishedPushJobs();
   syncCommissionControls();
   summaryFilter = null;
   try {

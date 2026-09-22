@@ -1274,6 +1274,13 @@ async function getChannelViewRows(channel) {
       product_id: local ? local.product_id : null,
       sale_price: local ? local.sale_price : null,
       pret_cumparare: local ? local.pret_cumparare : null,
+      // Intrarile calculatorului: costul final si profitul Aer/Tren se calculeaza in pagina.
+      pret_cumparare_usd: local ? local.pret_cumparare_usd : null,
+      moneda_fabrica: local ? local.moneda_fabrica : null,
+      greutate: local ? local.greutate : null,
+      latime: local ? local.latime : null,
+      lungime: local ? local.lungime : null,
+      inaltime: local ? local.inaltime : null,
       transport_override: local ? local.transport_override : null,
       pret_minim_override: local ? local.pret_minim_override : null,
       procentaj_emag: local ? local.procentaj_emag : null,
