@@ -8,7 +8,6 @@ const toolbarEl = document.querySelector(".review-toolbar");
 const reloadBtn = document.getElementById("btn-reload");
 const pageEl = document.getElementById("review-page");
 const loginEl = document.getElementById("review-login");
-const loginForm = document.getElementById("review-login-form");
 const passwordEl = document.getElementById("review-password");
 const loginErrorEl = document.getElementById("review-login-error");
 const logoutBtn = document.getElementById("btn-review-logout");
@@ -45,11 +44,24 @@ function showPage() {
   pageEl.hidden = false;
 }
 
+function takeLoginError() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("login") !== "eroare") return "";
+  params.delete("login");
+  const query = params.toString();
+  history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+  return "Parola nu este corectă";
+}
+
+let pendingLoginError = takeLoginError();
+
 function showLogin(message = "") {
+  const text = message || pendingLoginError;
+  pendingLoginError = "";
   pageEl.hidden = true;
   loginEl.hidden = false;
-  loginErrorEl.textContent = message;
-  loginErrorEl.hidden = !message;
+  loginErrorEl.textContent = text;
+  loginErrorEl.hidden = !text;
   passwordEl.focus();
 }
 
@@ -300,26 +312,6 @@ async function load() {
     reloadBtn.disabled = false;
   }
 }
-
-loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  loginErrorEl.hidden = true;
-  const response = await fetch("/api/review-calls/auth", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: passwordEl.value }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    showLogin(data.error || "Parola nu este corectă");
-    return;
-  }
-  if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
-  passwordEl.value = "";
-  showPage();
-  load();
-});
 
 logoutBtn.addEventListener("click", async () => {
   forgetAccess();

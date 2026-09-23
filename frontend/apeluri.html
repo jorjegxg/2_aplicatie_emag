@@ -11,9 +11,13 @@
   </head>
   <body>
     <main id="review-login" class="login-shell">
-      <form id="review-login-form" class="login-card" autocomplete="on">
+      <form id="review-login-form" class="login-card" method="post" action="/api/review-calls/auth" autocomplete="on">
         <h1 class="login-title">Apeluri review</h1>
-        <p class="login-sub">Introdu parola o dată. Accesul rămâne reținut pe acest browser.</p>
+        <p class="login-sub">Introdu parola. Browserul o poate reține, ca să nu o mai scrii data viitoare.</p>
+        <label class="field login-field">
+          <span>Utilizator</span>
+          <input id="review-username" name="username" type="text" autocomplete="username" value="apeluri" autocapitalize="none" autocorrect="off" spellcheck="false" required />
+        </label>
         <label class="field login-field">
           <span>Parolă</span>
           <input id="review-password" name="password" type="password" required autocomplete="current-password" />

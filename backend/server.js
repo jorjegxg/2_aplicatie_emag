@@ -100,6 +100,7 @@ const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
 app.use("/api/products/export", express.json({ limit: "25mb" }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Parola de acces la aplicație (APP_PASSWORD). Cookie httpOnly, reținut ~1 an.
 app.get("/api/auth/status", authStatusHandler);
@@ -416,25 +417,40 @@ function reviewSessionValid(req) {
   return reviewTokenValid(reviewBearerToken(req)) || reviewTokenValid(reviewCookieToken(req));
 }
 
+function reviewRequestIsSecure(req) {
+  if (req.secure) return true;
+  const proto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return proto === "https";
+}
+
+function reviewCookieHeader(req, token = "") {
+  const maxAge = token ? REVIEW_SESSION_SECONDS : 0;
+  return `${REVIEW_COOKIE}=${token ? encodeURIComponent(token) : ""}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${reviewRequestIsSecure(req) ? "; Secure" : ""}`;
+}
+
 app.post("/api/review-calls/auth", (req, res) => {
   const provided = String(req.body?.password || "");
   const expected = reviewPassword();
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   const valid =
-    a.length === b.length && crypto.timingSafeEqual(a, b) && expected.length > 0;
-  if (!valid) return res.status(401).json({ error: "Parolă greșită" });
+    a.length === b.length && expected.length > 0 && crypto.timingSafeEqual(a, b);
+  const formPost = req.is("application/x-www-form-urlencoded");
+  if (!valid) {
+    if (formPost) return res.redirect(303, "/apeluri.html?login=eroare");
+    return res.status(401).json({ error: "Parolă greșită" });
+  }
   const token = reviewSessionToken();
-  const secure = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
-  res.setHeader(
-    "Set-Cookie",
-    `${REVIEW_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${REVIEW_SESSION_SECONDS}${secure ? "; Secure" : ""}`
-  );
+  res.setHeader("Set-Cookie", reviewCookieHeader(req, token));
+  if (formPost) return res.redirect(303, "/apeluri.html");
   return res.json({ ok: true, token });
 });
 
-app.post("/api/review-calls/logout", (_req, res) => {
-  res.setHeader("Set-Cookie", `${REVIEW_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+app.post("/api/review-calls/logout", (req, res) => {
+  res.setHeader("Set-Cookie", reviewCookieHeader(req));
   return res.json({ ok: true });
 });
 
