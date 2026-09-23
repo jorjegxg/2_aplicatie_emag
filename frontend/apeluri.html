@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apeluri review</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <script src="theme.js"></script>
+  </head>
+  <body>
+    <main id="review-login" class="login-shell">
+      <form id="review-login-form" class="login-card" autocomplete="off">
+        <h1 class="login-title">Apeluri review</h1>
+        <p class="login-sub">Introdu parola pentru acces la numerele clienților.</p>
+        <label class="field login-field">
+          <span>Parolă</span>
+          <input id="review-password" type="password" required autocomplete="current-password" />
+        </label>
+        <p id="review-login-error" class="login-error" hidden></p>
+        <button type="submit" class="btn login-submit">Intră</button>
+      </form>
+    </main>
+    <div class="page" id="review-page" hidden>
+      <div class="top-actions">
+        <button type="button" id="btn-review-logout" class="top-action-btn" title="Ieșire" aria-label="Ieșire">↪</button>
+        <button type="button" id="btn-theme" class="theme-toggle" aria-pressed="false" title="Comută tema">
+          <span class="theme-toggle-label">Light</span>
+        </button>
+      </div>
+      <header class="header">
+        <h1>Apeluri review</h1>
+        <p class="subtitle">Sună clienții și trimite-le rapid linkul de review eMAG</p>
+      </header>
+
+      <section class="toolbar review-toolbar">
+        <div class="toolbar-fields">
+          <label class="field">
+            <span>Caută client, telefon, produs sau comandă</span>
+            <input id="review-search" type="search" placeholder="Ex. 0744…, 12345…" />
+          </label>
+          <label class="field">
+            <span>Arată</span>
+            <select id="review-filter">
+              <option value="all">Toate comenzile</option>
+              <option value="uncalled">Doar nesunați</option>
+              <option value="called">Doar sunați</option>
+              <option value="romania">Doar România</option>
+              <option value="returned">Doar returnate</option>
+            </select>
+          </label>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" id="btn-reload" class="btn btn-with-icon">Reîncarcă</button>
+          <span id="review-summary" class="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <p id="review-error" class="status is-error" hidden></p>
+      <div id="review-list" class="review-list">
+        <div class="empty-row">Se încarcă comenzile…</div>
+      </div>
+    </div>
+    <script src="apeluri.js"></script>
+  </body>
+</html>

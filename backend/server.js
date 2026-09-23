@@ -74,6 +74,7 @@ const {
   listStockMovements,
 } = require("./stock-movements");
 const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
+const { query } = require("./pg");
 const {
   initPush,
   getPublicKey,
@@ -234,6 +235,291 @@ app.get("/public/product-image/:storedName", async (req, res) => {
       logCaught("product-images", err);
     }
     return res.status(404).end();
+  }
+});
+
+// Panoul de apeluri este intenționat public: operatorul îl poate deschide fără parolă.
+function firstValue(...values) {
+  for (const value of values) {
+    if (value == null) continue;
+    if (typeof value === "object") {
+      const nested = value.name || value.code || value.value;
+      if (nested != null && String(nested).trim() !== "") return nested;
+      continue;
+    }
+    if (String(value).trim() !== "") return value;
+  }
+  return null;
+}
+
+function findNestedValue(value, keys, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 4) return null;
+  for (const key of keys) {
+    if (value[key] != null && String(value[key]).trim() !== "") return value[key];
+  }
+  for (const child of Object.values(value)) {
+    const found = findNestedValue(child, keys, depth + 1);
+    if (found != null) return found;
+  }
+  return null;
+}
+
+function extractCustomerContact(raw) {
+  const customer = Array.isArray(raw?.customer) ? raw.customer[0] : raw?.customer;
+  const delivery = Array.isArray(raw?.delivery) ? raw.delivery[0] : raw?.delivery;
+  const address = customer?.address || customer?.shipping_address || delivery?.address || delivery;
+  const phoneCandidates = [
+    customer?.phone_1,
+    customer?.phone,
+    customer?.shipping_phone,
+    customer?.billing_phone,
+    customer?.phone_2,
+    customer?.phone_3,
+    customer?.telephone,
+    customer?.mobile,
+    customer?.phone_number,
+    address?.phone,
+    address?.telephone,
+    findNestedValue(raw, ["phone", "telephone", "mobile", "phone_number"])
+  ];
+  const phones = [];
+  const seenPhones = new Set();
+  for (const candidate of phoneCandidates) {
+    const value = firstValue(candidate);
+    if (!value) continue;
+    const display = String(value).trim();
+    const key = display.replace(/[^\d+]/g, "");
+    if (!key || seenPhones.has(key)) continue;
+    seenPhones.add(key);
+    phones.push(display);
+  }
+  const phone = phones[0] || null;
+  const countryCode = firstValue(
+    address?.country_code,
+    address?.countryCode,
+    address?.country?.code,
+    customer?.country_code,
+    customer?.countryCode
+  );
+  const country = firstValue(
+    address?.country,
+    address?.country_name,
+    address?.countryName,
+    customer?.country,
+    customer?.country_name,
+    findNestedValue(raw, ["country_code", "countryCode", "country_name", "country"])
+  );
+  const city = firstValue(address?.city, address?.locality, address?.town);
+  const normalizedCountry = String(countryCode || country || "").trim().toLowerCase();
+  const isRomania =
+    ["ro", "rou", "romania", "românia"].includes(normalizedCountry) ||
+    /român|roman/i.test(normalizedCountry);
+  return {
+    phone,
+    phones,
+    country: country ? String(country).trim() : countryCode ? String(countryCode).trim() : null,
+    country_code: countryCode ? String(countryCode).trim() : null,
+    city: city ? String(city).trim() : null,
+    is_romania: isRomania,
+  };
+}
+
+function emagSlug(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 180);
+}
+
+function reviewUrlFor(partNumber, productName) {
+  const value = String(partNumber || "").trim();
+  if (!value) return null;
+  const slug = emagSlug(productName) || "produs";
+  const path = `${slug}/pd/${encodeURIComponent(value)}`;
+  return `https://www.emag.ro/${path}/?path=${path}#reviews-section`;
+}
+
+const REVIEW_COOKIE = "review_calls_access";
+
+function reviewPassword() {
+  return String(process.env.REVIEW_CALLS_PASSWORD || "").trim();
+}
+
+function reviewSessionToken() {
+  const payload = Buffer.from(
+    JSON.stringify({ exp: Date.now() + 30 * 24 * 60 * 60 * 1000 }),
+    "utf8"
+  ).toString("base64url");
+  const secret = String(
+    process.env.APP_SESSION_SECRET || process.env.CREDENTIALS_ENCRYPTION_KEY || "emag-review-session"
+  );
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function reviewSessionValid(req) {
+  const raw = String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${REVIEW_COOKIE}=`));
+  const token = raw ? decodeURIComponent(raw.slice(REVIEW_COOKIE.length + 1)) : "";
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return false;
+  const secret = String(
+    process.env.APP_SESSION_SECRET || process.env.CREDENTIALS_ENCRYPTION_KEY || "emag-review-session"
+  );
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  try {
+    return Number(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")).exp) > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+app.post("/api/review-calls/auth", (req, res) => {
+  const provided = String(req.body?.password || "");
+  const expected = reviewPassword();
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  const valid =
+    a.length === b.length && crypto.timingSafeEqual(a, b) && expected.length > 0;
+  if (!valid) return res.status(401).json({ error: "Parolă greșită" });
+  const secure = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+  res.setHeader(
+    "Set-Cookie",
+    `${REVIEW_COOKIE}=${encodeURIComponent(reviewSessionToken())}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure ? "; Secure" : ""}`
+  );
+  return res.json({ ok: true });
+});
+
+app.post("/api/review-calls/logout", (_req, res) => {
+  res.setHeader("Set-Cookie", `${REVIEW_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  return res.json({ ok: true });
+});
+
+function requireReviewAuth(req, res, next) {
+  if (reviewSessionValid(req)) return next();
+  return res.status(401).json({ error: "Autentificare necesară", code: "REVIEW_AUTH_REQUIRED" });
+}
+
+app.get("/api/review-calls", requireReviewAuth, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 5000, 1), 10000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const { rows: orders } = await query(
+      `SELECT order_id, status, order_date, customer_name, currency, products_total, raw,
+              EXISTS (
+                SELECT 1 FROM review_call_state s
+                WHERE s.order_id = e.order_id AND s.called = TRUE
+              ) AS called
+       FROM emag_orders e
+       ORDER BY order_date DESC NULLS LAST, order_id DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    const orderIds = orders.map((order) => order.order_id);
+    const { rows: lines } = orderIds.length
+      ? await query(
+          `SELECT l.order_id, l.line_id, l.catalog_product_id, l.part_number, l.name,
+                  l.quantity, l.sale_price, l.status, l.currency,
+                  COALESCE(c.part_number_key, c.part_number, l.part_number) AS review_part_number,
+                  COALESCE(
+                    (SELECT pi.source_url FROM product_images pi
+                     WHERE pi.product_id = l.catalog_product_id
+                       AND pi.platform IN ('ro', 'en')
+                     ORDER BY CASE WHEN pi.platform = 'ro' THEN 0 ELSE 1 END,
+                              pi.sort_order, pi.id
+                     LIMIT 1),
+                    ''
+                  ) AS image_url,
+                  (SELECT pi.stored_name FROM product_images pi
+                   WHERE pi.product_id = l.catalog_product_id
+                   ORDER BY CASE WHEN pi.platform = 'ro' THEN 0 ELSE 1 END,
+                            pi.sort_order, pi.id
+                   LIMIT 1) AS image_stored_name
+           FROM order_line_history l
+           LEFT JOIN catalog_products c ON c.id = l.catalog_product_id
+           WHERE l.order_id = ANY($1::bigint[])
+           ORDER BY l.order_id DESC, l.line_id`,
+          [orderIds]
+        )
+      : { rows: [] };
+    const linesByOrder = new Map();
+    for (const line of lines) {
+      const key = String(line.order_id);
+      if (!linesByOrder.has(key)) linesByOrder.set(key, []);
+      linesByOrder.get(key).push({
+        line_id: line.line_id,
+        catalog_product_id: line.catalog_product_id,
+        part_number: line.part_number,
+        review_part_number: line.review_part_number || line.part_number,
+        name: line.name,
+        quantity: line.quantity,
+        sale_price: line.sale_price,
+        status: line.status,
+        currency: line.currency || "RON",
+        image_url: line.image_url || (line.image_stored_name
+          ? (() => {
+              try {
+                return absoluteUrl(line.image_stored_name);
+              } catch {
+                return null;
+              }
+            })()
+          : null),
+        review_url: reviewUrlFor(
+          line.review_part_number || line.part_number,
+          line.name
+        ),
+      });
+    }
+    return res.json({
+      orders: orders.map((order) => ({
+        id: order.order_id,
+        status: order.status,
+        date: order.order_date,
+        customer_name: order.customer_name,
+        currency: order.currency || "RON",
+        products_total: order.products_total,
+        called: Boolean(order.called),
+        contact: extractCustomerContact(order.raw || {}),
+        products: linesByOrder.get(String(order.order_id)) || [],
+      })),
+      count: orders.length,
+      hasMore: orders.length === limit,
+      offset,
+    });
+  } catch (err) {
+    console.error("[review-calls:list]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la încărcarea apelurilor" });
+  }
+});
+
+app.patch("/api/review-calls/:orderId", requireReviewAuth, async (req, res) => {
+  try {
+    const orderId = String(req.params.orderId || "").trim();
+    if (!/^\d+$/.test(orderId)) return res.status(400).json({ error: "ID comandă invalid" });
+    const called = Boolean(req.body?.called);
+    const { rows } = await query(
+      `INSERT INTO review_call_state (order_id, called, called_at, updated_at)
+       VALUES ($1, $2, CASE WHEN $2 THEN now() ELSE NULL END, now())
+       ON CONFLICT (order_id) DO UPDATE SET
+         called = EXCLUDED.called,
+         called_at = EXCLUDED.called_at,
+         updated_at = now()
+       RETURNING order_id, called, called_at`,
+      [orderId, called]
+    );
+    return res.json({ ok: true, ...rows[0] });
+  } catch (err) {
+    console.error("[review-calls:update]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la salvarea bifei" });
   }
 });
 

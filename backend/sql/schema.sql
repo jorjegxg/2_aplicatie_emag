@@ -279,6 +279,17 @@ CREATE TABLE IF NOT EXISTS emag_orders (
 CREATE INDEX IF NOT EXISTS idx_emag_orders_date
   ON emag_orders (order_date DESC);
 
+-- Starea operatorului pentru apelurile de review.
+CREATE TABLE IF NOT EXISTS review_call_state (
+  order_id BIGINT PRIMARY KEY REFERENCES emag_orders(order_id) ON DELETE CASCADE,
+  called BOOLEAN NOT NULL DEFAULT FALSE,
+  called_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_call_state_called
+  ON review_call_state (called, updated_at DESC);
+
 -- Subscription-uri Web Push (bara de notificări pe telefon / desktop).
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   endpoint TEXT PRIMARY KEY,

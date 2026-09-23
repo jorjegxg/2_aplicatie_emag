@@ -3333,6 +3333,11 @@ html.auth-pending body {
   box-sizing: border-box;
 }
 
+.login-shell[hidden],
+.page[hidden] {
+  display: none !important;
+}
+
 .login-card {
   display: flex;
   flex-direction: column;
@@ -3619,4 +3624,144 @@ td .input-text-field {
 
 .btn-col-preset-delete {
   padding-inline: 0.6rem;
+}
+
+/* Panoul de apeluri review */
+.review-toolbar {
+  align-items: end;
+}
+
+.review-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.review-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  box-shadow: 0 2px 5px var(--shadow-1);
+}
+
+.review-card.is-called {
+  border-left-color: var(--ok);
+  opacity: 0.72;
+}
+
+.review-card-head,
+.review-customer,
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.review-card-head {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-card-head time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.review-called {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.review-order-id {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.review-customer {
+  padding: 0.75rem 0;
+}
+
+.review-phone {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.review-phones {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.review-phone-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.review-country {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.review-products {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.review-product {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.65rem;
+  background: var(--surface-alt);
+  border-radius: 6px;
+}
+
+.review-product-image {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex: 0 0 72px;
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.review-product-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.review-product-info {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.review-price {
+  font-weight: 700;
+  color: var(--emag-price);
+}
+
+.btn-small {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 700px) {
+  .review-card-head time,
+  .review-country {
+    margin-left: 0;
+  }
+
+  .review-product {
+    align-items: flex-start;
+  }
 }
