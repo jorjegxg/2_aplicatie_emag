@@ -3697,18 +3697,26 @@ td .input-text-field {
 
 .review-filters-size {
   appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   width: 100%;
-  min-height: 2.4rem;
-  padding: 0.4rem 0.75rem;
-  border: 1px solid var(--border);
+  min-height: 2.85rem;
+  padding: 0.45rem 0.75rem;
+  border: 2px solid var(--accent);
   border-radius: 10px;
-  background: var(--surface);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--ink);
   font: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: left;
   cursor: pointer;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.review-filters-size:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
 }
 
 .review-filters-size:focus-visible {
@@ -3716,14 +3724,58 @@ td .input-text-field {
   outline-offset: 2px;
 }
 
-.review-toolbar.is-filters-compact .review-filters {
-  display: none;
+.review-filters-size-kicker {
+  flex: 0 0 auto;
+  padding: 0.16rem 0.48rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
-.review-toolbar.is-filters-compact .review-filters-size {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+.review-filters-size-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  line-height: 1.2;
+}
+
+.review-filters-size-chevron {
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.15rem;
+  border-right: 2.5px solid var(--accent);
+  border-bottom: 2.5px solid var(--accent);
+  transform: rotate(45deg) translateY(-0.12rem);
+}
+
+.review-toolbar:not(.is-filters-compact) .review-filters-size {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.review-toolbar:not(.is-filters-compact) .review-filters-size:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.review-toolbar:not(.is-filters-compact) .review-filters-size-kicker {
+  background: color-mix(in srgb, var(--on-accent) 22%, transparent);
+  color: var(--on-accent);
+}
+
+.review-toolbar:not(.is-filters-compact) .review-filters-size-chevron {
+  border-color: var(--on-accent);
+  transform: rotate(225deg) translateY(-0.12rem);
+}
+
+.review-toolbar.is-filters-compact .review-filters {
+  display: none;
 }
 
 .review-filters {

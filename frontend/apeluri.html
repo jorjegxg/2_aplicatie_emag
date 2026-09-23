@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Apeluri review</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260923-1" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <script src="theme.js"></script>
@@ -38,12 +38,16 @@
         <p class="subtitle">Sună clienții și trimite-le rapid linkul de review eMAG</p>
       </header>
 
-      <section class="toolbar review-toolbar">
+      <section class="toolbar review-toolbar is-filters-compact">
         <label class="review-search">
           <span class="visually-hidden">Caută client, telefon, produs sau comandă</span>
           <input id="review-search" type="search" enterkeyhint="search" placeholder="Caută client, telefon, produs sau comandă" />
         </label>
-        <button type="button" id="btn-review-filters-size" class="review-filters-size" aria-expanded="true" aria-controls="review-filters">Micșorează filtrele</button>
+        <button type="button" id="btn-review-filters-size" class="review-filters-size" aria-expanded="false" aria-controls="review-filters" aria-label="Deschide filtrele. Acum: Fără returnate, BG și HU">
+          <span class="review-filters-size-kicker">Filtre</span>
+          <span class="review-filters-size-label" id="review-filters-size-label">Fără returnate, BG și HU</span>
+          <span class="review-filters-size-chevron" aria-hidden="true"></span>
+        </button>
         <div class="review-filters" id="review-filters" role="group" aria-label="Filtru comenzi">
           <button type="button" class="review-chip is-active" data-filter="all" aria-pressed="true">Fără returnate, BG și HU</button>
           <button type="button" class="review-chip" data-filter="uncalled" aria-pressed="false">Nesunați, fără BG, HU, retur</button>
@@ -64,6 +68,6 @@
         <div class="empty-row">Se încarcă comenzile…</div>
       </div>
     </div>
-    <script src="apeluri.js?v=2"></script>
+    <script src="apeluri.js?v=3"></script>
   </body>
 </html>

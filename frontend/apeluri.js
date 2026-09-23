@@ -4,6 +4,7 @@ const errorEl = document.getElementById("review-error");
 const searchEl = document.getElementById("review-search");
 const filtersEl = document.querySelector(".review-filters");
 const filtersSizeBtn = document.getElementById("btn-review-filters-size");
+const filtersSizeLabel = document.getElementById("review-filters-size-label");
 const toolbarEl = document.querySelector(".review-toolbar");
 const reloadBtn = document.getElementById("btn-reload");
 const pageEl = document.getElementById("review-page");
@@ -26,7 +27,7 @@ const FILTER_LABELS = {
 
 let orders = [];
 let activeFilter = "all";
-let filtersCompact = localStorage.getItem(FILTERS_COMPACT_KEY) === "1";
+let filtersCompact = localStorage.getItem(FILTERS_COMPACT_KEY) !== "0";
 
 function authHeaders(extra = {}) {
   const headers = { ...extra };
@@ -327,10 +328,10 @@ function syncFiltersSize() {
   toolbarEl.classList.toggle("is-filters-compact", filtersCompact);
   filtersSizeBtn.setAttribute("aria-expanded", filtersCompact ? "false" : "true");
   const label = FILTER_LABELS[activeFilter] || "Filtre";
-  filtersSizeBtn.textContent = filtersCompact ? `${label} ▾` : "Micșorează filtrele";
+  filtersSizeLabel.textContent = filtersCompact ? label : "Închide filtrele";
   filtersSizeBtn.setAttribute(
     "aria-label",
-    filtersCompact ? `Deschide filtrele. Acum: ${label}` : "Micșorează filtrele"
+    filtersCompact ? `Deschide filtrele. Acum: ${label}` : "Închide filtrele"
   );
 }
 
