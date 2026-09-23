@@ -4,36 +4,11 @@ const {
   resolveEmagAuth,
   emagOrderRead,
 } = require("../emag-client");
-const { upsertOrderLines } = require("../db");
+const { applyEmagOrder } = require("../stock-movements");
 
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const EMPTY_STREAK_STOP = 6;
 const FLOOR_DATE = new Date("2015-01-01T00:00:00");
-
-function linesFromOrders(orders) {
-  const lines = [];
-  for (const order of orders) {
-    const orderId = order?.id;
-    const orderDate = order?.date || order?.created || null;
-    const products = Array.isArray(order?.products) ? order.products : [];
-    for (const p of products) {
-      lines.push({
-        line_id: p.id,
-        order_id: orderId,
-        channel: order?.channel || "emag",
-        product_id: p.product_id ?? null,
-        part_number: p.part_number || "",
-        name: p.name || p.product_name || "",
-        quantity: p.quantity ?? null,
-        sale_price: p.sale_price ?? null,
-        status: p.status ?? null,
-        currency: p.currency || "RON",
-        order_date: orderDate,
-      });
-    }
-  }
-  return lines;
-}
 
 async function fetchWindowPage(auth, page, createdAfter, createdBefore) {
   const { response, json, text } = await emagOrderRead(auth, {
@@ -64,8 +39,11 @@ async function syncWindow(auth, windowStart, windowEnd) {
 
   for (;;) {
     const orders = await fetchWindowPage(auth, page, createdAfter, createdBefore);
-    const lines = linesFromOrders(orders);
-    const upserted = await upsertOrderLines(lines);
+    let upserted = 0;
+    for (const order of orders) {
+      await applyEmagOrder(order, { via: "sync", notify: false, adjustStock: false });
+      upserted += Array.isArray(order?.products) ? order.products.length : 0;
+    }
 
     windowOrders += orders.length;
     windowLines += upserted;

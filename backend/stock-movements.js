@@ -200,7 +200,7 @@ async function insertMovement(
  * Salveaza comanda (antet + linii cu pret) si ajusteaza stocul local:
  * linie activa → scade o singura data; comanda anulata / linie scoasa → restituie.
  */
-async function applyEmagOrder(order, { via = "webhook" } = {}) {
+async function applyEmagOrder(order, { via = "webhook", notify = true, adjustStock = true } = {}) {
   await ensureSchema();
   if (!order || order.id == null) throw new Error("Comanda fara id");
   const products = Array.isArray(order.products) ? order.products : [];
@@ -226,6 +226,7 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
       const qty = toNum(p.quantity) || 0;
       const productId = await findCatalogProduct(client, p);
       await upsertLine(client, order, p, productId);
+      if (!adjustStock) continue;
 
       const lineActive = Number(order.status) !== ORDER_CANCELED && Number(p.status) === LINE_ACTIVE;
 
@@ -289,7 +290,7 @@ async function applyEmagOrder(order, { via = "webhook" } = {}) {
 
   scheduleStockPushFor(summary, "emag");
 
-  if (isNewOrder) {
+  if (notify && isNewOrder) {
     try {
       const { notifyNewOrder } = require("./push-notifications");
       void notifyNewOrder({
