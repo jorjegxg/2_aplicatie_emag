@@ -1284,6 +1284,30 @@ td.col-procentaj-emag .btn-reset-emag-pct:hover {
   color: var(--danger);
 }
 
+td.col-procentaj-emag .btn-fetch-commission-row {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+td.col-procentaj-emag .btn-fetch-commission-row:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--row-alt);
+}
+
+td.col-procentaj-emag .btn-fetch-commission-row:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 td.col-procentaj-emag.is-emag-pct-override {
   background: var(--tint-orange);
 }

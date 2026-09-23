@@ -10,7 +10,6 @@ const DIFF_CACHE_KEY = "sync-diff-cache-v1";
 
 const channelSelect = document.getElementById("channel-select");
 const btnPull = document.getElementById("btn-pull");
-const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("sync-summary");
 const filterStatusEl = document.getElementById("filter-status");
@@ -21,7 +20,8 @@ let currentChannel = localStorage.getItem(CHANNEL_KEY) || "emag";
 let currentData = null;
 let loading = false;
 let pulling = false;
-let fetchingCommission = false;
+/** Id-urile ofertelor pentru care se preia comisionul acum. */
+const fetchingCommission = new Set();
 /** null | matched | diff | only_remote | only_local | unlinked */
 let summaryFilter = null;
 
@@ -303,58 +303,6 @@ async function pullFromChannel() {
   } finally {
     pulling = false;
     btnPull.disabled = false;
-  }
-}
-
-/** Preia comisionul eMAG pentru toate produsele din DB si il salveaza pe catalog. */
-async function fetchCommission() {
-  if (fetchingCommission) return;
-  if (warnIfChannelUnconfigured()) return;
-  fetchingCommission = true;
-  btnFetchCommission.disabled = true;
-  setStatus("Se încarcă produsele din DB…", "loading");
-  try {
-    const catalogRes = await fetch(`/api/catalog?channel=${encodeURIComponent(currentChannel)}`);
-    const catalog = await catalogRes.json();
-    if (!catalogRes.ok) throw new Error(catalog.error || `HTTP ${catalogRes.status}`);
-
-    const items = (Array.isArray(catalog.products) ? catalog.products : [])
-      .map((p) => ({ id: Number(p.id), sale_price: Number(p.sale_price) }))
-      .filter((item) => Number.isFinite(item.id));
-
-    if (!items.length) {
-      setStatus("Niciun produs în DB.", "error");
-      return;
-    }
-
-    setStatus(`Preiau comision eMAG (${items.length} produse)…`, "loading");
-    const res = await fetch(
-      `/api/products/fetch-commission?channel=${encodeURIComponent(currentChannel)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      }
-    );
-    const data = await res.json();
-    if (!res.ok) {
-      showApiError(data, `HTTP ${res.status}`);
-      return;
-    }
-
-    const errCount = data.errorCount || 0;
-    setStatus(
-      errCount
-        ? `Comision preluat: ${data.count}/${items.length} (${errCount} erori).`
-        : `Comision preluat pentru ${data.count} produse.`,
-      errCount ? "error" : "ok"
-    );
-    await Promise.all([loadDiff(), loadPricing()]);
-  } catch (err) {
-    setStatus(err.message || "Eroare la preluare comision", "error");
-  } finally {
-    fetchingCommission = false;
-    btnFetchCommission.disabled = false;
   }
 }
 
@@ -837,6 +785,14 @@ function srcClass(col) {
   return SRC_CELL_CLASS[columns.sources[col]] || "";
 }
 
+/** Buton pe rand: preia comisionul de pe eMAG doar pentru produsul respectiv. */
+function fetchCommissionBtnHtml(offerId) {
+  const busy = fetchingCommission.has(String(offerId));
+  return `<button type="button" class="btn-fetch-commission-row" data-offer-id="${escapeHtml(
+    offerId
+  )}"${busy ? " disabled" : ""} title="Preia comisionul de pe eMAG pentru acest produs" aria-label="Preia comisionul de pe eMAG">↻</button>`;
+}
+
 function pricingRowHtml(product, index) {
   const currency = product.currency || "RON";
   const pct = rowPctEmag(product);
@@ -877,13 +833,16 @@ function pricingRowHtml(product, index) {
     ? `<td data-col="procentaj_emag"${cellClass(
         "procentaj_emag",
         "col-procentaj-emag"
-      )}${tooltip ? ` title="${tooltip}"` : ""}>${escapeHtml(
+      )}${tooltip ? ` title="${tooltip}"` : ""}><div class="procentaj-emag-wrap">${escapeHtml(
         formatProcentajEmagDisplay(pct)
-      )}</td>`
+      )}${fetchCommissionBtnHtml(product.id)}</div></td>`
     : `<td data-col="procentaj_emag"${cellClass(
         "procentaj_emag",
         "col-procentaj-emag"
-      )}>${procentajEmagInputHtml(pct, hasOverride)}</td>`;
+      )}>${procentajEmagInputHtml(pct, hasOverride).replace(
+        /<\/div>$/,
+        `${fetchCommissionBtnHtml(product.id)}</div>`
+      )}</td>`;
 
   // Coloanele de canal arata valorile de pe marketplace; override-ul local
   // ramane doar in badge-ul de diferenta.
@@ -1180,6 +1139,12 @@ pricingBody.addEventListener("click", (e) => {
   const pushBtn = e.target.closest("button.btn-push-row");
   if (pushBtn) {
     enqueuePush(pushBtn.dataset.offerId);
+    return;
+  }
+
+  const commissionBtn = e.target.closest("button.btn-fetch-commission-row");
+  if (commissionBtn) {
+    fetchCommissionForOffer(commissionBtn.dataset.offerId, commissionBtn);
     return;
   }
 
@@ -2014,6 +1979,55 @@ async function pullSingleOffer(offerId, button) {
   }
 }
 
+/** Preia comisionul eMAG pentru un singur produs si il salveaza pe listing. */
+async function fetchCommissionForOffer(offerId, button) {
+  const id = String(offerId ?? "");
+  if (!id || fetchingCommission.has(id)) return;
+  if (warnIfChannelUnconfigured()) return;
+  const product = findProduct(id);
+  const salePrice = Number(product?.sale_price ?? (product ? rowSalePrice(product) : NaN));
+  if (!Number.isFinite(salePrice) || salePrice <= 0) {
+    setStatus(`Produsul ${id} nu are preț de vânzare — nu se poate prelua comisionul.`, "error");
+    return;
+  }
+  fetchingCommission.add(id);
+  if (button) button.disabled = true;
+  setStatus(`Preiau comisionul eMAG pentru ${id}…`, "loading");
+  try {
+    const res = await fetch(
+      `/api/products/fetch-commission?channel=${encodeURIComponent(currentChannel)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ id, sale_price: salePrice }] }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      showApiError(data, `HTTP ${res.status}`);
+      return;
+    }
+    const failed = data.errors?.[0];
+    if (failed) {
+      setStatus(`Comision ${id}: ${failed.error}`, "error");
+      return;
+    }
+    await Promise.all([loadDiff(), loadPricing()]);
+    const pct = Number(data.results?.[0]?.procentaj_emag);
+    setStatus(
+      Number.isFinite(pct)
+        ? `Comision preluat pentru ${id}: ${pct.toFixed(2)}%.`
+        : `Comision preluat pentru ${id}.`,
+      "ok"
+    );
+  } catch (err) {
+    setStatus(err.message || "Eroare la preluare comision", "error");
+  } finally {
+    fetchingCommission.delete(id);
+    if (button && button.isConnected) button.disabled = false;
+  }
+}
+
 /* ---------- compactare + fullscreen ---------- */
 
 function setCompact(wrap, btn, on, storageKey) {
@@ -2095,7 +2109,6 @@ function initFullscreenToggle() {
 function syncCommissionControls() {
   thComision.textContent =
     CHANNEL_COMMISSION_LABELS[currentChannel] || "Comision %";
-  btnFetchCommission.hidden = currentChannel !== "emag";
 }
 
 channelSelect.value = currentChannel;
@@ -2121,7 +2134,6 @@ channelSelect.addEventListener("change", async () => {
 });
 btnPull.addEventListener("click", pullFromChannel);
 btnPush.addEventListener("click", pushToChannel);
-btnFetchCommission.addEventListener("click", fetchCommission);
 
 summaryEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button.sync-chip[data-filter]");
