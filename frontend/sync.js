@@ -701,6 +701,7 @@ function pushableOffer(offerId) {
     includeMinSalePrice: changed.has("min_sale_price"),
     includeMaxSalePrice: changed.has("max_sale_price"),
     includeStock: changed.has("general_stock"),
+    includeImages: changed.has("images"),
   };
 }
 
@@ -712,6 +713,7 @@ const PUSH_FIELD_LABELS = {
   includeStock: "stoc",
   includeName: "nume",
   includeDescription: "descriere",
+  includeImages: "poze",
 };
 
 /** Eticheta scurta pentru ce se publica pe o oferta (campurile care diferă). */
@@ -1610,6 +1612,7 @@ function pushOffersContentLabel(offers) {
     includeStock: false,
     includeName: false,
     includeDescription: false,
+    includeImages: false,
   };
   for (const o of offers) {
     for (const key of Object.keys(union)) {

@@ -591,36 +591,119 @@ function pnkCell(product) {
   return product.part_number_key ? escapeHtml(product.part_number_key) : "—";
 }
 
-function imagesCellHtml(images) {
-  const list = Array.isArray(images) ? images : [];
-  const thumbs = list
-    .map((img, index) => {
-      const primaryClass = index === 0 ? " is-primary" : "";
-      const primaryBtn =
-        index === 0
-          ? `<button type="button" class="btn-set-primary is-active" data-image-id="${escapeHtml(img.id)}" aria-label="Poza principală" title="Poza principală" disabled>★</button>`
-          : `<button type="button" class="btn-set-primary" data-image-id="${escapeHtml(img.id)}" aria-label="Setează ca poză principală" title="Setează ca poză principală">☆</button>`;
-      return `<span class="product-image-thumb${primaryClass}" data-image-id="${escapeHtml(img.id)}">
-          <img src="${escapeHtml(img.url)}" alt="" loading="lazy" title="Mărește" />
-          ${primaryBtn}
-          <button type="button" class="btn-delete-image" data-image-id="${escapeHtml(img.id)}" aria-label="Șterge poza">×</button>
-        </span>`;
-    })
-    .join("");
+/** Seturi de poze: EN e cel implicit, folosit de platformele care nu au poze proprii. */
+const IMAGE_PLATFORMS = [
+  { key: "en", label: "EN" },
+  { key: "ro", label: "RO" },
+  { key: "bg", label: "BG" },
+  { key: "hu", label: "HU" },
+];
+const IMAGE_FALLBACK_PLATFORM = "en";
+
+/** Normalizeaza forma primita de la server: { en: [...], ro: [...], bg: [...], hu: [...] }. */
+function imagesByPlatformOf(source) {
+  const raw = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+  const out = {};
+  for (const { key } of IMAGE_PLATFORMS) {
+    out[key] = Array.isArray(raw[key]) ? raw[key] : [];
+  }
+  // Compat: raspuns vechi cu o singura lista de poze.
+  if (Array.isArray(source)) out[IMAGE_FALLBACK_PLATFORM] = source;
+  return out;
+}
+
+/** Pozele folosite efectiv de o platforma: ale ei daca are, altfel cele EN. */
+function effectiveImagesOf(byPlatform, platform) {
+  const own = byPlatform[platform] || [];
+  if (platform === IMAGE_FALLBACK_PLATFORM || own.length) {
+    return { images: own, inherited: false };
+  }
+  return { images: byPlatform[IMAGE_FALLBACK_PLATFORM] || [], inherited: true };
+}
+
+function imageThumbHtml(img, index, { inherited }) {
+  const primaryClass = index === 0 ? " is-primary" : "";
+  if (inherited) {
+    // Pozele moștenite din EN nu se editează din tabul altei platforme.
+    return `<span class="product-image-thumb is-inherited${primaryClass}">
+        <img src="${escapeHtml(img.url)}" alt="" loading="lazy" title="Poză din setul EN" />
+      </span>`;
+  }
+  const primaryBtn =
+    index === 0
+      ? `<button type="button" class="btn-set-primary is-active" data-image-id="${escapeHtml(img.id)}" aria-label="Poza principală" title="Poza principală" disabled>★</button>`
+      : `<button type="button" class="btn-set-primary" data-image-id="${escapeHtml(img.id)}" aria-label="Setează ca poză principală" title="Setează ca poză principală">☆</button>`;
+  return `<span class="product-image-thumb${primaryClass}" data-image-id="${escapeHtml(img.id)}">
+      <img src="${escapeHtml(img.url)}" alt="" loading="lazy" title="Mărește" />
+      ${primaryBtn}
+      <button type="button" class="btn-delete-image" data-image-id="${escapeHtml(img.id)}" aria-label="Șterge poza">×</button>
+    </span>`;
+}
+
+function imagesCellHtml(source, activePlatform = IMAGE_FALLBACK_PLATFORM) {
+  const byPlatform = imagesByPlatformOf(source);
+  const active = IMAGE_PLATFORMS.some((p) => p.key === activePlatform)
+    ? activePlatform
+    : IMAGE_FALLBACK_PLATFORM;
+  const { images, inherited } = effectiveImagesOf(byPlatform, active);
+
+  const tabs = IMAGE_PLATFORMS.map(({ key, label }) => {
+    const own = (byPlatform[key] || []).length;
+    const title =
+      key === IMAGE_FALLBACK_PLATFORM
+        ? "Poze în engleză — folosite oriunde nu ai poze proprii"
+        : own
+          ? `Poze proprii pentru eMAG ${label}`
+          : `eMAG ${label} — momentan pe pozele EN`;
+    return `<button type="button" class="btn-images-tab${key === active ? " is-active" : ""}${own ? "" : " is-empty"}" data-platform="${key}" title="${title}">${label}${own ? ` ${own}` : ""}</button>`;
+  }).join("");
+
+  const pushLabel = active === IMAGE_FALLBACK_PLATFORM ? "↑ eMAG toate" : `↑ eMAG ${active.toUpperCase()}`;
+  const pushTarget = active === IMAGE_FALLBACK_PLATFORM ? "all" : active;
+  const pushTitle =
+    active === IMAGE_FALLBACK_PLATFORM
+      ? "Trimite pozele pe eMAG RO, BG și HU"
+      : `Trimite pozele pe eMAG ${active.toUpperCase()}`;
+
   return `<div class="product-images-cell">
-    <div class="product-images-thumbs">${thumbs}</div>
-    <label class="product-images-add">
-      <span>+ Poze</span>
-      <input type="file" class="input-product-images" accept="image/jpeg,image/png,image/webp,image/gif" multiple />
-    </label>
+    <div class="product-images-tabs">${tabs}</div>
+    ${inherited ? '<p class="product-images-note">folosește pozele EN</p>' : ""}
+    <div class="product-images-thumbs">${images
+      .map((img, index) => imageThumbHtml(img, index, { inherited }))
+      .join("")}</div>
+    <div class="product-images-actions">
+      <label class="product-images-add">
+        <span>+ Poze</span>
+        <input type="file" class="input-product-images" accept="image/jpeg,image/png,image/webp,image/gif" multiple />
+      </label>
+      <button type="button" class="btn-push-images" data-platform="${pushTarget}" title="${pushTitle}">${pushLabel}</button>
+    </div>
   </div>`;
 }
 
-function updateImagesCell(tr, images) {
+function updateImagesCell(tr, source, activePlatform) {
   const td = tr.querySelector('td[data-col="images"]');
   if (!td) return;
-  td.innerHTML = imagesCellHtml(images);
-  td.dataset.count = String(Array.isArray(images) ? images.length : 0);
+  const byPlatform = imagesByPlatformOf(source);
+  const active = activePlatform || tr.dataset.imagesPlatform || IMAGE_FALLBACK_PLATFORM;
+  tr.dataset.imagesPlatform = active;
+  td.innerHTML = imagesCellHtml(byPlatform, active);
+  td.dataset.count = String(effectiveImagesOf(byPlatform, active).images.length);
+}
+
+/** Pozele produsului din cache, pe platforme. */
+function cachedImagesByPlatform(tr) {
+  const cached = loadedProducts.find((p) => String(p.id) === String(tr.dataset.offerId));
+  return imagesByPlatformOf(cached?.images_by_platform || cached?.images || {});
+}
+
+/** Scrie in cache setul primit de la server, pentru randarile urmatoare. */
+function storeImagesInCache(tr, source) {
+  const cached = loadedProducts.find((p) => String(p.id) === String(tr.dataset.offerId));
+  if (!cached) return;
+  const byPlatform = imagesByPlatformOf(source);
+  cached.images_by_platform = byPlatform;
+  cached.images = byPlatform[IMAGE_FALLBACK_PLATFORM];
 }
 
 function calcGreutateVolumetrica(latime, lungime, inaltime) {
@@ -821,7 +904,8 @@ function rowHtml(product, index) {
   const handlingJson = escapeHtml(
     JSON.stringify(product.handling_time ?? [{ warehouse_id: 1, value: 0 }])
   );
-  const images = Array.isArray(product.images) ? product.images : [];
+  const imagesByPlatform = imagesByPlatformOf(product.images_by_platform || product.images);
+  const imagesCount = (imagesByPlatform[IMAGE_FALLBACK_PLATFORM] || []).length;
   const productIdAttr =
     product.product_id != null && product.product_id !== ""
       ? ` data-product-id="${escapeHtml(product.product_id)}"`
@@ -862,7 +946,7 @@ function rowHtml(product, index) {
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
     order_history: `<td data-col="order_history"${cellClass("order_history", "col-order-history")}><button type="button" class="btn-order-history" data-offer-id="${escapeHtml(product.id)}" data-product-name="${escapeHtml(product.name || product.part_number || `Produs ${product.id}`)}">Vezi istoricul</button></td>`,
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
-    images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${images.length}">${imagesCellHtml(images)}</td>`,
+    images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${imagesCount}">${imagesCellHtml(imagesByPlatform)}</td>`,
     description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
     part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
@@ -1478,6 +1562,19 @@ document.addEventListener("keydown", (e) => {
 });
 
 tbody.addEventListener("click", (e) => {
+  const tabBtn = e.target.closest("button.btn-images-tab");
+  if (tabBtn) {
+    e.preventDefault();
+    const tr = tabBtn.closest("tr[data-offer-id]");
+    if (tr) updateImagesCell(tr, cachedImagesByPlatform(tr), tabBtn.dataset.platform);
+    return;
+  }
+  const pushBtn = e.target.closest("button.btn-push-images");
+  if (pushBtn) {
+    e.preventDefault();
+    void handleProductImagesPush(pushBtn);
+    return;
+  }
   const setPrimaryBtn = e.target.closest("button.btn-set-primary");
   if (setPrimaryBtn) {
     e.preventDefault();
@@ -1497,6 +1594,44 @@ tbody.addEventListener("click", (e) => {
   }
 });
 
+/** Trimite pozele produsului pe eMAG: platforma tabului activ, sau toate trei din tabul EN. */
+async function handleProductImagesPush(btn) {
+  const tr = btn.closest("tr[data-offer-id]");
+  const productId = tr?.dataset.productId;
+  const platform = btn.dataset.platform || "all";
+  if (!tr || !productId) {
+    setStatus("Produs fără product_id — nu pot trimite pozele.", "error");
+    return;
+  }
+  const target = platform === "all" ? "eMAG RO, BG și HU" : `eMAG ${platform.toUpperCase()}`;
+  if (!window.confirm(`Trimiți pozele pe ${target}?`)) return;
+
+  btn.disabled = true;
+  setStatus(`Se trimit pozele pe ${target}…`, "loading");
+  try {
+    const res = await fetch(
+      `/api/catalog/product/${encodeURIComponent(productId)}/images/push?platform=${platform}`,
+      { method: "POST" }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok && !data.results) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+    const parts = (data.results || []).map((r) =>
+      r.ok
+        ? `${r.platform.toUpperCase()}: ${r.count} poze${r.source && r.source !== r.platform ? ` (set ${r.source.toUpperCase()})` : ""}`
+        : `${r.platform.toUpperCase()}: ${r.error}`
+    );
+    const allOk = (data.results || []).every((r) => r.ok);
+    setStatus(
+      `Poze trimise — eMAG procesează asincron. ${parts.join(" · ")}`,
+      allOk ? "ok" : "error"
+    );
+  } catch (err) {
+    setStatus(err.message || "Eroare la trimiterea pozelor", "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function handleProductImagesSelected(input) {
   const tr = input.closest("tr[data-offer-id]");
   const productId = tr?.dataset.productId;
@@ -1508,24 +1643,21 @@ async function handleProductImagesSelected(input) {
   }
   if (!files.length) return;
 
+  const platform = tr.dataset.imagesPlatform || IMAGE_FALLBACK_PLATFORM;
   const form = new FormData();
   for (const f of files) form.append("images", f);
 
-  setStatus("Se încarcă pozele…", "loading");
+  setStatus(`Se încarcă pozele (${platform.toUpperCase()})…`, "loading");
   try {
-    const res = await fetch(`/api/catalog/product/${encodeURIComponent(productId)}/images`, {
-      method: "POST",
-      body: form,
-    });
+    const res = await fetch(
+      `/api/catalog/product/${encodeURIComponent(productId)}/images?platform=${platform}`,
+      { method: "POST", body: form }
+    );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    updateImagesCell(tr, data.all || data.images || []);
-    const offerId = tr.dataset.offerId;
-    const cached = loadedProducts.find(
-      (p) => String(p.id) === String(offerId)
-    );
-    if (cached) cached.images = data.all || data.images || [];
-    setStatus("Poze salvate.", "ok");
+    updateImagesCell(tr, data.all, platform);
+    storeImagesInCache(tr, data.all);
+    setStatus(`Poze salvate (${platform.toUpperCase()}).`, "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la upload poze", "error");
   }
@@ -1546,12 +1678,8 @@ async function handleProductImageDelete(btn) {
     );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    updateImagesCell(tr, data.all || []);
-    const offerId = tr.dataset.offerId;
-    const cached = loadedProducts.find(
-      (p) => String(p.id) === String(offerId)
-    );
-    if (cached) cached.images = data.all || [];
+    updateImagesCell(tr, data.all);
+    storeImagesInCache(tr, data.all);
     setStatus("Poză ștearsă.", "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la ștergere poză", "error");
@@ -1564,7 +1692,10 @@ async function handleProductImageSetPrimary(btn) {
   const imageId = Number(btn.dataset.imageId);
   if (!tr || !productId || !Number.isFinite(imageId) || imageId <= 0) return;
 
-  const thumbs = [...tr.querySelectorAll(".product-image-thumb[data-image-id]")];
+  const platform = tr.dataset.imagesPlatform || IMAGE_FALLBACK_PLATFORM;
+  const thumbs = [
+    ...tr.querySelectorAll(".product-image-thumb:not(.is-inherited)[data-image-id]"),
+  ];
   const ids = thumbs
     .map((el) => Number(el.dataset.imageId))
     .filter((n) => Number.isFinite(n) && n > 0);
@@ -1575,7 +1706,7 @@ async function handleProductImageSetPrimary(btn) {
   setStatus("Se setează poza principală…", "loading");
   try {
     const res = await fetch(
-      `/api/catalog/product/${encodeURIComponent(productId)}/images/order`,
+      `/api/catalog/product/${encodeURIComponent(productId)}/images/order?platform=${platform}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1584,13 +1715,8 @@ async function handleProductImageSetPrimary(btn) {
     );
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    const images = data.images || [];
-    updateImagesCell(tr, images);
-    const offerId = tr.dataset.offerId;
-    const cached = loadedProducts.find(
-      (p) => String(p.id) === String(offerId)
-    );
-    if (cached) cached.images = images;
+    updateImagesCell(tr, data.all, platform);
+    storeImagesInCache(tr, data.all);
     setStatus("Poza principală actualizată.", "ok");
   } catch (err) {
     setStatus(err.message || "Eroare la setarea pozei principale", "error");

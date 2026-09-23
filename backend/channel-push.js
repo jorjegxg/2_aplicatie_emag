@@ -1,6 +1,13 @@
 const { recordPretEmagIfChanged } = require("./db");
 const { getListings, getChannelRemotes } = require("./marketplace-db");
 const { getChannel } = require("./channels");
+const {
+  effectiveImages,
+  imagesStamp,
+  markImagesPushed,
+  absoluteUrl,
+  PUBLIC_BASE_URL,
+} = require("./product-images");
 
 /** Eroare "asteptata" (validare) — raspuns JSON simplu, fara log de canal. */
 function httpError(status, message) {
@@ -37,6 +44,7 @@ async function pushOffersForChannel(
     includeMinSalePrice: false,
     includeMaxSalePrice: false,
     includeStock: false,
+    includeImages: false,
   });
 
   for (const o of rawOffers) {
@@ -62,6 +70,7 @@ async function pushOffersForChannel(
       includeMinSalePrice: o.includeMinSalePrice === true,
       includeMaxSalePrice: o.includeMaxSalePrice === true,
       includeStock: o.includeStock === true,
+      includeImages: o.includeImages === true,
     });
   }
 
@@ -92,6 +101,8 @@ async function pushOffersForChannel(
   }
 
   const offers = [];
+  // Ce poze am trimis, ca sa notam amprenta doar dupa un push reusit.
+  const pushedImages = [];
   for (const l of listings) {
     const effectiveMin =
       l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
@@ -113,10 +124,36 @@ async function pushOffersForChannel(
       remote
     );
     const flags = contentFlagsById.get(String(l.external_id)) || emptyFlags();
+    // Fara URL public, pozele nu pot fi trimise — restul push-ului merge inainte.
+    if (flags.includeImages && (channelName !== "emag" || !PUBLIC_BASE_URL)) {
+      flags.includeImages = false;
+    }
+    if (flags.includeImages) {
+      // Pozele platformei RO (sau setul EN, cand RO nu are poze proprii).
+      const effective = await effectiveImages(l.product_id, "ro");
+      if (effective.images.length) {
+        merged.images = effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) }));
+        pushedImages.push({
+          productId: l.product_id,
+          platform: "ro",
+          fingerprint: imagesStamp(effective),
+        });
+      } else {
+        flags.includeImages = false;
+      }
+    }
     offers.push(channel.buildPushPayload(merged, flags));
   }
 
   const result = await channel.pushListings(offers);
+
+  for (const entry of pushedImages) {
+    try {
+      await markImagesPushed(entry.productId, entry.platform, entry.fingerprint);
+    } catch (err) {
+      console.warn("[sync-prices] amprenta poze:", err.message);
+    }
+  }
 
   // Marketplace-urile proceseaza asincron — NU actualizam oglinda local;
   // confirmarea vine la urmatorul pull. Retinem doar istoricul de pret trimis.

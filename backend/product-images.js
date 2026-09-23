@@ -3,6 +3,8 @@
  * URL public rămâne /uploads/products/<stored_name> (proxy din server.js).
  */
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const http = require("http");
 const https = require("https");
 const {
@@ -42,6 +44,31 @@ const S3_FORCE_PATH_STYLE =
   String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() !== "false";
 const S3_KEY_PREFIX = "products/";
 
+/** Seturi de poze: 'en' e setul implicit, folosit cand platforma nu are poze proprii. */
+const PLATFORMS = ["en", "ro", "bg", "hu"];
+const FALLBACK_PLATFORM = "en";
+// URL-ul public al aplicatiei — eMAG descarca pozele de aici, deci trebuie absolut.
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+
+/** @param {unknown} value @returns {"en"|"ro"|"bg"|"hu"} */
+function normalizePlatform(value) {
+  const p = String(value ?? "").trim().toLowerCase();
+  if (!p) return FALLBACK_PLATFORM;
+  if (!PLATFORMS.includes(p)) {
+    const err = new Error(`Platforma necunoscuta: ${p}`);
+    err.status = 400;
+    throw err;
+  }
+  return p;
+}
+
+/** Gruparea implicita, cu o lista goala pentru fiecare platforma. */
+function emptyByPlatform() {
+  const out = {};
+  for (const p of PLATFORMS) out[p] = [];
+  return out;
+}
+
 const s3 = new S3Client({
   endpoint: S3_ENDPOINT,
   region: S3_REGION,
@@ -69,10 +96,82 @@ function publicUrl(storedName) {
   return `/uploads/products/${encodeURIComponent(storedName)}`;
 }
 
+/**
+ * Cheia cu care semnam link-urile de poze date in afara. Din env, altfel una generata
+ * si pastrata in data/ (volum montat), ca link-urile deja trimise sa ramana valide.
+ */
+const IMAGE_SIGN_PATH = path.join(__dirname, "data", "image-signing.json");
+let imageSignSecret = null;
+
+function signingSecret() {
+  if (imageSignSecret) return imageSignSecret;
+  const fromEnv = String(process.env.PUBLIC_IMAGE_SECRET || "").trim();
+  if (fromEnv) {
+    imageSignSecret = fromEnv;
+    return imageSignSecret;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(IMAGE_SIGN_PATH, "utf8"));
+    if (raw?.secret) {
+      imageSignSecret = String(raw.secret);
+      return imageSignSecret;
+    }
+  } catch {
+    /* prima rulare: o generam mai jos */
+  }
+  imageSignSecret = crypto.randomBytes(32).toString("hex");
+  try {
+    fs.mkdirSync(path.dirname(IMAGE_SIGN_PATH), { recursive: true });
+    fs.writeFileSync(
+      IMAGE_SIGN_PATH,
+      JSON.stringify({ secret: imageSignSecret }, null, 2),
+      { mode: 0o600 }
+    );
+  } catch (err) {
+    console.warn("[product-images] nu am putut salva cheia de semnare:", err.message);
+  }
+  return imageSignSecret;
+}
+
+/** Semnatura unei poze: doar pozele pe care le trimitem la eMAG devin descarcabile. */
+function imageSignature(storedName) {
+  return crypto
+    .createHmac("sha256", signingSecret())
+    .update(String(storedName))
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/** @returns {boolean} true doar pentru semnatura corecta a pozei cerute. */
+function verifyImageSignature(storedName, signature) {
+  const expected = Buffer.from(imageSignature(storedName));
+  const got = Buffer.from(String(signature || ""));
+  if (expected.length !== got.length) return false;
+  return crypto.timingSafeEqual(expected, got);
+}
+
+/**
+ * URL absolut si semnat pentru consumatori externi — eMAG descarca pozele de aici.
+ * Arunca daca PUBLIC_BASE_URL lipseste.
+ */
+function absoluteUrl(storedName) {
+  if (!PUBLIC_BASE_URL) {
+    const err = new Error(
+      "PUBLIC_BASE_URL nu e setat — eMAG nu poate descarca pozele fara un URL public"
+    );
+    err.status = 400;
+    throw err;
+  }
+  const name = encodeURIComponent(storedName);
+  return `${PUBLIC_BASE_URL}/public/product-image/${name}?sig=${imageSignature(storedName)}`;
+}
+
 function mapRow(r) {
   return {
     id: Number(r.id),
     product_id: Number(r.product_id),
+    platform: r.platform || FALLBACK_PLATFORM,
+    stored_name: r.stored_name,
     url: publicUrl(r.stored_name),
     original_name: r.original_name || "",
     mime_type: r.mime_type || "",
@@ -136,7 +235,7 @@ async function listByProductIds(productIds) {
   if (!ids.length) return map;
 
   const { rows } = await query(
-    `SELECT id, product_id, stored_name, original_name, mime_type, byte_size, sort_order, created_at
+    `SELECT id, product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at
      FROM product_images
      WHERE product_id = ANY($1::int[])
      ORDER BY product_id ASC, sort_order ASC, id ASC`,
@@ -144,16 +243,125 @@ async function listByProductIds(productIds) {
   );
   for (const r of rows) {
     const pid = Number(r.product_id);
-    const list = map.get(pid);
-    if (list) list.push(mapRow(r));
-    else map.set(pid, [mapRow(r)]);
+    if (!map.has(pid)) map.set(pid, []);
+    map.get(pid).push(mapRow(r));
   }
   return map;
 }
 
-async function listForProduct(productId) {
-  const map = await listByProductIds([productId]);
-  return map.get(Number(productId)) || [];
+/**
+ * Pozele grupate pe platforma pentru mai multe produse.
+ * @param {(number|string)[]} productIds
+ * @returns {Promise<Map<number, Record<string, object[]>>>}
+ */
+async function listByPlatformForProductIds(productIds) {
+  const flat = await listByProductIds(productIds);
+  const map = new Map();
+  for (const [pid, list] of flat) {
+    const byPlatform = emptyByPlatform();
+    for (const img of list) {
+      const p = PLATFORMS.includes(img.platform) ? img.platform : FALLBACK_PLATFORM;
+      byPlatform[p].push(img);
+    }
+    map.set(pid, byPlatform);
+  }
+  return map;
+}
+
+/** Pozele unui produs; fara platforma, doar setul implicit (EN) — compat cu apelanții vechi. */
+async function listForProduct(productId, platform = FALLBACK_PLATFORM) {
+  const map = await listByPlatformForProductIds([productId]);
+  const byPlatform = map.get(Number(productId)) || emptyByPlatform();
+  return byPlatform[normalizePlatform(platform)] || [];
+}
+
+/** Toate seturile unui produs: { en, ro, bg, hu }. */
+async function listAllForProduct(productId) {
+  const map = await listByPlatformForProductIds([productId]);
+  return map.get(Number(productId)) || emptyByPlatform();
+}
+
+/**
+ * Setul efectiv al unei platforme dintr-o grupare deja citita: pozele ei daca are,
+ * altfel pozele EN.
+ * @param {Record<string, object[]>} byPlatform
+ * @param {string} platform
+ * @returns {{ platform: string, source: string, images: object[] }}
+ */
+function pickEffective(byPlatform, platform) {
+  const wanted = normalizePlatform(platform);
+  const all = byPlatform || emptyByPlatform();
+  const own = all[wanted] || [];
+  if (own.length > 0) return { platform: wanted, source: wanted, images: own };
+  return {
+    platform: wanted,
+    source: FALLBACK_PLATFORM,
+    images: all[FALLBACK_PLATFORM] || [],
+  };
+}
+
+/**
+ * Setul efectiv al unei platforme pentru un produs: pozele ei daca are, altfel EN.
+ * @param {number|string} productId
+ * @param {string} platform
+ * @returns {Promise<{ platform: string, source: string, images: object[] }>}
+ */
+async function effectiveImages(productId, platform) {
+  return pickEffective(await listAllForProduct(productId), platform);
+}
+
+/** Amprenta setului de poze trimis: ordinea conteaza, deci si reordonarea declanseaza un push. */
+function imagesFingerprint(images) {
+  const names = (Array.isArray(images) ? images : []).map((i) => i.stored_name || "");
+  if (!names.length) return "";
+  return crypto.createHash("sha1").update(names.join("|")).digest("hex");
+}
+
+/**
+ * Eticheta setului de poze, folosita si ca amprenta de push: se schimba la adaugare,
+ * stergere, reordonare sau cand platforma trece de pe setul EN pe setul ei.
+ * @param {{images: object[], source: string}} effective
+ */
+function imagesStamp({ images, source } = {}) {
+  const list = Array.isArray(images) ? images : [];
+  if (!list.length) return "fără poze";
+  const src = String(source || FALLBACK_PLATFORM).toUpperCase();
+  return `${list.length} poze (${src}) · ${imagesFingerprint(list).slice(0, 8)}`;
+}
+
+/** @returns {Promise<Map<string, string>>} cheie `${product_id}:${platform}` → fingerprint trimis */
+async function getPushedFingerprints(productIds) {
+  await ensureSchema();
+  const ids = [
+    ...new Set(
+      (productIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
+  const map = new Map();
+  if (!ids.length) return map;
+  const { rows } = await query(
+    `SELECT product_id, platform, fingerprint FROM product_images_push_state
+     WHERE product_id = ANY($1::int[])`,
+    [ids]
+  );
+  for (const r of rows) {
+    map.set(`${Number(r.product_id)}:${r.platform}`, r.fingerprint || "");
+  }
+  return map;
+}
+
+/** Retine ce set de poze a fost trimis, ca sa nu-l retrimitem la fiecare push. */
+async function markImagesPushed(productId, platform, fingerprint) {
+  await ensureSchema();
+  const pid = Number(productId);
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  await query(
+    `INSERT INTO product_images_push_state (product_id, platform, fingerprint, pushed_at)
+     VALUES ($1, $2, $3, now())
+     ON CONFLICT (product_id, platform)
+     DO UPDATE SET fingerprint = EXCLUDED.fingerprint, pushed_at = now()`,
+    [pid, normalizePlatform(platform), String(fingerprint || "")]
+  );
 }
 
 function assertAllowedFile(file) {
@@ -259,11 +467,11 @@ async function preferWhiteBackgroundPrimary(productId) {
 
   const { rows } = await query(
     `SELECT id, stored_name FROM product_images
-     WHERE product_id = $1
+     WHERE product_id = $1 AND platform = $2
      ORDER BY sort_order ASC, id ASC`,
-    [pid]
+    [pid, FALLBACK_PLATFORM]
   );
-  if (rows.length < 2) return listForProduct(pid);
+  if (rows.length < 2) return listForProduct(pid, FALLBACK_PLATFORM);
 
   const ordered = await sortByWhiteBackground(rows, async (row) => {
     try {
@@ -278,8 +486,8 @@ async function preferWhiteBackgroundPrimary(productId) {
   const sameOrder =
     ids.length === currentIds.length &&
     ids.every((id, i) => id === currentIds[i]);
-  if (!sameOrder) await reorder(pid, ids);
-  return listForProduct(pid);
+  if (!sameOrder) await reorder(pid, ids, FALLBACK_PLATFORM);
+  return listForProduct(pid, FALLBACK_PLATFORM);
 }
 
 async function objectExists(storedName) {
@@ -301,7 +509,8 @@ async function objectExists(storedName) {
  * @param {number|string} productId
  * @param {Express.Multer.File[]} files
  */
-async function addImages(productId, files) {
+async function addImages(productId, files, platform = FALLBACK_PLATFORM) {
+  const plat = normalizePlatform(platform);
   await ensureSchema();
   await ensureBucket();
   const pid = Number(productId);
@@ -326,8 +535,9 @@ async function addImages(productId, files) {
   for (const f of list) assertAllowedFile(f);
 
   const { rows: maxRows } = await query(
-    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images WHERE product_id = $1`,
-    [pid]
+    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images
+     WHERE product_id = $1 AND platform = $2`,
+    [pid, plat]
   );
   let nextOrder = Number(maxRows[0]?.max_ord) + 1;
   if (!Number.isFinite(nextOrder) || nextOrder < 0) nextOrder = 0;
@@ -345,11 +555,12 @@ async function addImages(productId, files) {
 
       const { rows } = await query(
         `INSERT INTO product_images
-           (product_id, stored_name, original_name, mime_type, byte_size, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, product_id, stored_name, original_name, mime_type, byte_size, sort_order, created_at`,
+           (product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at`,
         [
           pid,
+          plat,
           storedName,
           file.originalname || null,
           mime,
@@ -407,8 +618,9 @@ async function deleteImage(productId, imageId) {
   return true;
 }
 
-async function reorder(productId, imageIds) {
+async function reorder(productId, imageIds, platform = FALLBACK_PLATFORM) {
   await ensureSchema();
+  const plat = normalizePlatform(platform);
   const pid = Number(productId);
   if (!Number.isFinite(pid) || pid <= 0) {
     const err = new Error("product_id invalid");
@@ -426,24 +638,24 @@ async function reorder(productId, imageIds) {
 
   await withTransaction(async (client) => {
     const { rows: existing } = await client.query(
-      `SELECT id FROM product_images WHERE product_id = $1`,
-      [pid]
+      `SELECT id FROM product_images WHERE product_id = $1 AND platform = $2`,
+      [pid, plat]
     );
     const existingSet = new Set(existing.map((r) => Number(r.id)));
     if (ids.length !== existingSet.size || ids.some((id) => !existingSet.has(id))) {
-      const err = new Error("image_ids nu corespund imaginilor produsului");
+      const err = new Error("image_ids nu corespund imaginilor produsului pe platforma aleasa");
       err.status = 400;
       throw err;
     }
     for (let i = 0; i < ids.length; i++) {
       await client.query(
-        `UPDATE product_images SET sort_order = $1 WHERE id = $2 AND product_id = $3`,
-        [i, ids[i], pid]
+        `UPDATE product_images SET sort_order = $1 WHERE id = $2 AND product_id = $3 AND platform = $4`,
+        [i, ids[i], pid, plat]
       );
     }
   });
 
-  return listForProduct(pid);
+  return listForProduct(pid, plat);
 }
 
 /* ---------------- import poze din URL extern (eMAG) ---------------- */
@@ -576,8 +788,8 @@ async function replaceRemoteImages(productId, urls) {
   // 1. sterge pozele externe existente (S3 intai, apoi DB — ca in deleteImage)
   const { rows: old } = await query(
     `SELECT id, stored_name FROM product_images
-     WHERE product_id = $1 AND source_url IS NOT NULL`,
-    [pid]
+     WHERE product_id = $1 AND platform = $2 AND source_url IS NOT NULL`,
+    [pid, FALLBACK_PLATFORM]
   );
   for (const row of old) {
     await removeObject(row.stored_name);
@@ -586,8 +798,9 @@ async function replaceRemoteImages(productId, urls) {
 
   // 2. descarca toate URL-urile, sorteaza dupa scor fundal alb, apoi urca
   const { rows: maxRows } = await query(
-    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images WHERE product_id = $1`,
-    [pid]
+    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images
+     WHERE product_id = $1 AND platform = $2`,
+    [pid, FALLBACK_PLATFORM]
   );
   let nextOrder = Number(maxRows[0]?.max_ord) + 1;
   if (!Number.isFinite(nextOrder) || nextOrder < 0) nextOrder = 0;
@@ -626,11 +839,12 @@ async function replaceRemoteImages(productId, urls) {
       }
       const { rows } = await query(
         `INSERT INTO product_images
-           (product_id, stored_name, original_name, mime_type, byte_size, sort_order, source_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, product_id, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at`,
+           (product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at`,
         [
           pid,
+          FALLBACK_PLATFORM,
           storedName,
           originalName,
           item.mime,
@@ -669,6 +883,21 @@ async function replaceRemoteImages(productId, urls) {
 module.exports = {
   MAX_BYTES,
   ALLOWED_MIME,
+  PLATFORMS,
+  FALLBACK_PLATFORM,
+  PUBLIC_BASE_URL,
+  normalizePlatform,
+  absoluteUrl,
+  imageSignature,
+  verifyImageSignature,
+  listByPlatformForProductIds,
+  listAllForProduct,
+  effectiveImages,
+  pickEffective,
+  imagesFingerprint,
+  imagesStamp,
+  getPushedFingerprints,
+  markImagesPushed,
   S3_BUCKET,
   S3_ENDPOINT,
   ensureBucket,

@@ -9,7 +9,14 @@ const { query, withTransaction, ensureSchema: ensurePgSchema } = require("./pg")
 const { getLastPriceChangeBulk } = require("./db");
 const { calcProduct } = require("./calculator");
 const { htmlToText, looksLikeHtml } = require("./description-format");
-const { listByProductIds } = require("./product-images");
+const {
+  listByPlatformForProductIds,
+  pickEffective,
+  imagesStamp,
+  getPushedFingerprints,
+  FALLBACK_PLATFORM,
+  PUBLIC_BASE_URL,
+} = require("./product-images");
 const {
   getChannelRemotes,
   getCacheMeta,
@@ -191,6 +198,19 @@ function normalizeEan(v) {
   return first || null;
 }
 
+/** Ataseaza pozele pe produse: `images` = setul EN (compat), `images_by_platform` = toate seturile. */
+async function attachImages(products) {
+  const imageMap = await listByPlatformForProductIds(
+    products.map((p) => p.product_id).filter((id) => id != null)
+  );
+  for (const p of products) {
+    const pid = Number(p.product_id);
+    const byPlatform = Number.isFinite(pid) ? imageMap.get(pid) : null;
+    p.images_by_platform = byPlatform || { en: [], ro: [], bg: [], hu: [] };
+    p.images = p.images_by_platform[FALLBACK_PLATFORM] || [];
+  }
+}
+
 /**
  * Catalog indexat pe EAN normalizat (primul castiga la duplicate).
  * Folosit de sync Trendyol: join channel-view + diff.
@@ -210,13 +230,7 @@ async function getCatalogMappedByEan() {
     p.pret_emag_last_change = lc ? lc.recorded_at : null;
   }
 
-  const imageMap = await listByProductIds(
-    products.map((p) => p.product_id).filter((id) => id != null)
-  );
-  for (const p of products) {
-    const pid = Number(p.product_id);
-    p.images = Number.isFinite(pid) ? imageMap.get(pid) || [] : [];
-  }
+  await attachImages(products);
 
   const byEan = new Map();
   for (let i = 0; i < products.length; i++) {
@@ -346,13 +360,7 @@ async function getCatalogRows(channel) {
     p.pret_emag_last_change = lc ? lc.recorded_at : null;
   }
 
-  const imageMap = await listByProductIds(
-    products.map((p) => p.product_id).filter((id) => id != null)
-  );
-  for (const p of products) {
-    const pid = Number(p.product_id);
-    p.images = Number.isFinite(pid) ? imageMap.get(pid) || [] : [];
-  }
+  await attachImages(products);
   return products;
 }
 
@@ -659,6 +667,19 @@ const PRODUCT_LISTING_EDITABLE = {
   pret_minim_override: toNumOrNull,
 };
 
+/** emag_offer_id al unui produs din catalog, sau null. */
+async function getProductOfferId(productId) {
+  await ensureSchema();
+  const id = Number(productId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const { rows } = await query(
+    "SELECT emag_offer_id FROM catalog_products WHERE id = $1",
+    [id]
+  );
+  const ext = rows[0]?.emag_offer_id;
+  return ext == null || String(ext).trim() === "" ? null : String(ext).trim();
+}
+
 async function updateProduct(productId, fields) {
   await ensureSchema();
   const id = Number(productId);
@@ -963,11 +984,12 @@ const DIFF_FIELDS = [
   { key: "min_sale_price", label: "Preț minim", type: "number" },
   { key: "max_sale_price", label: "Preț maxim", type: "number" },
   { key: "general_stock", label: "Stoc", type: "number" },
+  { key: "images", label: "Poze", type: "text" },
 ];
 
 /** Trendyol nu expune min/max — le excludem ca sa nu marcheze totul ca diferit. */
 const DIFF_FIELDS_TRENDYOL = DIFF_FIELDS.filter(
-  (f) => f.key !== "min_sale_price" && f.key !== "max_sale_price"
+  (f) => f.key !== "min_sale_price" && f.key !== "max_sale_price" && f.key !== "images"
 );
 
 function valuesDiffer(type, mine, theirs) {
@@ -992,6 +1014,7 @@ function localDiffValue(local, key) {
   if (key === "min_sale_price") {
     return local.pret_minim_override ?? local.min_sale_price ?? null;
   }
+  if (key === "images") return local.images_stamp ?? null;
   if (key === "name") return toTextOrNull(local.name ?? local.nume);
   if (key === "description") return toPlainTextOrNull(local.descriere);
   // NUMERIC din pg vine ca string ("5.000") — il transformam in numar.
@@ -1050,12 +1073,30 @@ async function getEmagChannelDiff() {
     }
   }
 
+  // Poze: setul efectiv RO (sau EN) fata de ce am trimis ultima data pe eMAG RO.
+  // Fara PUBLIC_BASE_URL nu putem trimite poze, deci nici nu le raportam ca diferente.
+  const productIds = locals.map((l) => l.product_id);
+  const pushedStamps = PUBLIC_BASE_URL
+    ? await getPushedFingerprints(productIds)
+    : new Map();
+  if (PUBLIC_BASE_URL) {
+    const imagesByProduct = await listByPlatformForProductIds(productIds);
+    for (const l of locals) {
+      l.images_stamp = imagesStamp(
+        pickEffective(imagesByProduct.get(Number(l.product_id)), "ro")
+      );
+    }
+  }
+
   const matched = [];
   const onlyLocal = [];
 
   for (const l of locals) {
     const ext = String(l.external_id);
     const snap = snapByExt.get(ext);
+    if (snap) {
+      snap.images = pushedStamps.get(`${Number(l.product_id)}:ro`) || null;
+    }
     if (!snap) {
       onlyLocal.push({
         external_id: l.external_id,
@@ -1386,6 +1427,7 @@ module.exports = {
   getListing,
   getListings,
   updateProduct,
+  getProductOfferId,
   upsertCatalogProducts,
   updateCatalogPurchaseMeta,
   getChannelDiff,

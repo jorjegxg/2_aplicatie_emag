@@ -86,18 +86,37 @@ CREATE TABLE IF NOT EXISTS product_images (
   byte_size INTEGER,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  source_url TEXT
+  source_url TEXT,
+  -- setul de poze: 'en' = implicit (folosit cand platforma nu are poze proprii)
+  platform TEXT NOT NULL DEFAULT 'en'
 );
 
 -- DB-uri create inainte de source_url: CREATE TABLE IF NOT EXISTS nu adauga coloana.
 ALTER TABLE product_images ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE product_images ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'en';
+ALTER TABLE product_images DROP CONSTRAINT IF EXISTS product_images_platform_chk;
+ALTER TABLE product_images
+  ADD CONSTRAINT product_images_platform_chk
+  CHECK (platform IN ('en', 'ro', 'bg', 'hu'));
 
 CREATE INDEX IF NOT EXISTS idx_product_images_product_sort
   ON product_images (product_id, sort_order);
 
-CREATE UNIQUE INDEX IF NOT EXISTS product_images_source_uidx
-  ON product_images (product_id, source_url)
+CREATE INDEX IF NOT EXISTS idx_product_images_product_platform_sort
+  ON product_images (product_id, platform, sort_order);
+
+CREATE UNIQUE INDEX IF NOT EXISTS product_images_source_platform_uidx
+  ON product_images (product_id, platform, source_url)
   WHERE source_url IS NOT NULL;
+
+-- Ce set de poze am trimis ultima data pe fiecare platforma eMAG (ro/bg/hu).
+CREATE TABLE IF NOT EXISTS product_images_push_state (
+  product_id INTEGER NOT NULL REFERENCES catalog_products(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  pushed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (product_id, platform)
+);
 
 -- Index doar daca coloana exista (DB vechi: migrarea 003 o adauga)
 DO $$

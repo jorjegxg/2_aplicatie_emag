@@ -1089,6 +1089,80 @@ td[data-col="images"] {
   color: var(--accent);
 }
 
+/* Taburi seturi poze: EN (implicit) | RO | BG | HU */
+.product-images-tabs {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.btn-images-tab {
+  font: inherit;
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--muted, var(--text));
+  cursor: pointer;
+}
+
+.btn-images-tab:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-images-tab.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-images-tab.is-empty {
+  border-style: dashed;
+}
+
+.product-images-note {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--muted, var(--text));
+}
+
+/* Pozele preluate din setul EN: vizibile, dar nu se editeaza din tabul altei platforme. */
+.product-image-thumb.is-inherited img {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.product-images-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.btn-push-images {
+  font: inherit;
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--muted, var(--text));
+  cursor: pointer;
+}
+
+.btn-push-images:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-push-images:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 td.col-description .input-description,
 td[data-col="description"] .input-description {
   display: block;

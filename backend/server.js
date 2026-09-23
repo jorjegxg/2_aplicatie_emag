@@ -21,6 +21,7 @@ const {
   getChannelRemotes,
   getChannelViewRows,
   updateProduct,
+  getProductOfferId,
   getChannelDiff,
   getChannelStats,
   getListingCosts,
@@ -36,6 +37,17 @@ const {
   deleteImage,
   reorder: reorderImages,
   listForProduct,
+  listAllForProduct,
+  effectiveImages,
+  imagesStamp,
+  markImagesPushed,
+  getPushedFingerprints,
+  listByPlatformForProductIds,
+  pickEffective,
+  PUBLIC_BASE_URL,
+  normalizePlatform,
+  absoluteUrl,
+  verifyImageSignature,
   getObjectStream,
 } = require("./product-images");
 const { getChannel, listChannels } = require("./channels");
@@ -195,6 +207,34 @@ app.post("/api/webhooks/ty/order", (req, res) => {
       detail: { orderNumber: pkg.orderNumber, packageId: pkg.id, stack: err.stack },
     });
   });
+});
+
+/**
+ * Poza cu link semnat — singura ruta de poze dinaintea login-ului, fiindca eMAG
+ * descarca de aici pozele pe care i le trimitem. Fara `sig` corect, 404.
+ * Restul aplicatiei foloseste /uploads/products/... (in spatele login-ului).
+ */
+app.get("/public/product-image/:storedName", async (req, res) => {
+  try {
+    const storedName = path.basename(String(req.params.storedName || ""));
+    if (!storedName || !verifyImageSignature(storedName, req.query.sig)) {
+      return res.status(404).end();
+    }
+    const obj = await getObjectStream(storedName);
+    res.setHeader("Content-Type", obj.contentType);
+    if (obj.contentLength != null) {
+      res.setHeader("Content-Length", String(obj.contentLength));
+    }
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    obj.body.pipe(res);
+  } catch (err) {
+    const notFound = err?.$metadata?.httpStatusCode === 404 || err?.name === "NoSuchKey";
+    if (!notFound) {
+      console.error("[public:image]", err.message);
+      logCaught("product-images", err);
+    }
+    return res.status(404).end();
+  }
 });
 
 app.use(requireAppAuth);
@@ -590,8 +630,14 @@ app.post(
   },
   async (req, res) => {
     try {
-      const images = await addImages(req.params.productId, req.files || []);
-      return res.json({ ok: true, images, all: await listForProduct(req.params.productId) });
+      const platform = normalizePlatform(req.query.platform ?? req.body?.platform);
+      const images = await addImages(req.params.productId, req.files || [], platform);
+      return res.json({
+        ok: true,
+        platform,
+        images,
+        all: await listAllForProduct(req.params.productId),
+      });
     } catch (err) {
       console.error("[product:images:post]", err.message);
       logCaught("product-images", err);
@@ -606,7 +652,7 @@ app.delete("/api/catalog/product/:productId/images/:imageId", async (req, res) =
     await deleteImage(req.params.productId, req.params.imageId);
     return res.json({
       ok: true,
-      all: await listForProduct(req.params.productId),
+      all: await listAllForProduct(req.params.productId),
     });
   } catch (err) {
     console.error("[product:images:delete]", err.message);
@@ -618,14 +664,84 @@ app.delete("/api/catalog/product/:productId/images/:imageId", async (req, res) =
 
 app.patch("/api/catalog/product/:productId/images/order", async (req, res) => {
   try {
+    const platform = normalizePlatform(req.query.platform ?? req.body?.platform);
     const imageIds = req.body?.image_ids;
-    const images = await reorderImages(req.params.productId, imageIds);
-    return res.json({ ok: true, images });
+    const images = await reorderImages(req.params.productId, imageIds, platform);
+    return res.json({
+      ok: true,
+      platform,
+      images,
+      all: await listAllForProduct(req.params.productId),
+    });
   } catch (err) {
     console.error("[product:images:order]", err.message);
     logCaught("product-images", err);
     const status = Number(err.status) || 400;
     return res.status(status).json({ error: err.message || "Eroare la reordonare poze" });
+  }
+});
+
+/** Platformele eMAG pe care putem publica poze (EN e doar setul implicit din aplicatie). */
+const IMAGE_PUSH_PLATFORMS = ["ro", "bg", "hu"];
+
+/**
+ * Trimite pozele unui produs pe eMAG. `platform=ro|bg|hu`, sau `all` pentru toate trei.
+ * Fiecare platforma primeste setul ei de poze sau, daca nu are, setul EN.
+ */
+app.post("/api/catalog/product/:productId/images/push", async (req, res) => {
+  const wanted = String(req.query.platform ?? req.body?.platform ?? "all").toLowerCase();
+  try {
+    const targets =
+      wanted === "all" ? IMAGE_PUSH_PLATFORMS : [normalizePlatform(wanted)];
+    if (targets.includes("en")) {
+      return res.status(400).json({
+        error: "EN nu e o platformă eMAG — alege ro, bg, hu sau all",
+      });
+    }
+
+    const offerId = await getProductOfferId(req.params.productId);
+    if (!offerId) {
+      return res.status(400).json({
+        error: "Produsul nu are emag_offer_id — leagă întâi oferta eMAG",
+      });
+    }
+
+    const emag = getChannel("emag");
+    const results = [];
+    for (const platform of targets) {
+      const effective = await effectiveImages(req.params.productId, platform);
+      if (!effective.images.length) {
+        results.push({ platform, ok: false, error: "Nicio poză de trimis" });
+        continue;
+      }
+      try {
+        const pushed = await emag.pushImages(platform, [
+          {
+            offerId,
+            images: effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) })),
+          },
+        ]);
+        await markImagesPushed(req.params.productId, platform, imagesStamp(effective));
+        results.push({
+          platform,
+          ok: true,
+          source: effective.source,
+          count: effective.images.length,
+          messages: pushed.messages || [],
+        });
+      } catch (err) {
+        if (!err?.expected) logCaught("product-images", err);
+        results.push({ platform, ok: false, error: err.message });
+      }
+    }
+
+    const anyOk = results.some((r) => r.ok);
+    return res.status(anyOk ? 200 : 502).json({ ok: anyOk, pending: anyOk, results });
+  } catch (err) {
+    console.error("[product:images:push]", err.message);
+    if (!err?.expected) logCaught("product-images", err);
+    const status = Number(err.status) || 400;
+    return res.status(status).json({ error: err.message || "Eroare la trimiterea pozelor" });
   }
 });
 
@@ -796,7 +912,60 @@ function pushFlagsFromDiffRow(row) {
     includeMinSalePrice: changed.has("min_sale_price"),
     includeMaxSalePrice: changed.has("max_sale_price"),
     includeStock: changed.has("general_stock"),
+    includeImages: changed.has("images"),
+    product_id: row.product_id,
   };
+}
+
+/**
+ * Pozele pe BG si HU: le trimitem separat de canalul eMAG RO, pentru produsele
+ * la care setul efectiv difera de ce am trimis ultima data pe platforma aceea.
+ * -> cate un rezultat { platform, count, ok, error? } pe platforma.
+ */
+async function pushImagesToSecondaryPlatforms(diffRows) {
+  const emag = getChannel("emag");
+  const rows = (diffRows || []).filter((r) => r.product_id && r.external_id);
+  const out = [];
+  // Fara URL public eMAG nu poate descarca pozele — sarim peste, fara sa raportam erori.
+  if (!rows.length || !PUBLIC_BASE_URL) return out;
+
+  const productIds = rows.map((r) => r.product_id);
+  const imagesByProduct = await listByPlatformForProductIds(productIds);
+  const pushed = await getPushedFingerprints(productIds);
+
+  for (const platform of ["bg", "hu"]) {
+    const entry = { platform, count: 0, ok: true };
+    try {
+      const items = [];
+      const stamps = [];
+      for (const row of rows) {
+        const effective = pickEffective(imagesByProduct.get(Number(row.product_id)), platform);
+        if (!effective.images.length) continue;
+        const stamp = imagesStamp(effective);
+        if (stamp === pushed.get(`${Number(row.product_id)}:${platform}`)) continue;
+        items.push({
+          offerId: row.external_id,
+          images: effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) })),
+        });
+        stamps.push({ productId: row.product_id, stamp });
+      }
+      if (items.length > 0) {
+        const result = await emag.pushImages(platform, items);
+        entry.count = result.count;
+        entry.messages = result.messages || [];
+        if (result.skipped?.length) entry.skipped = result.skipped;
+        for (const s of stamps) {
+          await markImagesPushed(s.productId, platform, s.stamp);
+        }
+      }
+    } catch (err) {
+      if (!err?.expected) logCaught("push-all", err);
+      entry.ok = false;
+      entry.error = err.message || `Eroare la trimiterea pozelor pe eMAG ${platform.toUpperCase()}`;
+    }
+    out.push(entry);
+  }
+  return out;
 }
 
 let pushAllRunning = false;
@@ -825,6 +994,21 @@ app.post("/api/sync/push-all", async (req, res) => {
           entry.messages = result?.messages || [];
         }
         console.log(`[push-all] ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
+        if (ch.id === "emag") {
+          // Pozele pe celelalte platforme eMAG (BG, HU) — fiecare cu setul ei sau cel EN.
+          const imagePushes = await pushImagesToSecondaryPlatforms(diff.matched || []);
+          for (const img of imagePushes.filter((r) => r.count > 0 || !r.ok)) {
+            results.push({
+              channel: `emag_${img.platform}`,
+              label: `eMAG ${img.platform.toUpperCase()} (poze)`,
+              pulled: false,
+              count: img.count,
+              ok: img.ok,
+              ...(img.error ? { error: img.error } : {}),
+              ...(img.messages ? { messages: img.messages } : {}),
+            });
+          }
+        }
       } catch (err) {
         console.error(`[push-all] ${ch.id}:`, err.message);
         if (!err?.expected) logCaught("push-all", err);

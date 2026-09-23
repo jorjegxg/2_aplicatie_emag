@@ -4,6 +4,24 @@ const path = require("path");
 const { log, truncate } = require("./logs-db");
 
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
+// Platformele eMAG: acelasi cont, endpoint-uri diferite.
+const EMAG_HOSTS = {
+  ro: "marketplace-api.emag.ro",
+  bg: "marketplace-api.emag.bg",
+  hu: "marketplace-api.emag.hu",
+};
+
+/** URL-ul de baza al API-ului pentru o platforma eMAG ('ro' implicit). */
+function emagApiBase(platform) {
+  const key = String(platform || "ro").trim().toLowerCase();
+  const host = EMAG_HOSTS[key];
+  if (!host) {
+    const err = new Error(`Platforma eMAG necunoscuta: ${key}`);
+    err.status = 400;
+    throw err;
+  }
+  return `https://${host}/api-3`;
+}
 const ITEMS_PER_PAGE = 100;
 const EMAG_REQUEST_TIMEOUT_MS = Math.max(
   5_000,
@@ -310,6 +328,8 @@ async function resolveEmagAuth(context, { fresh = false } = {}) {
 
 module.exports = {
   EMAG_API,
+  EMAG_HOSTS,
+  emagApiBase,
   toEmagDatetime,
   resolveEmagAuth,
   ITEMS_PER_PAGE,

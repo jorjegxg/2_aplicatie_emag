@@ -4,6 +4,7 @@
  */
 const {
   EMAG_API,
+  emagApiBase,
   ITEMS_PER_PAGE,
   emagFetch,
   loadCredentials,
@@ -111,7 +112,7 @@ function readFilterEntries(filters) {
   );
 }
 
-async function productOfferRead(auth, page, filters = {}) {
+async function productOfferRead(auth, page, filters = {}, apiBase = EMAG_API) {
   const body = new URLSearchParams();
   const entries = readFilterEntries(filters);
   body.set("currentPage", String(page));
@@ -121,7 +122,7 @@ async function productOfferRead(auth, page, filters = {}) {
     body.set(key, String(value).trim());
   }
 
-  const response = await emagFetch(`${EMAG_API}/product_offer/read`, {
+  const response = await emagFetch(`${apiBase}/product_offer/read`, {
     method: "POST",
     headers: {
       Authorization: auth,
@@ -140,9 +141,9 @@ async function productOfferRead(auth, page, filters = {}) {
   return { response, json, text };
 }
 
-async function productOfferSave(auth, offers) {
+async function productOfferSave(auth, offers, apiBase = EMAG_API) {
   console.log(
-    `[eMAG update] POST ${EMAG_API}/product_offer/save — ${offers.length} oferte`
+    `[eMAG update] POST ${apiBase}/product_offer/save — ${offers.length} oferte`
   );
   console.log(
     "[eMAG update] body:",
@@ -164,11 +165,12 @@ async function productOfferSave(auth, offers) {
         max_sale_price: o.max_sale_price,
         status: o.status,
         vat_id: o.vat_id,
+        images_count: Array.isArray(o.images) ? o.images.length : 0,
       }))
     )
   );
 
-  const response = await emagFetch(`${EMAG_API}/product_offer/save`, {
+  const response = await emagFetch(`${apiBase}/product_offer/save`, {
     method: "POST",
     headers: {
       Authorization: auth,
@@ -381,6 +383,144 @@ async function pushListings(offers) {
 }
 
 /**
+ * Lista `images` pentru eMAG: prima poza e principala (display_type 1), restul secundare (2).
+ * @param {{url?: string}[]|string[]} images
+ */
+function buildImagesField(images) {
+  const list = Array.isArray(images) ? images : [];
+  const out = [];
+  for (const item of list) {
+    const url = String((typeof item === "string" ? item : item?.url) || "").trim();
+    if (!url) continue;
+    out.push({ display_type: out.length === 0 ? 1 : 2, url });
+  }
+  return out;
+}
+
+/**
+ * Trimite doar pozele, pe o platforma eMAG anume (ro/bg/hu).
+ * eMAG cere scheletul complet la fiecare save, deci citim intai oferta de pe
+ * platforma respectiva si ii dam inapoi propriile valori (pretul din BG/HU e in
+ * alta moneda — nu trimitem niciodata pretul din RO).
+ * @param {"ro"|"bg"|"hu"} platform
+ * @param {{offerId: string|number, images: ({url: string}|string)[]}[]} items
+ * -> { count, authUsed, messages, skipped }
+ */
+async function pushImages(platform, items) {
+  const apiBase = emagApiBase(platform);
+  const list = (Array.isArray(items) ? items : [])
+    .map((it) => ({
+      offerId: String(it?.offerId ?? "").trim(),
+      images: buildImagesField(it?.images),
+    }))
+    .filter((it) => it.offerId && it.images.length > 0);
+  if (!list.length) {
+    const err = new Error("Nicio poza de trimis");
+    err.status = 400;
+    err.expected = true;
+    throw err;
+  }
+
+  const context = `images-${platform}`;
+  const skipped = [];
+  const offers = [];
+
+  // Auth rezolvat o singura data, pe prima citire; apoi refolosit pentru tot lotul.
+  let firstRemote = null;
+  const { auth, label: authUsed } = await resolveAuth(context, async (authValue) => {
+    const { response, json, text } = await productOfferRead(
+      authValue,
+      1,
+      { id: list[0].offerId },
+      apiBase
+    );
+    if (response.status === 401 || response.status === 403) {
+      return { status: response.status, ok: false, detail: text };
+    }
+    if (!json) {
+      return {
+        status: response.status,
+        ok: false,
+        detail: `Răspuns invalid de la eMAG ${platform.toUpperCase()}: ${text.slice(0, 300)}`,
+      };
+    }
+    if (json.isError) {
+      return {
+        status: response.status,
+        ok: false,
+        detail: `eMAG ${platform.toUpperCase()} a returnat eroare la citirea ofertei`,
+        messages: json.messages || [],
+      };
+    }
+    firstRemote = Array.isArray(json.results) ? json.results[0] || null : null;
+    return { status: response.status, ok: true };
+  });
+
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    let remote = i === 0 ? firstRemote : null;
+    if (!remote) {
+      const { json } = await productOfferRead(auth, 1, { id: item.offerId }, apiBase);
+      remote = Array.isArray(json?.results) ? json.results[0] || null : null;
+    }
+    if (!remote) {
+      skipped.push({
+        offerId: item.offerId,
+        error: `Oferta ${item.offerId} nu există pe eMAG ${platform.toUpperCase()}`,
+      });
+      continue;
+    }
+    offers.push({
+      id: Number(remote.id),
+      status: Number(remote.status),
+      sale_price: remote.sale_price,
+      vat_id: Number(remote.vat_id),
+      handling_time: normalizeHandlingTime(remote.handling_time),
+      stock: normalizeStock(remote.stock, null),
+      images: item.images,
+      images_overwrite: 1,
+    });
+  }
+
+  if (!offers.length) {
+    const err = new Error(
+      skipped[0]?.error || `Nicio ofertă găsită pe eMAG ${platform.toUpperCase()}`
+    );
+    err.status = 404;
+    err.expected = true;
+    throw err;
+  }
+
+  const messages = [];
+  for (let i = 0; i < offers.length; i += PUSH_CHUNK_SIZE) {
+    const chunk = offers.slice(i, i + PUSH_CHUNK_SIZE);
+    const { response, json, text } = await productOfferSave(auth, chunk, apiBase);
+    if (!json) {
+      const err = new Error(
+        `Răspuns invalid de la eMAG ${platform.toUpperCase()}: ${text.slice(0, 300)}`
+      );
+      err.status = response.status;
+      throw err;
+    }
+    if (json.isError) {
+      const err = new Error(`eMAG ${platform.toUpperCase()} a returnat eroare la trimiterea pozelor`);
+      err.status = 502;
+      err.messages = json.messages || [];
+      throw err;
+    }
+    if (Array.isArray(json.messages) && json.messages.length) {
+      messages.push(...json.messages);
+    }
+  }
+
+  console.log(
+    `[images-push] ${platform}: ${offers.length} oferte (auth=${authUsed})`,
+    offers.map((o) => ({ id: o.id, images: o.images.length }))
+  );
+  return { count: offers.length, authUsed, messages, skipped };
+}
+
+/**
  * Construieste payload-ul de push din valorile mele. Arunca daca lipsesc campuri.
  * Schelet obligatoriu eMAG: id, status, vat_id, sale_price, stock, handling_time.
  * Optionale (PRP/min/max/name/description) doar daca flag-ul corespunzator e true.
@@ -395,6 +535,7 @@ function buildPushPayload(
     includeRecommendedPrice = false,
     includeMinSalePrice = false,
     includeMaxSalePrice = false,
+    includeImages = false,
     // includeSalePrice / includeStock: informative (sale_price+stock mereu in schelet)
     includeSalePrice: _includeSalePrice = false,
     includeStock: _includeStock = false,
@@ -459,6 +600,15 @@ function buildPushPayload(
   if (wantPrp && recommended_price != null) payload.recommended_price = recommended_price;
   if (wantMin && min_sale_price != null) payload.min_sale_price = min_sale_price;
   if (wantMax && max_sale_price != null) payload.max_sale_price = max_sale_price;
+  if (includeImages) {
+    const images = buildImagesField(listing?.images);
+    if (!images.length) {
+      throw invalid(`Oferta ${id}: nu am nicio poza de trimis`);
+    }
+    payload.images = images;
+    // 1 = inlocuieste setul de pe eMAG cu cel trimis (altfel se adauga peste cele vechi)
+    payload.images_overwrite = 1;
+  }
   return payload;
 }
 
@@ -547,6 +697,8 @@ module.exports = {
   formatCharacteristics,
   fetchListings,
   pushListings,
+  pushImages,
+  buildImagesField,
   buildPushPayload,
   mergeLocalWithRemoteCache,
   fetchCommission,
