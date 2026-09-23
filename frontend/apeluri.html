@@ -11,12 +11,12 @@
   </head>
   <body>
     <main id="review-login" class="login-shell">
-      <form id="review-login-form" class="login-card" autocomplete="off">
+      <form id="review-login-form" class="login-card" autocomplete="on">
         <h1 class="login-title">Apeluri review</h1>
-        <p class="login-sub">Introdu parola pentru acces la numerele clienților.</p>
+        <p class="login-sub">Introdu parola o dată. Accesul rămâne reținut pe acest browser.</p>
         <label class="field login-field">
           <span>Parolă</span>
-          <input id="review-password" type="password" required autocomplete="current-password" />
+          <input id="review-password" name="password" type="password" required autocomplete="current-password" />
         </label>
         <p id="review-login-error" class="login-error" hidden></p>
         <button type="submit" class="btn login-submit">Intră</button>

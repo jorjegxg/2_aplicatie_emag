@@ -3333,6 +3333,29 @@ html.auth-pending body {
   box-sizing: border-box;
 }
 
+/* Formularul de pe pagina de apeluri acoperă ecranul și stă la mijloc. */
+#review-login.login-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, var(--glow-1), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 80%, var(--glow-2), transparent 50%),
+    var(--bg);
+}
+
+#review-login .login-card {
+  width: 100%;
+  max-width: 22rem;
+}
+
 .login-shell[hidden],
 .page[hidden] {
   display: none !important;

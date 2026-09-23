@@ -10,8 +10,20 @@ const loginForm = document.getElementById("review-login-form");
 const passwordEl = document.getElementById("review-password");
 const loginErrorEl = document.getElementById("review-login-error");
 const logoutBtn = document.getElementById("btn-review-logout");
+const TOKEN_KEY = "review-calls-token";
 
 let orders = [];
+
+function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+function forgetAccess() {
+  localStorage.removeItem(TOKEN_KEY);
+}
 
 function showPage() {
   loginEl.hidden = true;
@@ -161,7 +173,8 @@ async function copyText(text, button) {
 async function updateCalled(orderId, called, card) {
   const response = await fetch(`/api/review-calls/${encodeURIComponent(orderId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ called }),
   });
   const data = await response.json();
@@ -198,8 +211,13 @@ async function load() {
   errorEl.hidden = true;
   summaryEl.textContent = "Se încarcă…";
   try {
-    const response = await fetch("/api/review-calls?limit=10000", { cache: "no-store" });
+    const response = await fetch("/api/review-calls?limit=10000", {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
     if (response.status === 401) {
+      forgetAccess();
       showLogin();
       return;
     }
@@ -222,6 +240,7 @@ loginForm.addEventListener("submit", async (event) => {
   loginErrorEl.hidden = true;
   const response = await fetch("/api/review-calls/auth", {
     method: "POST",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password: passwordEl.value }),
   });
@@ -230,13 +249,15 @@ loginForm.addEventListener("submit", async (event) => {
     showLogin(data.error || "Parola nu este corectă");
     return;
   }
+  if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
   passwordEl.value = "";
   showPage();
   load();
 });
 
 logoutBtn.addEventListener("click", async () => {
-  await fetch("/api/review-calls/logout", { method: "POST" });
+  forgetAccess();
+  await fetch("/api/review-calls/logout", { method: "POST", credentials: "same-origin" });
   showLogin();
 });
 

@@ -348,9 +348,11 @@ function reviewPassword() {
   return String(process.env.REVIEW_CALLS_PASSWORD || "").trim();
 }
 
+const REVIEW_SESSION_SECONDS = 365 * 24 * 60 * 60;
+
 function reviewSessionToken() {
   const payload = Buffer.from(
-    JSON.stringify({ exp: Date.now() + 30 * 24 * 60 * 60 * 1000 }),
+    JSON.stringify({ exp: Date.now() + REVIEW_SESSION_SECONDS * 1000 }),
     "utf8"
   ).toString("base64url");
   const secret = String(
@@ -360,13 +362,21 @@ function reviewSessionToken() {
   return `${payload}.${signature}`;
 }
 
-function reviewSessionValid(req) {
+function reviewCookieToken(req) {
   const raw = String(req.headers.cookie || "")
     .split(";")
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${REVIEW_COOKIE}=`));
-  const token = raw ? decodeURIComponent(raw.slice(REVIEW_COOKIE.length + 1)) : "";
-  const [payload, signature] = token.split(".");
+  return raw ? decodeURIComponent(raw.slice(REVIEW_COOKIE.length + 1)) : "";
+}
+
+function reviewBearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
+
+function reviewTokenValid(token) {
+  const [payload, signature] = String(token || "").split(".");
   if (!payload || !signature) return false;
   const secret = String(
     process.env.APP_SESSION_SECRET || process.env.CREDENTIALS_ENCRYPTION_KEY || "emag-review-session"
@@ -382,6 +392,10 @@ function reviewSessionValid(req) {
   }
 }
 
+function reviewSessionValid(req) {
+  return reviewTokenValid(reviewBearerToken(req)) || reviewTokenValid(reviewCookieToken(req));
+}
+
 app.post("/api/review-calls/auth", (req, res) => {
   const provided = String(req.body?.password || "");
   const expected = reviewPassword();
@@ -390,12 +404,13 @@ app.post("/api/review-calls/auth", (req, res) => {
   const valid =
     a.length === b.length && crypto.timingSafeEqual(a, b) && expected.length > 0;
   if (!valid) return res.status(401).json({ error: "Parolă greșită" });
+  const token = reviewSessionToken();
   const secure = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
   res.setHeader(
     "Set-Cookie",
-    `${REVIEW_COOKIE}=${encodeURIComponent(reviewSessionToken())}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure ? "; Secure" : ""}`
+    `${REVIEW_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${REVIEW_SESSION_SECONDS}${secure ? "; Secure" : ""}`
   );
-  return res.json({ ok: true });
+  return res.json({ ok: true, token });
 });
 
 app.post("/api/review-calls/logout", (_req, res) => {
