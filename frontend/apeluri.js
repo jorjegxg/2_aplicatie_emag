@@ -294,8 +294,12 @@ async function load() {
       showLogin();
       return;
     }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Eroare la încărcarea comenzilor");
+    }
+    showPage();
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Eroare la încărcarea comenzilor");
     orders = Array.isArray(data.orders) ? data.orders : [];
     render();
     if (data.reviews_note) {
