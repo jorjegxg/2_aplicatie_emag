@@ -35,25 +35,23 @@
       </header>
 
       <section class="toolbar review-toolbar">
-        <div class="toolbar-fields">
-          <label class="field">
-            <span>Caută client, telefon, produs sau comandă</span>
-            <input id="review-search" type="search" placeholder="Ex. 0744…, 12345…" />
-          </label>
-          <label class="field">
-            <span>Arată</span>
-            <select id="review-filter">
-              <option value="all">Toate comenzile</option>
-              <option value="uncalled">Doar nesunați</option>
-              <option value="called">Doar sunați</option>
-              <option value="romania">Doar România</option>
-              <option value="returned">Doar returnate</option>
-            </select>
-          </label>
+        <label class="review-search">
+          <span class="visually-hidden">Caută client, telefon, produs sau comandă</span>
+          <input id="review-search" type="search" enterkeyhint="search" placeholder="Caută client, telefon, produs sau comandă" />
+        </label>
+        <button type="button" id="btn-review-filters-size" class="review-filters-size" aria-expanded="true" aria-controls="review-filters">Micșorează filtrele</button>
+        <div class="review-filters" id="review-filters" role="group" aria-label="Filtru comenzi">
+          <button type="button" class="review-chip is-active" data-filter="all" aria-pressed="true">Fără returnate, BG și HU</button>
+          <button type="button" class="review-chip" data-filter="uncalled" aria-pressed="false">Nesunați, fără BG, HU, retur</button>
+          <button type="button" class="review-chip" data-filter="reviewed" aria-pressed="false">Cu review</button>
+          <button type="button" class="review-chip" data-filter="called" aria-pressed="false">Sunați</button>
+          <button type="button" class="review-chip" data-filter="romania" aria-pressed="false">România</button>
+          <button type="button" class="review-chip" data-filter="returned" aria-pressed="false">Returnate</button>
+          <button type="button" class="review-chip" data-filter="everything" aria-pressed="false">Toate</button>
         </div>
-        <div class="toolbar-actions">
-          <button type="button" id="btn-reload" class="btn btn-with-icon">Reîncarcă</button>
+        <div class="review-toolbar-bar">
           <span id="review-summary" class="status" aria-live="polite"></span>
+          <button type="button" id="btn-reload" class="btn">Reîncarcă</button>
         </div>
       </section>
 

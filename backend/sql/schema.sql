@@ -290,6 +290,14 @@ CREATE TABLE IF NOT EXISTS review_call_state (
 CREATE INDEX IF NOT EXISTS idx_review_call_state_called
   ON review_call_state (called, updated_at DESC);
 
+-- Review-uri publice eMAG, pe PNK, ca să nu cerem site-ul la fiecare deschidere.
+CREATE TABLE IF NOT EXISTS emag_review_cache (
+  part_number_key TEXT PRIMARY KEY,
+  reviews JSONB NOT NULL DEFAULT '[]',
+  http_status INTEGER,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Subscription-uri Web Push (bara de notificări pe telefon / desktop).
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   endpoint TEXT PRIMARY KEY,

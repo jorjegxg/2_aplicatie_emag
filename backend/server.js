@@ -75,6 +75,7 @@ const {
 } = require("./stock-movements");
 const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const { query } = require("./pg");
+const { attachCustomerReviews } = require("./emag-reviews");
 const {
   initPush,
   getPublicKey,
@@ -295,11 +296,17 @@ function extractCustomerContact(raw) {
   }
   const phone = phones[0] || null;
   const countryCode = firstValue(
+    customer?.shipping_country,
+    customer?.billing_country,
     address?.country_code,
     address?.countryCode,
     address?.country?.code,
+    address?.shipping_country,
+    address?.billing_country,
     customer?.country_code,
-    customer?.countryCode
+    customer?.countryCode,
+    delivery?.country_code,
+    delivery?.country
   );
   const country = firstValue(
     address?.country,
@@ -307,7 +314,9 @@ function extractCustomerContact(raw) {
     address?.countryName,
     customer?.country,
     customer?.country_name,
-    findNestedValue(raw, ["country_code", "countryCode", "country_name", "country"])
+    customer?.shipping_country,
+    customer?.billing_country,
+    findNestedValue(raw, ["country_code", "countryCode", "country_name", "country", "shipping_country", "billing_country"])
   );
   const city = firstValue(address?.city, address?.locality, address?.town);
   const normalizedCountry = String(countryCode || country || "").trim().toLowerCase();
@@ -332,6 +341,17 @@ function emagSlug(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 180);
+}
+
+function rawProductForLine(raw, line) {
+  const products = Array.isArray(raw?.products) ? raw.products : [];
+  const part = String(line.part_number || "").trim();
+  const pnk = String(line.review_part_number || "").trim();
+  return products.find((product) => {
+    const productPnk = String(product?.part_number_key || "").trim();
+    const productPart = String(product?.part_number || product?.ext_part_number || "").trim();
+    return (pnk && productPnk === pnk) || (part && (productPart === part || productPnk === part));
+  }) || null;
 }
 
 function reviewUrlFor(partNumber, productName) {
@@ -428,7 +448,7 @@ app.get("/api/review-calls", requireReviewAuth, async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 5000, 1), 10000);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
     const { rows: orders } = await query(
-      `SELECT order_id, status, order_date, customer_name, currency, products_total, raw,
+      `SELECT order_id, channel, status, order_date, customer_name, currency, products_total, raw,
               EXISTS (
                 SELECT 1 FROM review_call_state s
                 WHERE s.order_id = e.order_id AND s.called = TRUE
@@ -465,15 +485,20 @@ app.get("/api/review-calls", requireReviewAuth, async (req, res) => {
           [orderIds]
         )
       : { rows: [] };
+    const rawByOrder = new Map(orders.map((order) => [String(order.order_id), order.raw || {}]));
     const linesByOrder = new Map();
     for (const line of lines) {
       const key = String(line.order_id);
       if (!linesByOrder.has(key)) linesByOrder.set(key, []);
+      const rawProduct = rawProductForLine(rawByOrder.get(key), line);
+      const pnk = String(rawProduct?.part_number_key || line.review_part_number || "").trim();
       linesByOrder.get(key).push({
         line_id: line.line_id,
         catalog_product_id: line.catalog_product_id,
         part_number: line.part_number,
         review_part_number: line.review_part_number || line.part_number,
+        pnk: /^[A-Z0-9]{6,20}$/i.test(pnk) ? pnk : "",
+        mkt_id: rawProduct?.mkt_id ?? null,
         name: line.name,
         quantity: line.quantity,
         sale_price: line.sale_price,
@@ -492,23 +517,36 @@ app.get("/api/review-calls", requireReviewAuth, async (req, res) => {
           line.review_part_number || line.part_number,
           line.name
         ),
+        customer_reviews: [],
       });
     }
+    const payload = orders.map((order) => ({
+      id: order.order_id,
+      channel: order.channel || "emag",
+      status: order.status,
+      date: order.order_date,
+      customer_name: order.customer_name,
+      currency: order.currency || "RON",
+      products_total: order.products_total,
+      called: Boolean(order.called),
+      contact: extractCustomerContact(order.raw || {}),
+      products: linesByOrder.get(String(order.order_id)) || [],
+      customer_reviews: [],
+    }));
+    let reviewsNote = "";
+    try {
+      const reviewResult = await attachCustomerReviews(payload);
+      reviewsNote = reviewResult.note || "";
+    } catch (err) {
+      console.error("[review-calls:reviews]", err.message);
+      reviewsNote = "Review-urile nu au putut fi încărcate.";
+    }
     return res.json({
-      orders: orders.map((order) => ({
-        id: order.order_id,
-        status: order.status,
-        date: order.order_date,
-        customer_name: order.customer_name,
-        currency: order.currency || "RON",
-        products_total: order.products_total,
-        called: Boolean(order.called),
-        contact: extractCustomerContact(order.raw || {}),
-        products: linesByOrder.get(String(order.order_id)) || [],
-      })),
-      count: orders.length,
+      orders: payload,
+      count: payload.length,
       hasMore: orders.length === limit,
       offset,
+      reviews_note: reviewsNote,
     });
   } catch (err) {
     console.error("[review-calls:list]", err.message);
