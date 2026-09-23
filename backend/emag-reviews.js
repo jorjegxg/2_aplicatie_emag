@@ -29,12 +29,31 @@ function tokensInclude(customer, phrase) {
   return false;
 }
 
-/** 100 = nume întreg, 70+ = prenume + inițială, 25 = doar prenumele. */
+/** Poreclă de tip „Octavian.rx”: un nume lung din comandă, plus un sufix scurt. */
+function nicknameScore(customer, review, customerSet) {
+  const core = review.filter((token) => token.length > 3 || customerSet.has(token));
+  const suffixOnly = review.every((token) => customerSet.has(token) || token.length <= 3);
+  if (!suffixOnly || !core.length) return 0;
+  if (!core.every((token) => customerSet.has(token))) return 0;
+  if (!core.some((token) => token.length >= 7)) return 0;
+  return 75;
+}
+
+/** 100 = nume întreg, 95 = aceleași cuvinte în altă ordine, 75 = poreclă (Octavian.rx), 70+ = prenume + inițială, 25 = doar prenumele. */
 function matchScore(customerName, reviewName) {
   const customer = nameTokens(customerName);
   const review = nameTokens(reviewName);
   if (!customer.length || !review.length) return 0;
   if (customer.join(" ") === review.join(" ")) return 100;
+
+  const customerSet = new Set(customer);
+  if (
+    review.length >= 2
+    && review.length === customer.length
+    && review.every((token) => customerSet.has(token))
+  ) {
+    return 95;
+  }
 
   const initial = review.length >= 2 && review[review.length - 1].length === 1
     ? review[review.length - 1]
@@ -44,6 +63,8 @@ function matchScore(customerName, reviewName) {
     if (review.length === 1 && customer.some((token) => token === review[0] && token.length > 2)) {
       return 25;
     }
+    const nickname = nicknameScore(customer, review, customerSet);
+    if (nickname) return nickname;
     return 0;
   }
   if (!initial) return given.join(" ") === customer.join(" ") ? 100 : 40;
