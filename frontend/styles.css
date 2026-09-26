@@ -428,7 +428,8 @@ body {
 .page.is-table-fullscreen .header,
 .page.is-table-fullscreen .toolbar-fields,
 .page.is-table-fullscreen .sync-summary,
-.page.is-table-fullscreen .filter-status {
+.page.is-table-fullscreen .filter-status,
+.page.is-table-fullscreen .calc-params {
   display: none;
 }
 
