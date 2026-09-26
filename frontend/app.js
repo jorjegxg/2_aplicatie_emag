@@ -18,7 +18,8 @@ const {
 const Calc = window.Calculator;
 
 const btnMore = document.getElementById("btn-more");
-const btnSaveSettings = document.getElementById("btn-save-settings");
+const btnSaveAll = document.getElementById("btn-save-all");
+const btnSaveCount = document.getElementById("btn-save-count");
 const btnColumns = document.getElementById("btn-columns");
 const btnExport = document.getElementById("btn-export");
 const btnExportMenu = document.getElementById("btn-export-menu");
@@ -57,7 +58,7 @@ let hasMore = false;
 /** @type {Array<object>} */
 let loadedProducts = [];
 let loading = false;
-let savingSettings = false;
+let savingAll = false;
 let exporting = false;
 let savedSettingsSnapshot = null;
 let sortCol = null;
@@ -307,10 +308,23 @@ function isSettingsDirty() {
   );
 }
 
+/** Setari modificate sau editari din tabel care inca n-au ajuns in DB. */
+function hasUnsavedChanges() {
+  return isSettingsDirty() || schedulePersistListing.pendingCount() > 0;
+}
+
 function updateSaveDirtyState() {
-  const dirty = isSettingsDirty();
-  btnSaveSettings.classList.toggle("is-dirty", dirty);
-  btnSaveSettings.disabled = savingSettings || !dirty;
+  btnSaveAll.classList.toggle("is-dirty", hasUnsavedChanges());
+  btnSaveAll.disabled = savingAll;
+  const count = schedulePersistListing.pendingIds().size;
+  if (btnSaveCount) {
+    btnSaveCount.textContent = count > 0 ? String(count) : "";
+    btnSaveCount.hidden = count === 0;
+  }
+  btnSaveAll.title =
+    count > 0
+      ? `${count} ${count === 1 ? "produs modificat" : "produse modificate"} — salvează în baza de date (Ctrl+S)`
+      : "Salvează toate modificările în baza de date (Ctrl+S)";
 }
 
 async function loadSettings() {
@@ -326,27 +340,45 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  if (savingSettings || !isSettingsDirty()) return;
-  savingSettings = true;
+  if (!isSettingsDirty()) return;
+  const res = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settingsRequestBody()),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
+  fillSettings(data);
+  updateDerivedCells();
+  persistAllDerived();
+}
+
+/** Butonul "Salvează": singurul loc din care setarile si editarile din tabel ajung in DB. */
+async function saveAll() {
+  if (savingAll) return false;
+  savingAll = true;
   updateSaveDirtyState();
   setStatus("Se salvează…", "loading");
 
+  /* Campul in curs de editare (ex. Ctrl+S) isi programeaza salvarea pe change/focusout. */
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && tbody.contains(active)) active.blur();
+
   try {
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settingsRequestBody()),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    fillSettings(data);
-    updateDerivedCells();
-    persistAllDerived();
-    setStatus("Setări salvate.", "ok");
+    await saveSettings();
+    const { failed } = await schedulePersistListing.flush();
+    if (failed > 0) {
+      throw new Error(
+        `${failed} ${failed === 1 ? "modificare nu s-a salvat" : "modificări nu s-au salvat"} — vezi Logs.`
+      );
+    }
+    setStatus("Toate modificările au fost salvate.", "ok");
+    return true;
   } catch (err) {
     setStatus(err.message || "Eroare la salvare", "error");
+    return false;
   } finally {
-    savingSettings = false;
+    savingAll = false;
     updateSaveDirtyState();
   }
 }
@@ -1899,6 +1931,8 @@ const schedulePersistListing = createPersister({
   getChannel: () => LISTING_CHANNEL,
   onSaved: (id, fields) => patchLoadedProduct(id, fields),
   onError: (err) => setStatus(err.message || "Eroare la salvare", "error"),
+  onPendingChange: () => updateSaveDirtyState(),
+  manual: true,
 });
 
 function patchLoadedProduct(id, fields) {
@@ -2098,7 +2132,20 @@ exportMenu?.addEventListener("click", (e) => {
   exportProducts(item.dataset.exportMode);
 });
 
-btnSaveSettings.addEventListener("click", saveSettings);
+btnSaveAll.addEventListener("click", saveAll);
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    void saveAll();
+  }
+});
+
+window.addEventListener("beforeunload", (e) => {
+  if (!hasUnsavedChanges()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 btnMore.hidden = true;
 
 table.querySelector("thead")?.addEventListener("click", (e) => {
@@ -2212,7 +2259,13 @@ try {
 
 /** Publica toate modificarile pe toate canalele configurate (backend-ul preia oglinda daca lipseste). */
 async function pushAllChannels() {
-  if (!confirm("Trimit toate modificările pe toate canalele configurate?")) return;
+  /* Pe canale pleaca ce e in DB — editarile nesalvate trebuie salvate intai. */
+  if (hasUnsavedChanges()) {
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și apoi public pe canale?")) return;
+    if (!(await saveAll())) return;
+  } else if (!confirm("Trimit toate modificările pe toate canalele configurate?")) {
+    return;
+  }
   btnPushAll.disabled = true;
   setStatus("Se publică pe canale…", "loading");
   try {

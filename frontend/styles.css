@@ -338,14 +338,25 @@ body {
   flex-shrink: 0;
 }
 
-#btn-save-settings.is-dirty:not(:disabled) {
+#btn-save-all.is-dirty:not(:disabled) {
   background: var(--accent);
   color: var(--on-accent);
   border-color: var(--accent);
 }
 
-#btn-save-settings.is-dirty:not(:disabled):hover {
+#btn-save-all.is-dirty:not(:disabled):hover {
   background: var(--accent-hover);
+}
+
+.btn-save-count {
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--on-accent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: center;
 }
 
 .btn:hover:not(:disabled) {

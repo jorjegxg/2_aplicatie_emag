@@ -291,13 +291,25 @@
    * getChannel() e citit la momentul salvarii, nu la creare.
    * Al 4-lea arg `{ immediate: true }` anuleaza debounce-ul (ex. blur).
    */
-  function createPersister({ getChannel, onSaved, onError }) {
+  /**
+   * `manual: true` — nimic nu pleaca singur; modificarile asteapta pana la flush()
+   * (butonul "Salvează"). Altfel se salveaza automat dupa 300 ms.
+   */
+  function createPersister({ getChannel, onSaved, onError, onPendingChange, manual = false }) {
+    /** key -> { id, handle, fire } pentru salvarile in asteptare. */
     const timers = new Map();
+    /** Salvarile trimise si inca fara raspuns. */
+    const inflight = new Set();
+
+    function notifyPending() {
+      if (onPendingChange) onPendingChange(timers.size + inflight.size);
+    }
 
     async function persistNow(id, fields, label) {
       try {
         await patchListing(getChannel(), id, fields);
         if (onSaved) onSaved(id, fields);
+        return true;
       } catch (err) {
         console.error(`[${label || "listing"}] salvare eșuată:`, err.message);
         if (global.AppLogger) {
@@ -309,30 +321,68 @@
           });
         }
         if (onError) onError(err);
+        return false;
       }
     }
 
-    return function schedulePersistListing(offerId, fields, label, opts) {
+    function run(id, fields, label) {
+      const p = persistNow(id, fields, label).finally(() => {
+        inflight.delete(p);
+        notifyPending();
+      });
+      inflight.add(p);
+      notifyPending();
+      return p;
+    }
+
+    function schedulePersistListing(offerId, fields, label, opts) {
       const id = String(offerId ?? "");
       if (!id) return;
       const key = `${id}:${Object.keys(fields).sort().join(",")}`;
       const prev = timers.get(key);
-      if (prev) clearTimeout(prev);
+      if (prev) clearTimeout(prev.handle);
       timers.delete(key);
 
-      if (opts && opts.immediate) {
-        void persistNow(id, fields, label);
+      if (manual) {
+        timers.set(key, { id, handle: null, fire: () => run(id, fields, label) });
+        notifyPending();
         return;
       }
 
-      timers.set(
-        key,
-        setTimeout(() => {
+      if (opts && opts.immediate) {
+        void run(id, fields, label);
+        return;
+      }
+
+      timers.set(key, {
+        id,
+        handle: setTimeout(() => {
           timers.delete(key);
-          void persistNow(id, fields, label);
-        }, 300)
-      );
+          void run(id, fields, label);
+        }, 300),
+        fire: () => run(id, fields, label),
+      });
+      notifyPending();
+    }
+
+    /** Trimite acum tot ce e programat si asteapta toate salvarile in curs. */
+    schedulePersistListing.flush = async function flush() {
+      const pending = [...timers.values()];
+      timers.clear();
+      pending.forEach((t) => {
+        clearTimeout(t.handle);
+        t.fire();
+      });
+      const results = await Promise.all([...inflight]);
+      return { failed: results.filter((ok) => !ok).length };
     };
+
+    schedulePersistListing.pendingCount = () => timers.size + inflight.size;
+
+    /** Produsele cu modificari inca netrimise. */
+    schedulePersistListing.pendingIds = () => new Set([...timers.values()].map((t) => t.id));
+
+    return schedulePersistListing;
   }
 
   global.Pricing = {
