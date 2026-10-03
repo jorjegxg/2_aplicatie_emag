@@ -4,8 +4,8 @@ description: >-
   Creates eMAG listing copy that converts — Romanian titles (5-slot formula +
   official Tip+Brand+Model), gallery roles, benefit-led descriptions, full
   characteristics for filters, multi-language image overlay text (RO/HU/BG+),
-  and .99 pricing — after buyer research via LINK DE REFERINTA and Excel SIZE vs
-  DB dimensions. Use when the user asks for titlu, descriere, listare eMAG,
+  and .99 pricing — after buyer research using product data from the app
+  database (catalog_products, never the Excel files). Use when the user asks for titlu, descriere, listare eMAG,
   texte pe poze, listing copy, product SEO, packshot, or conversion listing.
 ---
 
@@ -46,39 +46,49 @@ One product
 
 - `.99` AT THE END (mass-market; round prices OK for premium positioning)
 
-## Data sources (required)
+## Data source — app database only (required)
 
-1. Open [`FISIERE/Excel Comanda Produse.xlsx`](../../../FISIERE/Excel%20Comanda%20Produse.xlsx) — headers on **row 3**.
-   - Same file as `c:\Users\yotre\OneDrive\Desktop\2_aplicatie_emag\FISIERE\Excel Comanda Produse.xlsx` when the project lives on that Windows path.
-2. Match the product by `NAME` / `NUME IN ROMANA` / `COLOR` / `SIZE` (or user SKU).
-3. Read **`LINK DE REFERINTA`** — purchase/supplier URL. Use it for specs, materials, dimensions, and visual cues.
-4. Also use when present: `NAME`, `ALIEXPRESS NAME`, `ALIBABA NAME`, `MATERIAL`, `COLOR`, `SIZE`, `NUME IN ROMANA`.
-5. Read DB dimensions for the matched catalog product: `inaltime`, `lungime`, `latime` (cm) on `catalog_products` — via app UI, `GET /api/products`, or Postgres (`DATABASE_URL`).
+All product facts come from the app's Postgres database. **Do not read the Excel files in `FISIERE/`** (`Excel Comanda Produse.xlsx` etc.) — the user wants the database as the only source.
 
-If `LINK DE REFERINTA` is missing: ask for the URL, or use `link_cumparare` from the catalog / website export. Do not invent a supplier link.
+Fastest way (bash + Docker, on the machine running the app):
 
-## Dimension check (Excel vs DB) — mandatory
+```bash
+.claude/skills/emag-listare-perfecta/scripts/produs_din_db.sh <id | cod_produs | PNK | EAN | offer id | text from name>
+```
 
-Before writing copy, compare Excel dimensions to DB and **tell the user clearly if they differ**.
+It prints details, family variants, saved characteristics, photos and what is missing. Otherwise query Postgres directly (`DATABASE_URL`; from the host the DB listens on port 5433 — see `docker-compose.yml`):
 
-| Source | Field(s) | Notes |
-|--------|----------|--------|
-| Excel | `SIZE` | Free text (e.g. `45*40*30`, `500 cm`, `.`). Parse numbers when possible. |
-| DB | `inaltime`, `lungime`, `latime` | Numeric cm on `catalog_products`. |
+| Table / column | Use |
+|----------------|-----|
+| `catalog_products.nume` | Current title (the "before" in the critique) |
+| `catalog_products.descriere` | Current description |
+| `catalog_products.brand` | Brand — `OEM` / empty = no own brand → omit from title |
+| `catalog_products.lungime`, `latime`, `inaltime` (cm), `greutate` (kg) | Dimensions (`L x l x Î` = lungime x latime x inaltime) and weight |
+| `catalog_products.link_cumparare`, `link_ali`, `link_amz` | Supplier links — source for specs, materials, package contents |
+| `catalog_products.cod_produs`, `part_number_key`, `emag_offer_id`, `ean` | Identify the product / PNK |
+| `catalog_products.id_familie` → `product_families.name` | Variants (colors / sizes) in the same family |
+| `marketplace_listings.characteristics` (`product_id` = `catalog_products.id`) | Saved eMAG characteristics (`id: value; …`) |
+| `product_images` (`product_id`, `platform` en/ro/bg/hu, `sort_order`) | Uploaded photos per market |
 
-Rules:
+If all supplier links are empty: ask the user for the URL. Do not invent a supplier link, specs or a fallback from Excel.
 
-1. Parse Excel `SIZE` into comparable numbers (split on `*`, `x`, `×`, or spaces; ignore junk like `.` alone).
-2. Compare to DB `inaltime` / `lungime` / `latime` (cm). Order in Excel is often L×W×H or similar — if ambiguous, report both raw Excel `SIZE` and the three DB values; do not silently assume axis mapping.
-3. Treat as **different** when: parsed values disagree (beyond trivial rounding, e.g. 0.1 cm), Excel has dimensions and DB is null/incomplete, or DB has dimensions and Excel `SIZE` is empty/unusable.
-4. Always include a **Dimensions Excel vs DB** section in the output (match / differ / incomplete), with both sides shown.
-5. Prefer **verified facts** for listing copy: if Excel and DB conflict, flag it and ask which source is correct before locking dimensions into title/description; do not invent a third value.
+## Data checks (DB) — mandatory
+
+Before writing copy, report clearly:
+
+1. **Dimensions:** `lungime x latime x inaltime` cm + `greutate` kg — or **INCOMPLETE** if any value is null (ask; do not invent).
+2. **Variants:** products in the same family with different dimensions → flag and confirm with the user before locking numbers into title/images.
+3. **Supplier link:** present or missing.
+4. **Brand:** own brand vs `OEM` / empty.
+5. **Missing:** characteristics, photos, description.
+
+Use the same numbers everywhere (title, scale image, description specs, characteristics).
 
 ## Workflow (mandatory order)
 
-1. **Identify product** from user input + Excel row(s) / color variants.
-2. **Dimension check** (Excel `SIZE` vs DB `inaltime`/`lungime`/`latime`) — report match or difference.
-3. **Open LINK DE REFERINTA** (fetch or summarize from available data). Extract factual specs only.
+1. **Identify product** in the DB (`produs_din_db.sh` or SQL) + family variants (colors).
+2. **Data checks (DB)** — dimensions, variants, supplier link, brand, missing data; report.
+3. **Open the supplier link** (`link_cumparare` / `link_ali` / `link_amz`) if present. Extract factual specs only.
 4. **Buyer research (enter the customer's mind)** before any copy:
    - What search queries would they type on eMAG (RO)? Prefer **eMAG autocomplete** (incognito → type seed phrase) and top reviewed titles in category.
    - What **filters** appear on the left in category? Those map to characteristics that must be filled.
@@ -90,7 +100,7 @@ Rules:
 ## Buyer research rules
 
 - Prefer **search language of the buyer**, not supplier jargon (Alibaba title ≠ eMAG title).
-- `NUME IN ROMANA` is a category seed (e.g. PERNE DE MASAJ), not the final title.
+- The current DB `nume` and the family name are seeds for the product type, not the final title.
 - Characteristics people look for: material, dimensions, compatibility (auto/office), benefit (pain/comfort), how to install, washable/cover, color options.
 - Purchase drivers: clear problem fix, visible quality cues, universal fit, easy install, concrete dimensions, trust (memory foam, ergonomic, etc. — only if true).
 - **Keyword rule:** primary keyword in title; secondary keywords in characteristics + description — do not stuff all into the title.
@@ -118,9 +128,9 @@ Use when writing titles, bullets, descriptions, and image themes:
 
 | Slot | Content | Rules |
 |------|---------|-------|
-| Ce este | Product type (buyer search language) | Required. Exact primary keyword when possible. Use `NUME IN ROMANA` as seed, not copy-paste. |
+| Ce este | Product type (buyer search language) | Required. Exact primary keyword when possible. Use the DB `nume` / family name as seed, not copy-paste. |
 | Pentru cine/unde | Use context / compatibility | Required when relevant (auto, birou, copii, etc.). |
-| Brand | Product brand | **Only if verifiable** from Excel / link / catalog. Otherwise omit. |
+| Brand | Product brand | **Only if verifiable** — DB `brand` (not `OEM`) or supplier link. Otherwise omit. |
 | Diferențiator | Benefit + proof | **Required:** problem→solution + material/proof if it fits. Kill one objection (washable, fit, size). |
 | Specificație cheie | Size / capacity / color | Optional; include if it helps SEO and is verified. Color often last (eMAG habit). |
 
@@ -176,7 +186,7 @@ Use when writing titles, bullets, descriptions, and image themes:
 - Promo messages (“Ofertă limitată!”, “Cumpără acum!”, “Super ofertă”)
 - One description covering a whole product family (one description = one product)
 
-**Allowed:** objective benefits, functions, characteristics; facts only from Excel + supplier link (+ DB when dimensions agreed). Mark unknowns; do not invent certifications or materials.
+**Allowed:** objective benefits, functions, characteristics; facts only from the DB + supplier link. Mark unknowns; do not invent certifications or materials.
 
 **Never copy the supplier description** (duplicate content + Chinese translation errors destroy trust). Re-check anatomical terms, materials, units.
 
@@ -250,20 +260,20 @@ Subtle contact shadow OK for depth; harsh shadows / fake edit marks — avoid. D
 ## Research (short)
 - Search intent (RO) / autocomplete seeds: …
 - Characteristics shoppers compare + category filters to fill: …
-- Specs from link / Excel: …
+- Specs from DB / supplier link: …
 - Purchase drivers: …
 - Problem → resolution (for title Diferențiator): …
 - Objections to kill (title / gallery / description): …
 
-## Dimensions Excel vs DB
-- Excel `SIZE`: …
-- DB (cm): inaltime=…, lungime=…, latime=…
-- Verdict: MATCH | DIFFER | INCOMPLETE
-- If DIFFER / INCOMPLETE: what differs and which source needs confirmation
+## Data from DB
+- Product: id … / cod_produs … / family … / variants: …
+- Dimensions: lungime x latime x inaltime = … cm, greutate … kg — OK | INCOMPLETE
+- Brand: … | Supplier link: … (or “lipsă — cerut”)
+- Missing: …
 
 ## Titlu — analiză și recomandare
 ### Cum e acum titlul
-…   <!-- existing catalog / Excel / eMAG title; or “lipsă” -->
+…   <!-- current DB `nume`; or “lipsă” -->
 
 ### De ce nu e bun titlul
 - …   <!-- SEO, first 60 chars, problem→solution, stuffing, jargon, length, etc. -->
@@ -329,7 +339,7 @@ White packshot, ~85–90% frame, 2000×2000, **no text**.
 - Always show **before/after critique** for title and description. Do not skip.
 - Gallery: photo 1 clean; later photos each kill an objection; overlay text informative only; thumbnail-readable.
 - Never copy competitor/supplier claims you cannot verify.
-- Never skip the Excel vs DB dimension verdict.
+- Never skip the DB data checks (dimensions, variants, supplier link).
 - Remind to complete **all** characteristics that map to category filters.
 
 ## Official resources (verify when rules conflict)

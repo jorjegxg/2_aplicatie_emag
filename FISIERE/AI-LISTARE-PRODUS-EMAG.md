@@ -1,6 +1,6 @@
 # AI — Listare produs eMAG (titlu, descriere, texte pe poze)
 
-**Cum folosești:** lipește acest fișier într-un chat AI, apoi dă produsul (nume / culoare / SKU) sau rândul din Excel. AI-ul trebuie să urmeze workflow-ul de mai jos înainte de a scrie copy.
+**Cum folosești:** lipește acest fișier într-un chat AI, apoi dă produsul cu datele lui din baza de date a aplicației (titlu, descriere, dimensiuni, brand, link furnizor, variante). AI-ul trebuie să urmeze workflow-ul de mai jos înainte de a scrie copy.
 
 **Aliniat cu:** `.cursor/skills/emag-listing-copy/SKILL.md`  
 **Ghid complet (conversie):** `FISIERE/GHID-LISTARE-EMAG-VINDE.md`
@@ -37,28 +37,28 @@ Un produs
 
 ## Surse de date (obligatoriu)
 
-1. Deschide `FISIERE/Excel Comanda Produse.xlsx` — header pe **rândul 3**.
-2. Identifică produsul după NAME / NUME IN ROMANA / COLOR / SIZE (sau SKU-ul dat de tine).
-3. Citește **`LINK DE REFERINTA`** — linkul de cumpărare/furnizor. Folosește-l pentru specs, materiale, dimensiuni, indicii vizuale.
-4. Folosește și, dacă există: `NAME`, `ALIEXPRESS NAME`, `ALIBABA NAME`, `MATERIAL`, `COLOR`, `SIZE`, `NUME IN ROMANA`.
-5. Compară `SIZE` (Excel) cu `inaltime` / `lungime` / `latime` din DB — raportează MATCH / DIFFER / INCOMPLETE.
+Toate datele despre produs vin din **baza de date a aplicației**. Nu folosi Excel-urile din `FISIERE/` (`Excel Comanda Produse.xlsx` etc.).
 
-Dacă lipsește `LINK DE REFERINTA`: cere linkul sau folosește `link_cumparare` din catalog / export website. Nu inventa link de furnizor.
+Le scoți cu `.claude/skills/emag-listare-perfecta/scripts/produs_din_db.sh <id | cod_produs | PNK | nume>` sau direct din Postgres:
 
-| Coloană | Rol |
+| Coloană (`catalog_products`) | Rol |
 |---------|-----|
-| `LINK DE REFERINTA` | link cumpărare — research obligatoriu |
-| `NAME` / `ALIBABA NAME` / `ALIEXPRESS NAME` | nume EN + keywords sursă |
-| `MATERIAL`, `COLOR`, `SIZE` | caracteristici factuale |
-| `NUME IN ROMANA` | tip produs RO (ex. PERNE DE MASAJ) — start SEO, nu titlu final |
+| `nume` / `descriere` | titlul și descrierea actuale — „înainte” în critică; seed pentru tipul produsului, nu titlu final |
+| `brand` | brand — `OEM` / gol = fără brand propriu → nu intră în titlu |
+| `lungime`, `latime`, `inaltime` (cm), `greutate` (kg) | dimensiuni (`L x l x Î`) și greutate |
+| `link_cumparare`, `link_ali`, `link_amz` | link furnizor — research obligatoriu pentru specs, materiale, pachet |
+| `id_familie` → `product_families.name` | variante (culori / mărimi) |
+| `marketplace_listings.characteristics` | caracteristici eMAG salvate |
+
+Dacă nu există niciun link de furnizor: cere-l. Nu inventa link, specs sau dimensiuni.
 
 ---
 
 ## Workflow (ordine obligatorie)
 
-1. **Identifică produsul** din input + rândurile Excel / variante de culoare.
-2. **Dimension check** Excel vs DB.
-3. **Deschide LINK DE REFERINTA** — extrage doar fapte (specs).
+1. **Identifică produsul** în baza de date + variantele din familie (culori).
+2. **Verificări date** — dimensiuni complete, variante cu dimensiuni diferite, link furnizor, brand, ce lipsește.
+3. **Deschide linkul de furnizor** (`link_cumparare` / `link_ali` / `link_amz`) — extrage doar fapte (specs).
 4. **Research cumpărător** (înainte de orice copy):
    - Ce cuvinte caută pe eMAG (RO)? Autocomplete + titluri top recenzii.
    - Ce filtre apar în stânga pe categorie? (→ caracteristici de completat)
@@ -87,7 +87,7 @@ Dacă lipsește `LINK DE REFERINTA`: cere linkul sau folosește `link_cumparare`
 
 | Slot | Reguli |
 |------|--------|
-| Ce este | Obligatoriu. Keyword principal. Seed din `NUME IN ROMANA`. |
+| Ce este | Obligatoriu. Keyword principal. Seed din `nume` / familia din DB. |
 | Pentru cine/unde | Obligatoriu când e relevant (auto, birou…). |
 | Brand | Doar dacă verificabil; altfel omis. |
 | Diferențiator | Obligatoriu: problem→solution + dovadă; omoară o obiecție. |
@@ -139,15 +139,15 @@ Dacă lipsește `LINK DE REFERINTA`: cere linkul sau folosește `link_cumparare`
 ## Research (scurt)
 - Intent căutare (RO) / autocomplete: …
 - Caracteristici + filtre de completat: …
-- Specs din link / Excel: …
+- Specs din DB / link furnizor: …
 - Motive de cumpărare: …
 - Problemă → rezolvare (Diferențiator): …
 - Obiecții de omorât: …
 
-## Dimensions Excel vs DB
-- Excel SIZE: …
-- DB: inaltime=…, lungime=…, latime=…
-- Verdict: MATCH | DIFFER | INCOMPLETE
+## Date din DB
+- Produs: id … / cod_produs … / familie … / variante: …
+- Dimensiuni: lungime x latime x inaltime = … cm, greutate … kg — OK | INCOMPLETE
+- Brand: … | Link furnizor: … (sau „lipsă — cerut”)
 
 ## Titlu — analiză și recomandare
 ### Cum e acum
@@ -200,7 +200,7 @@ Packshot alb, fără text, 2000×2000.
 - Titlul: formula pe 5 sloturi, 60–120 caractere, primele ~60 OK, problem→solution în Diferențiator, fără stuffing.
 - Descriere: cuvinte proprii, beneficiu + dovadă, fără promo/ofertă în text.
 - Galerie: fiecare poză omoară o obiecție; poza 1 fără text.
-- Nu inventa specs. Nu sări peste verdictul Excel vs DB.
+- Nu inventa specs. Nu sări peste verificările datelor din DB.
 - Reminder: toate caracteristicile care apar ca filtre.
 
 ---
