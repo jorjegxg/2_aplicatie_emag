@@ -4,7 +4,7 @@ description: >-
   Fluxul complet, în 8 pași, pentru listarea perfectă a unui produs eMAG pornind de la un cod
   (PNK, cod_produs, EAN, offer id sau id din DB): reamintiri din memorie, date doar din DB,
   research pe emag.ro, căutare după imagine pe Alibaba + pozele furnizorului la rezoluție maximă,
-  titlu/descriere/caracteristici verificate, salvare DOAR locală, galerie de 8 poze 2000×2000
+  titlu/descriere (RO, HU, BG)/caracteristici verificate, salvare DOAR locală, galerie de 8 poze 2000×2000
   pe RO/HU/BG și trimitere pe eMAG numai la „trimite pe eMAG”. Folosește-l când utilizatorul
   scrie „Produs: <COD>”, „listarea perfectă pentru <COD>”, „fă listarea completă”,
   „/emag-listare-completa <COD>” sau dă un cod de produs și cere listare/relistare cu poze pe limbi.
@@ -93,7 +93,13 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   - Caracteristicile multi-valoare se trimit ca mai multe intrări cu același id.
   - Când `allow_new_value=1`, poți scrie o valoare nouă.
   - O valoare care nu poate fi dovedită se marchează și se cere utilizatorului.
-- **Arată-i utilizatorului totul înainte de salvare**, într-un tabel înainte/după, plus întrebările deschise.
+- **Titlu și descriere în HU și BG** (de făcut întotdeauna, nu doar pe RO):
+  - Citește ce e acum pe eMAG HU/BG: `trimite_texte.js` în dry-run (pasul 7) arată titlul și descrierea actuale. Des, descrierea lipsește sau titlul e o traducere automată cu `cod_produs` în față.
+  - Nu traduce cuvânt cu cuvânt: pornește de la textul RO aprobat și adaptează keyword-urile la cum se caută pe emag.hu / emag.bg (verifică 1–2 căutări cu WebFetch). Aceleași reguli de lungime: titlu 80–120 de caractere, zona A înțeleasă singură; descriere 200–350 de cuvinte, bullets cu „- ”, fără `**`.
+  - Spre deosebire de RO, aici **păstrezi diacriticele**: maghiara fără á, é, ő, ű e greu de citit, iar BG e în chirilică. Unitățile: „cm” în HU, „см” în BG.
+  - Aceleași fapte ca pe RO (dimensiuni, conținutul pachetului, culoare): nimic în plus.
+  - Scrie-le în `<dir>/texte_hu_bg.json` (`{"hu": {"name", "description"}, "bg": {...}}`) și verifică titlurile cu `verifica_listare.py titlu`.
+- **Arată-i utilizatorului totul înainte de salvare**, într-un tabel înainte/după (RO, HU și BG), plus întrebările deschise.
 
 ## 5. Salvare în aplicație (doar local, după confirmare)
 - Fă întâi backup cu valorile vechi: JSON în scratchpad cu `nume`, `descriere` și `characteristics`.
@@ -103,7 +109,8 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   `UPDATE marketplace_listings SET characteristics = '<id>: valoare; ...' WHERE product_id=<id> AND channel='emag'`
   Valorile multiple se despart prin virgulă. Rulează-l prin `docker exec emag-db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" ...'`.
 - Recitește din DB și confirmă ce s-a salvat.
-- Butonul „Publică” din aplicație trimite doar preț/stoc/titlu/descriere. Caracteristicile și pozele NU pleacă prin el.
+- Butonul „Publică” din aplicație trimite doar preț/stoc/titlu/descriere, și doar pe RO. Caracteristicile și pozele NU pleacă prin el.
+- Aplicația nu are titlu și descriere pentru HU/BG, deci acolo nu ai ce salva local: textele aprobate rămân în `<dir>/texte_hu_bg.json` până la „trimite pe eMAG” (pasul 7).
 
 ## 6. Poze pe limbi (RO, HU, BG): 8 poze de 2000×2000
 - Pornește de la pozele furnizorului: cele deja încărcate (tabela `product_images`, fișierele în `/var/www/poze/_catalog/<stored_name>` sau în MinIO) plus cele noi de la pasul 3. Alege pentru fiecare rol poza cu cea mai mare rezoluție.
@@ -134,7 +141,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
 - Trimite-i utilizatorului contact sheet-ul fiecărei limbi cu SendUserFile.
 
 ## 7. Trimitere pe eMAG (DOAR când utilizatorul spune explicit „trimite pe eMAG”)
-Ordinea: întâi caracteristicile, apoi pozele. Fiecare script rulează implicit în **dry-run**. Arată-i utilizatorului rezultatul și adaugă `send` doar după aceea.
+Ordinea: întâi caracteristicile, apoi titlul și descrierea HU/BG, apoi pozele. Fiecare script rulează implicit în **dry-run**. Arată-i utilizatorului rezultatul și adaugă `send` doar după aceea.
 - **Caracteristici:** scrie `schimbari.json` (`{"<id>": "valoare"}` sau `{"<id>": ["v1", "v2"]}` pentru multi-valoare), apoi:
   `docker cp $SK/trimite_caracteristici.js emag-back:/tmp/ && docker cp schimbari.json emag-back:/tmp/`
   `docker exec -w /app emag-back node /tmp/trimite_caracteristici.js <offer_id> /tmp/schimbari.json` pentru dry-run, apoi aceeași comandă cu `send`.
@@ -143,20 +150,26 @@ Ordinea: întâi caracteristicile, apoi pozele. Fiecare script rulează implicit
 - **Poze:** `docker cp $SK/trimite_poze.js emag-back:/tmp/ && docker exec -w /app emag-back node /tmp/trimite_poze.js <product_id> ro,hu,bg`. Asta e dry-run și verifică că URL-urile publice răspund 200. Apoi aceeași comandă cu `send`.
   - Logica e cea a endpoint-ului `POST /api/catalog/product/:id/images/push`: effectiveImages, `getChannel("emag").pushImages`, apoi markImagesPushed.
   - După push, scriptul recitește oferta pe fiecare platformă (`emagApiBase(platform)`) și compară numărul de poze.
-- Titlul și descrierea pleacă prin „Publică” din aplicație, fie de utilizator, fie la cererea lui explicită.
+- **Titlu și descriere HU/BG:** `docker cp $SK/trimite_texte.js emag-back:/tmp/ && docker cp texte_hu_bg.json emag-back:/tmp/`
+  `docker exec -w /app emag-back node /tmp/trimite_texte.js <offer_id> hu,bg /tmp/texte_hu_bg.json` pentru dry-run (titlul și descrierea înainte/după), apoi aceeași comandă cu `send`.
+  - Citește oferta pe fiecare platformă și o retrimite completă cu valorile ei (preț în HUF/BGN, stoc, caracteristici, poze), înlocuind doar `name` și `description`. Descrierea trece prin `textToHtml`, ca la „Publică”.
+  - Apoi recitește și confirmă titlul și descrierea. Dacă trimiți și pozele pe HU/BG, trimite întâi textele, apoi pozele.
+- Titlul și descrierea RO pleacă prin „Publică” din aplicație, fie de utilizator, fie la cererea lui explicită.
 - Warning-ul „Please provide product characteristic values for the given family type” apare la produsele fără familie și nu blochează. „Invalid vendor ip” înseamnă că IP-ul serverului trebuie adăugat în contul eMAG HU/BG.
 
 ## 8. La final
 Un rezumat scurt:
-- ce e salvat local, ce e pe eMAG și pe ce platforme;
-- ce a rămas deschis: traducerile titlului și descrierii pentru HU/BG, câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni.
+- ce e salvat local, ce e pe eMAG și pe ce platforme (inclusiv titlul și descrierea HU/BG);
+- ce a rămas deschis: câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni.
 
 Actualizează memoria dacă s-a rezolvat sau a apărut o problemă eMAG de reamintit.
 
 ### Curățenie (obligatoriu, la sfârșitul listării)
 Pozele finale sunt deja în aplicație (`product_images` + stocare), deci tot ce e pe disk sunt copii sau candidați (~20–45 MB pe produs). Șterge-le când utilizatorul nu mai cere modificări la poze și `imagini_app.js list` arată 8 poze pe ro/hu/bg cu `byte_size` egal cu fișierele generate:
 - directorul produsului din scratchpad, cu tot ce conține (poze Alibaba, `desc/`, `img/`, `out/`, contact sheet-uri, ciorne, fonturi): `rm -rf <scratchpad>/<cod>`;
-- tot ce ai copiat în container pentru acest produs: `docker exec emag-back sh -c 'cd /tmp && rm -rf p<id> n<id> descriere<id>.txt schimbari.json categorie_*.json alibaba_*.js emag_*.js imagini_app.js trimite_*.js'`;
+- tot ce ai copiat în container pentru acest produs: `docker exec emag-back sh -c 'cd /tmp && rm -rf p<id> n<id> descriere<id>.txt schimbari.json texte_hu_bg.json categorie_*.json alibaba_*.js emag_*.js imagini_app.js trimite_*.js'`;
 - `.claude/tmp-imgsearch/`, dacă a rămas.
+
+Excepție: dacă titlul și descrierea HU/BG nu au fost încă trimise pe eMAG, `texte_hu_bg.json` e singura lor copie. Pune-le întregi în rezumat (ca să rămână în conversație) înainte să ștergi directorul.
 
 Nu șterge nimic din `/var/www/poze/`, din stocarea aplicației sau din `/tmp/node-compile-cache` din container. Spune-i utilizatorului în rezumat că ai făcut curățenia.

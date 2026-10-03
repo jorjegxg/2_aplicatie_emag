@@ -28,4 +28,4 @@
 ## Aplicație / eMAG
 - Scripturile rulate cu `node /tmp/x.js` rezolvă `require("./...")` față de /tmp: folosește căi absolute `/app/...` și `/app/node_modules/pg`.
 - Clientul eMAG scrie loguri pe stdout („[auth] preferred ...”): nu parsa stdout ca JSON, scrie rezultatul într-un fișier.
-- „Publică” din aplicație trimite doar preț/stoc/titlu/descriere. Caracteristicile și pozele pleacă doar prin `trimite_caracteristici.js` și `trimite_poze.js`, și doar după „trimite pe eMAG”.
+- „Publică” din aplicație trimite doar preț/stoc/titlu/descriere, și doar pe RO. Caracteristicile, pozele și titlul/descrierea HU/BG pleacă doar prin `trimite_caracteristici.js`, `trimite_poze.js` și `trimite_texte.js`, și doar după „trimite pe eMAG”.
