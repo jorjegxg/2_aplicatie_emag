@@ -753,6 +753,14 @@ async function updateProduct(productId, fields) {
     await recalcPretCumparare([id]);
   }
 
+  return getProduct(id);
+}
+
+/** Randul din catalog (cu familie si override-urile eMAG) al unui produs, sau null. */
+async function getProduct(productId) {
+  await ensureSchema();
+  const id = Number(productId);
+  if (!Number.isFinite(id)) return null;
   const { rows } = await query(
     `${SQL_CATALOG_WITH_FAMILIE} WHERE c.id = $1`,
     [id]
@@ -1427,6 +1435,7 @@ module.exports = {
   getListing,
   getListings,
   updateProduct,
+  getProduct,
   getProductOfferId,
   upsertCatalogProducts,
   updateCatalogPurchaseMeta,
@@ -1436,4 +1445,5 @@ module.exports = {
   getListingCosts,
   lookupCatalogPretCumparare,
   recalcPretCumparare,
+  touchesPretCumparareInputs,
 };

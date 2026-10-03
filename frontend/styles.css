@@ -3108,6 +3108,45 @@ td.col-link-cumparare .btn-open-link:hover {
   line-height: 1.45;
 }
 
+.log-changes {
+  border-collapse: collapse;
+  margin-bottom: 0.6rem;
+  font-size: 0.8rem;
+  background: var(--surface);
+}
+
+.log-changes th,
+.log-changes td {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.log-changes td {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 32rem;
+}
+
+.log-changes-field {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.log-changes-from {
+  background: var(--tint-red-soft);
+}
+
+.log-changes-to {
+  background: var(--tint-green-soft);
+}
+
+.log-changes-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .logs-pager {
   display: flex;
   align-items: center;

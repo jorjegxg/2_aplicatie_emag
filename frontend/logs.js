@@ -86,6 +86,37 @@
     return d.toLocaleString("ro-RO", { hour12: false });
   }
 
+  function changeValueHtml(value) {
+    return value == null
+      ? '<span class="log-changes-empty">(gol)</span>'
+      : escapeHtml(String(value));
+  }
+
+  /** Tabel Câmp / Înainte / După pentru logurile de salvare care au `changes` in detalii. */
+  function changesTableHtml(detailText) {
+    var parsed;
+    try {
+      parsed = JSON.parse(detailText);
+    } catch (e) {
+      return "";
+    }
+    var changes = parsed && Array.isArray(parsed.changes) ? parsed.changes : null;
+    if (!changes || !changes.length) return "";
+    return (
+      '<table class="log-changes"><thead><tr><th>Câmp</th><th>Înainte</th><th>După</th></tr></thead><tbody>' +
+      changes
+        .map(function (c) {
+          return (
+            '<tr><td class="log-changes-field">' + escapeHtml(c.field) + "</td>" +
+            '<td class="log-changes-from">' + changeValueHtml(c.from) + "</td>" +
+            '<td class="log-changes-to">' + changeValueHtml(c.to) + "</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table>"
+    );
+  }
+
   function renderRows(rows) {
     if (!rows.length) {
       els.body.innerHTML =
@@ -96,7 +127,8 @@
       .map(function (row) {
         var detailRow = row.detail
           ? '<tr class="log-detail" id="detail-' + row.id + '" hidden>' +
-            '<td colspan="7"><pre>' + escapeHtml(row.detail) + "</pre></td></tr>"
+            '<td colspan="7">' + changesTableHtml(row.detail) +
+            "<pre>" + escapeHtml(row.detail) + "</pre></td></tr>"
           : "";
         return (
           '<tr class="log-row" data-id="' + row.id + '">' +

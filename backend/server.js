@@ -18,17 +18,21 @@ const {
   clearChannelCache,
   getCatalogRows,
   updateListing,
+  getListing,
   getChannelRemotes,
   getChannelViewRows,
   updateProduct,
+  getProduct,
   getProductOfferId,
   getChannelDiff,
   getChannelStats,
   getListingCosts,
   lookupCatalogPretCumparare,
   recalcPretCumparare,
+  touchesPretCumparareInputs,
   ensureSchema,
 } = require("./marketplace-db");
+const { diffFields, summarizeChanges, productLabel } = require("./change-log");
 const {
   MAX_BYTES,
   ALLOWED_MIME,
@@ -631,11 +635,13 @@ app.use((req, res, next) => {
   if (!req.path.startsWith("/api/") || req.path.startsWith("/api/logs") || req.path === "/api/health") return next();
   const startedAt = Date.now();
   res.on("finish", () => {
+    // Rutele de salvare pun in res.locals.changeLog ce campuri au schimbat (vezi noteChanges).
+    const changeLog = res.statusCode < 400 ? res.locals.changeLog : null;
     void log({
       level: res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
       source: "server",
       category: categoryForPath(req.path),
-      message: `${req.method} ${req.originalUrl} → ${res.statusCode}`,
+      message: changeLog?.message || `${req.method} ${req.originalUrl} → ${res.statusCode}`,
       status: res.statusCode,
       durationMs: Date.now() - startedAt,
       detail: {
@@ -643,11 +649,31 @@ app.use((req, res, next) => {
         path: req.path,
         query: req.query,
         bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body) : [],
+        ...changeLog?.detail,
       },
     });
   });
   next();
 });
+
+/** Alias-urile din body-ul de salvare → coloana din catalog_products. */
+const FIELD_COLUMN_ALIASES = { name: "nume", description: "descriere", stock: "general_stock" };
+
+/** Coloanele pe care le poate schimba o salvare cu `fields`, inclusiv efectele secundare. */
+function columnsTouchedBy(fields) {
+  const cols = new Set(Object.keys(fields || {}).map((k) => FIELD_COLUMN_ALIASES[k] || k));
+  if (touchesPretCumparareInputs(fields)) cols.add("pret_cumparare");
+  if (cols.has("id_familie")) cols.add("familie");
+  return cols;
+}
+
+/** Campurile schimbate de o salvare ajung in mesajul si detaliile logului HTTP al cererii. */
+function noteChanges(res, { subject, changes, sent, note, extra }) {
+  res.locals.changeLog = {
+    message: `${subject}: ${summarizeChanges(changes)}${note ? ` (${note})` : ""}`,
+    detail: { changes, ...(sent ? { sent } : {}), ...extra },
+  };
+}
 
 // Health check pentru containerul back (nu atinge DB/S3).
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -788,6 +814,7 @@ app.post("/api/settings", async (req, res) => {
       return Number.isFinite(n) ? n : null;
     };
 
+    const before = await getSettings().catch(() => null);
     const saved = await saveSettings({
       procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
       mult_prp: toNum(req.body?.mult_prp),
@@ -799,9 +826,15 @@ app.post("/api/settings", async (req, res) => {
           : undefined,
     });
     // Parametrii calculatorului schimba costul final → pret_cumparare pe tot catalogul.
+    let recalculated = null;
     if (saved.calculator_params && req.body?.calculator_params) {
-      await recalcPretCumparare(null);
+      recalculated = await recalcPretCumparare(null);
     }
+    noteChanges(res, {
+      subject: "Setări",
+      changes: diffFields(before, saved),
+      note: recalculated ? `pret_cumparare recalculat la ${recalculated} produse` : null,
+    });
 
     return res.json(saved);
   } catch (err) {
@@ -950,7 +983,13 @@ app.patch("/api/catalog/listing/:externalId", async (req, res) => {
     const fields = req.body?.fields && typeof req.body.fields === "object"
       ? req.body.fields
       : req.body || {};
+    const before = await getListing(channel, externalId).catch(() => null);
     const saved = await updateListing(channel, externalId, fields);
+    noteChanges(res, {
+      subject: `Produs ${productLabel(saved)} (${channel} ${externalId})`,
+      changes: diffFields(before, saved, { only: columnsTouchedBy(fields) }),
+      sent: Object.keys(fields),
+    });
     return res.json({ ok: true, channel, listing: saved });
   } catch (err) {
     console.error("[listing:patch]", err.message);
@@ -964,8 +1003,14 @@ app.patch("/api/catalog/product/:productId", async (req, res) => {
     const fields = req.body?.fields && typeof req.body.fields === "object"
       ? req.body.fields
       : req.body || {};
+    const before = await getProduct(req.params.productId).catch(() => null);
     const saved = await updateProduct(req.params.productId, fields);
     if (!saved) return res.status(404).json({ error: "Produs inexistent" });
+    noteChanges(res, {
+      subject: `Produs ${productLabel(saved)}`,
+      changes: diffFields(before, saved, { only: columnsTouchedBy(fields) }),
+      sent: Object.keys(fields),
+    });
     return res.json({ ok: true, product: saved });
   } catch (err) {
     console.error("[product:patch]", err.message);
