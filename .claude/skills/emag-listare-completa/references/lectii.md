@@ -29,3 +29,5 @@
 - Scripturile rulate cu `node /tmp/x.js` rezolvă `require("./...")` față de /tmp: folosește căi absolute `/app/...` și `/app/node_modules/pg`.
 - Clientul eMAG scrie loguri pe stdout („[auth] preferred ...”): nu parsa stdout ca JSON, scrie rezultatul într-un fișier.
 - „Publică” din aplicație trimite doar preț/stoc/titlu/descriere, și doar pe RO. Caracteristicile, pozele și titlul/descrierea HU/BG pleacă doar prin `trimite_caracteristici.js`, `trimite_poze.js` și `trimite_texte.js`, și doar după „trimite pe eMAG”.
+- Titlu/descriere HU/BG (`trimite_texte.js`): eMAG întoarce descrierea cu entități HTML (`&eacute;`, `&#337;`, `&Oslash;`). Scriptul le decodează înainte de comparare; fără asta, recitirea dă „DIFERITĂ” deși textul e corect.
+- `UPDATE_NOT_ALLOWED_DIFFERENT_PLATFORM` în `validation_status[0].errors`: produsul are deja o actualizare de documentație în validare pe altă platformă (de ex. RO cu status 11 „Documentation update validation pending”). Save-ul pe HU/BG întoarce 200 și recitirea arată textul nou, dar eMAG îl respinge. Trimite HU/BG după ce RO ajunge la status 9, sau înainte de „Publică” pe RO.

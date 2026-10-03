@@ -11,6 +11,13 @@ const fs = require("fs");
 const { emagFetch, emagApiBase, loadCredentials, authHeader, authCandidates } = require("/app/emag-client");
 const { htmlToText, textToHtml } = require("/app/description-format");
 const [oidS, platS, file, mode] = process.argv.slice(2);
+// eMAG întoarce descrierea cu entități HTML (&eacute;, &#337;, &Oslash;): le decodăm înainte de comparare.
+const L1 = "Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml".split(" ");
+const NAMED = Object.assign(Object.fromEntries(L1.map((n, i) => [n, String.fromCharCode(192 + i)])),
+  { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", deg: "°", ndash: "–", mdash: "—", hellip: "…", bdquo: "„", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", laquo: "«", raquo: "»", middot: "·", times: "×" });
+const decode = (t) => String(t || "").replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d))).replace(/&([a-z]+);/gi, (m, n) => NAMED[n] ?? m);
+const plain = (html) => decode(htmlToText(html || "")).replace(/\s+/g, " ").trim();
 const SEND = mode === "send";
 const oid = Number(oidS);
 async function call(base, auth, ep, data) {
@@ -34,7 +41,7 @@ async function call(base, auth, ep, data) {
     const description = textToHtml(String(t.description).trim());
     console.log(`[${platform}] TITLU ÎNAINTE: ${p.name}`);
     console.log(`[${platform}] TITLU DUPĂ:    ${name} (${name.length} caractere)`);
-    console.log(`[${platform}] DESCRIERE ÎNAINTE (${htmlToText(p.description || "").length} caractere): ${htmlToText(p.description || "").slice(0, 200).replace(/\n/g, " ")}…`);
+    console.log(`[${platform}] DESCRIERE ÎNAINTE (${plain(p.description).length} caractere): ${plain(p.description).slice(0, 200)}…`);
     console.log(`[${platform}] DESCRIERE DUPĂ (${htmlToText(description).length} caractere): ${htmlToText(description).slice(0, 200).replace(/\n/g, " ")}…`);
     if (!SEND) { console.log(`[${platform}] DRY-RUN — nimic trimis.`); continue; }
     const payload = {
@@ -53,8 +60,11 @@ async function call(base, auth, ep, data) {
     console.log(`[${platform}] SAVE`, r.status, "isError=" + r.json.isError, JSON.stringify(r.json.messages || []));
     if (r.json.isError) { failed = true; continue; }
     const q = ((await call(base, auth, "product_offer/read", { id: oid })).json.results || [])[0] || {};
-    console.log(`[${platform}] RECITIT: titlu ${q.name === name ? "OK" : `DIFERIT („${q.name}”)`}, descriere ${htmlToText(q.description || "") === htmlToText(description) ? "OK" : "DIFERITĂ"}`,
-      "| validare:", JSON.stringify((q.validation_status || [])[0]));
+    const v = (q.validation_status || [])[0] || {};
+    const errs = ((v.errors && v.errors.errors) || []).map((e) => `${e.code}: ${(e.message && e.message.ro_RO) || ""}`);
+    console.log(`[${platform}] RECITIT: titlu ${q.name === name ? "OK" : `DIFERIT („${q.name}”)`}, descriere ${plain(q.description) === plain(description) ? "OK" : "DIFERITĂ"}`,
+      `| validare: ${v.value} ${v.description}`);
+    if (errs.length) { console.log(`[${platform}] RESPINS de eMAG (textul nu ajunge pe site):`, errs.join(" | ")); failed = true; }
   }
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e.message || e); process.exit(1); });
