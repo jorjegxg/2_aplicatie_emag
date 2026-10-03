@@ -1320,6 +1320,8 @@ function pushFlagsFromDiffRow(row) {
 /**
  * Pozele pe BG si HU: le trimitem separat de canalul eMAG RO, pentru produsele
  * la care setul efectiv difera de ce am trimis ultima data pe platforma aceea.
+ * Doar pozele incarcate special pentru BG/HU — fallback-ul EN nu pleaca niciodata
+ * automat, ca publicarea sa nu schimbe galeriile de pe BG/HU.
  * -> cate un rezultat { platform, count, ok, error? } pe platforma.
  */
 async function pushImagesToSecondaryPlatforms(diffRows) {
@@ -1340,7 +1342,7 @@ async function pushImagesToSecondaryPlatforms(diffRows) {
       const stamps = [];
       for (const row of rows) {
         const effective = pickEffective(imagesByProduct.get(Number(row.product_id)), platform);
-        if (!effective.images.length) continue;
+        if (effective.source !== platform || !effective.images.length) continue;
         const stamp = imagesStamp(effective);
         if (stamp === pushed.get(`${Number(row.product_id)}:${platform}`)) continue;
         items.push({
@@ -1395,7 +1397,7 @@ app.post("/api/sync/push-all", async (req, res) => {
         }
         console.log(`[push-all] ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
         if (ch.id === "emag") {
-          // Pozele pe celelalte platforme eMAG (BG, HU) — fiecare cu setul ei sau cel EN.
+          // Pozele pe celelalte platforme eMAG (BG, HU) — doar setul incarcat pentru ele.
           const imagePushes = await pushImagesToSecondaryPlatforms(diff.matched || []);
           for (const img of imagePushes.filter((r) => r.count > 0 || !r.ok)) {
             results.push({
