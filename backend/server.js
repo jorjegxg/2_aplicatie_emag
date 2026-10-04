@@ -1371,61 +1371,89 @@ async function pushImagesToSecondaryPlatforms(diffRows) {
 }
 
 let pushAllRunning = false;
+/** Publicarile (toate produsele sau un rand) ruleaza pe rand, ca sa nu se suprapuna pe canale. */
+let pushAllTail = Promise.resolve();
 
-/** Publica toate modificarile pe toate canalele configurate (preia oglinda daca lipseste). */
+function runPushExclusive(fn) {
+  const run = pushAllTail.then(fn, fn);
+  pushAllTail = run.catch(() => {});
+  return run;
+}
+
+/**
+ * Publica modificarile pe toate canalele configurate (preia oglinda daca lipseste).
+ * Cu `product_id` publica doar produsul acela (randul din tabel), pe fiecare canal unde e legat.
+ */
 app.post("/api/sync/push-all", async (req, res) => {
-  if (pushAllRunning) {
-    return res.status(409).json({ error: "Publicarea pe toate canalele este deja în curs." });
+  const rawProductId = req.body?.product_id ?? req.query.product_id;
+  const productId =
+    rawProductId == null || rawProductId === "" ? null : Number(rawProductId);
+  if (productId != null && !Number.isInteger(productId)) {
+    return res.status(400).json({ error: "product_id invalid" });
   }
-  pushAllRunning = true;
-  try {
-    const channels = (await listChannels()).filter((c) => c.configured);
-    const results = [];
-    for (const ch of channels) {
-      const entry = { channel: ch.id, label: ch.label, pulled: false, count: 0, ok: true };
-      try {
-        if (!getChannelRemotes(ch.id)) {
-          await pullChannel(ch.id);
-          entry.pulled = true;
-        }
-        const diff = await getChannelDiff(ch.id);
-        const offers = (diff.matched || []).map(pushFlagsFromDiffRow).filter(Boolean);
-        if (offers.length > 0) {
-          const result = await pushOffersForChannel(ch.id, offers);
-          entry.count = offers.length;
-          entry.messages = result?.messages || [];
-        }
-        console.log(`[push-all] ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
-        if (ch.id === "emag") {
-          // Pozele pe celelalte platforme eMAG (BG, HU) — doar setul incarcat pentru ele.
-          const imagePushes = await pushImagesToSecondaryPlatforms(diff.matched || []);
-          for (const img of imagePushes.filter((r) => r.count > 0 || !r.ok)) {
-            results.push({
-              channel: `emag_${img.platform}`,
-              label: `eMAG ${img.platform.toUpperCase()} (poze)`,
-              pulled: false,
-              count: img.count,
-              ok: img.ok,
-              ...(img.error ? { error: img.error } : {}),
-              ...(img.messages ? { messages: img.messages } : {}),
-            });
-          }
-        }
-      } catch (err) {
-        console.error(`[push-all] ${ch.id}:`, err.message);
-        if (!err?.expected) logCaught("push-all", err);
-        entry.ok = false;
-        entry.error = err.message || "Eroare la publicare";
-      }
-      results.push(entry);
+  // Publicarea globala nu se pune la coada de doua ori (dublu click); randurile da.
+  if (productId == null) {
+    if (pushAllRunning) {
+      return res.status(409).json({ error: "Publicarea pe toate canalele este deja în curs." });
     }
-    return res.json({ ok: results.every((r) => r.ok), results });
+    pushAllRunning = true;
+  }
+  const tag = productId == null ? "[push-all]" : `[push-all #${productId}]`;
+  try {
+    const results = await runPushExclusive(async () => {
+      const channels = (await listChannels()).filter((c) => c.configured);
+      const out = [];
+      for (const ch of channels) {
+        const entry = { channel: ch.id, label: ch.label, pulled: false, count: 0, ok: true };
+        try {
+          if (!getChannelRemotes(ch.id)) {
+            await pullChannel(ch.id);
+            entry.pulled = true;
+          }
+          const diff = await getChannelDiff(ch.id);
+          const rows = (diff.matched || []).filter(
+            (r) => productId == null || Number(r.product_id) === productId
+          );
+          if (productId != null && rows.length === 0) entry.unlinked = true;
+          const offers = rows.map(pushFlagsFromDiffRow).filter(Boolean);
+          if (offers.length > 0) {
+            const result = await pushOffersForChannel(ch.id, offers);
+            entry.count = offers.length;
+            entry.messages = result?.messages || [];
+          }
+          console.log(`${tag} ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
+          if (ch.id === "emag") {
+            // Pozele pe celelalte platforme eMAG (BG, HU) — doar setul incarcat pentru ele.
+            const imagePushes = await pushImagesToSecondaryPlatforms(rows);
+            for (const img of imagePushes.filter((r) => r.count > 0 || !r.ok)) {
+              out.push({
+                channel: `emag_${img.platform}`,
+                label: `eMAG ${img.platform.toUpperCase()} (poze)`,
+                pulled: false,
+                count: img.count,
+                ok: img.ok,
+                ...(img.error ? { error: img.error } : {}),
+                ...(img.messages ? { messages: img.messages } : {}),
+              });
+            }
+          }
+        } catch (err) {
+          console.error(`${tag} ${ch.id}:`, err.message);
+          if (!err?.expected) logCaught("push-all", err);
+          entry.ok = false;
+          entry.error = err.message || "Eroare la publicare";
+        }
+        out.push(entry);
+      }
+      return out;
+    });
+    return res.json({ ok: results.every((r) => r.ok), product_id: productId, results });
   } catch (err) {
-    console.error("[push-all]", err.message);
+    console.error(tag, err.message);
     logCaught("push-all", err);
     return res.status(500).json({ error: err.message || "Eroare la publicare pe canale" });
   } finally {
-    pushAllRunning = false;
+    if (productId == null) pushAllRunning = false;
   }
 });
 

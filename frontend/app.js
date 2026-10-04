@@ -98,7 +98,7 @@ const colPresetSelect = document.getElementById("col-preset");
 const btnColPresetDelete = document.getElementById("btn-col-preset-delete");
 const COL_PRESET_KEY = "emag-column-preset";
 const CUSTOM_PRESETS_KEY = "emag-column-presets-custom";
-const PRESET_BASE = ["index", "images", "part_number"];
+const PRESET_BASE = ["index", "push_all", "images", "part_number"];
 
 /** Coloanele vizibile pentru fiecare preset; restul se ascund. Ordinea ramane cea din tabel, cu exceptia presetelor `ordered`. */
 const BUILTIN_PRESETS = [
@@ -976,6 +976,7 @@ function rowHtml(product, index) {
   const cells = {
     index: `<td data-col="index"${cellClass("index")}>${index}</td>`,
     id: `<td data-col="id"${cellClass("id")}>${escapeHtml(product.id)}</td>`,
+    push_all: `<td data-col="push_all"${cellClass("push_all", "col-push")}>${pushAllRowButtonHtml(product)}</td>`,
     order_history: `<td data-col="order_history"${cellClass("order_history", "col-order-history")}><button type="button" class="btn-order-history" data-offer-id="${escapeHtml(product.id)}" data-product-name="${escapeHtml(product.name || product.part_number || `Produs ${product.id}`)}">Vezi istoricul</button></td>`,
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
     images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${imagesCount}">${imagesCellHtml(imagesByPlatform)}</td>`,
@@ -2257,6 +2258,100 @@ try {
   setCompactProducts(false);
 }
 
+/* ---------- publicare pe toate canalele, pe un singur rand ---------- */
+
+/** productId -> { status: "sending"|"done"|"error", text } — supravietuieste re-randarii tabelului. */
+const rowPushAllState = new Map();
+
+function pushAllRowButtonHtml(product) {
+  const productId = product.product_id != null && product.product_id !== "" ? String(product.product_id) : "";
+  const state = productId ? rowPushAllState.get(productId) : null;
+  let cls = "btn-push-row btn-push-all-row";
+  let label = "⬆";
+  let title = "Publică doar acest produs pe toate canalele configurate (eMAG, Trendyol)";
+  let disabled = !productId;
+  if (!productId) {
+    title = "Produsul nu e legat de catalog — nu are ce publica";
+  } else if (state?.status === "sending") {
+    cls += " is-sending";
+    label = "";
+    title = "Se publică pe toate canalele…";
+    disabled = true;
+  } else if (state?.status === "done") {
+    cls += " is-done";
+    label = "✓";
+    title = `${state.text} — click ca să publici din nou`;
+  } else if (state?.status === "error") {
+    cls += " is-error";
+    label = "!";
+    title = `${state.text} — click ca să reîncerci`;
+  }
+  return `<button type="button" class="${cls}"${disabled ? " disabled" : ""} title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+}
+
+function refreshPushAllRowButton(productId) {
+  tbody.querySelectorAll(`tr[data-product-id="${CSS.escape(String(productId))}"]`).forEach((tr) => {
+    const btn = tr.querySelector("button.btn-push-all-row");
+    if (btn) btn.outerHTML = pushAllRowButtonHtml({ product_id: productId });
+  });
+}
+
+/** Rezumatul pe canale al unui raspuns /api/sync/push-all. */
+function pushAllSummary(results, { perRow = false } = {}) {
+  return results
+    .map((r) => {
+      if (!r.ok) return `${r.label}: eroare — ${r.error}`;
+      if (perRow && r.unlinked) return `${r.label}: nelegat`;
+      if (r.count > 0) return `${r.label}: ${perRow ? "trimis" : `${r.count} trimise`}`;
+      return `${r.label}: nimic de trimis`;
+    })
+    .join(" · ");
+}
+
+/** Publica pe toate canalele configurate doar produsul de pe randul respectiv. */
+async function pushRowAllChannels(tr) {
+  const productId = tr?.dataset.productId;
+  if (!productId || rowPushAllState.get(productId)?.status === "sending") return;
+  const name = getRowName(tr) || `Produs ${tr.dataset.offerId}`;
+  /* Pe canale pleaca ce e in DB — editarile nesalvate trebuie salvate intai. */
+  if (hasUnsavedChanges()) {
+    if (!confirm(`Ai modificări nesalvate. Le salvez acum și apoi public „${name}” pe toate canalele?`)) return;
+    if (!(await saveAll())) return;
+  } else if (!confirm(`Public „${name}” pe toate canalele configurate?`)) {
+    return;
+  }
+  rowPushAllState.set(productId, { status: "sending" });
+  refreshPushAllRowButton(productId);
+  setStatus(`Se publică „${name}” pe canale…`, "loading");
+  try {
+    const res = await fetch("/api/sync/push-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product_id: Number(productId) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Eroare ${res.status}`);
+    const results = data.results || [];
+    if (results.length === 0) throw new Error("Niciun canal configurat");
+    const summary = pushAllSummary(results, { perRow: true });
+    rowPushAllState.set(productId, { status: data.ok ? "done" : "error", text: summary });
+    setStatus(`„${name}”: ${summary}`, data.ok ? "ok" : "error");
+  } catch (err) {
+    const text = err.message || "Eroare la publicare pe canale";
+    rowPushAllState.set(productId, { status: "error", text });
+    setStatus(`„${name}”: ${text}`, "error");
+  } finally {
+    refreshPushAllRowButton(productId);
+  }
+}
+
+tbody.addEventListener("click", (event) => {
+  const button = event.target.closest("button.btn-push-all-row");
+  if (!button) return;
+  event.stopPropagation();
+  void pushRowAllChannels(button.closest("tr"));
+});
+
 /** Publica toate modificarile pe toate canalele configurate (backend-ul preia oglinda daca lipseste). */
 async function pushAllChannels() {
   /* Pe canale pleaca ce e in DB — editarile nesalvate trebuie salvate intai. */
@@ -2277,13 +2372,7 @@ async function pushAllChannels() {
       setStatus("Niciun canal configurat", "error");
       return;
     }
-    const summary = results
-      .map((r) => {
-        if (!r.ok) return `${r.label}: eroare — ${r.error}`;
-        return `${r.label}: ${r.count > 0 ? `${r.count} trimise` : "nimic de trimis"}`;
-      })
-      .join(" · ");
-    setStatus(summary, data.ok ? "ok" : "error");
+    setStatus(pushAllSummary(results), data.ok ? "ok" : "error");
   } catch (err) {
     setStatus(err.message || "Eroare la publicare pe canale", "error");
   } finally {
