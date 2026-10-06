@@ -89,7 +89,7 @@ def zona(text, limita):
 def verifica_titlu(titlu):
     titlu = " ".join(titlu.split())
     car, cuv = len(titlu), len(titlu.split())
-    print(f"Titlu: {car} caractere, {cuv} cuvinte  (ținta 80–120 caractere / 12–17 cuvinte)")
+    print(f"Titlu: {car} caractere, {cuv} cuvinte  (ținta 80–100 caractere / 12–15 cuvinte, maximum 100)")
     print(f'Zona A (car. 1–50, o văd toți):  "{zona(titlu, 50)}"')
     print(f'Zona B (51–80, laptop):          "{zona(titlu, 80)[len(zona(titlu, 50)):].strip()}"')
     print()
@@ -104,8 +104,8 @@ def verifica_titlu(titlu):
     probleme = []
     if car > 255:
         probleme.append(f"EROARE: {car} caractere — eMAG acceptă maximum 255.")
-    elif car > 150:
-        probleme.append("Peste 150 de caractere: restul nu se vede nicăieri în căutare și arată a spam. Mută keyword-urile în caracteristici/descriere.")
+    elif car > 100:
+        probleme.append(f"EROARE: {car} caractere — maximum 100, ca titlul să meargă și pe Trendyol. Mută keyword-urile secundare în caracteristici/descriere.")
     elif car < 80:
         probleme.append("Sub 80 de caractere: ai loc de dovadă, dimensiune sau culoare.")
     majuscule = [w for w in re.findall(r"[^\W\d_]{4,}", titlu) if w.isupper() and w not in ACRONIME_OK]

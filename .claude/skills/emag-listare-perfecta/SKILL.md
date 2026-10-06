@@ -139,11 +139,11 @@ Formula oficială eMAG este Tip produs + Brand + Model + caracteristici cheie. A
 |---|---|---|---|
 | **A** | 1–50 (~7 cuvinte) | Toată lumea | Tipul produsului, pentru ce/cine, diferențiatorul principal. Trebuie să vândă singură. |
 | **B** | 51–80 | Laptop | Beneficiu sau dovadă, apoi brandul |
-| **C** | 81–120 | Pagina produsului și căutarea internă | Dimensiuni, culoare, un keyword secundar |
+| **C** | 81–100 | Pagina produsului și căutarea internă | Dimensiuni, culoare, un keyword secundar |
 
 **Lungimea:**
-- Ținta este 80–120 de caractere, adică 12–17 cuvinte.
-- eMAG acceptă maximum 255, dar peste ~150 de caractere textul nu se mai vede nicăieri și titlul arată a spam.
+- Ținta este 80–100 de caractere, adică 12–15 cuvinte. **Maximum 100**, cu spații cu tot.
+- eMAG acceptă până la 255, dar același titlu merge și pe Trendyol, care acceptă maximum 100 și respinge oferta peste limită. Oricum, peste ~150 de caractere textul nu se mai vede nicăieri și titlul arată a spam.
 - Keyword-urile secundare merg în caracteristici și descriere, nu în coada titlului.
 
 **Brandul:** un brand necunoscut pus la început consumă un rând întreg pe telefon, deci îl pui în zona B. Îl scrii doar dacă e verificabil.
@@ -165,8 +165,8 @@ python3 .claude/skills/emag-listare-perfecta/scripts/verifica_listare.py titlu "
 
 Scriptul arată ce se vede pe fiecare ecran și semnalează lungimea, majusculele, cuvintele promoționale, simbolurile, dimensiunile fără unitate și diacriticele cu sedilă. Rescrie titlul până când zona A se înțelege singură pe telefonul de 360px.
 
-Exemplu verificat (113 caractere, 17 cuvinte):
-> Perna lombara pentru scaun auto si birou, memory foam, sustine spatele, Maiestate, husa lavabila, 38x33 cm, negru
+Exemplu verificat (98 de caractere, 15 cuvinte):
+> Perna lombara pentru scaun auto si birou, memory foam, sustine spatele, Maiestate, 38x33 cm, negru
 
 - Pe telefonul de 360px se vede „Perna lombara pentru scaun auto si birou, memory foam,”.
 - Pe laptop se vede până la „…sustine spatele, Maiestate,”.
@@ -288,7 +288,7 @@ Textul gata de lipit + numărul de cuvinte din script
 - Din filtre: … | Necunoscute (de cerut): …
 
 ## Checklist numeric
-- [ ] Titlu 80–120 car., zona A (50 car.) se înțelege singură
+- [ ] Titlu 80–100 car. (maximum 100, pentru Trendyol), zona A (50 car.) se înțelege singură
 - [ ] Poza 1 albă, fără text; 7–8 poze de 2000×2000px, fiecare cu un rol
 - [ ] Infografice: ≤20 de cuvinte, titlu ≥120px, text ≥80px
 - [ ] Descriere 200–350 de cuvinte, bullets ≤20, paragrafe ≤40

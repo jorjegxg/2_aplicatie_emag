@@ -5,7 +5,7 @@ description: >-
   (PNK, cod_produs, EAN, offer id sau id din DB): reamintiri din memorie, date doar din DB,
   research pe emag.ro, căutare după imagine pe Alibaba + pozele furnizorului la rezoluție maximă,
   titlu/descriere (RO, HU, BG)/caracteristici verificate, salvare DOAR locală, galerie de 8 poze 2000×2000
-  pe RO/HU/BG și trimitere pe eMAG numai la „trimite pe eMAG”. Folosește-l când utilizatorul
+  pe RO/HU/BG, iar la final întrebarea dacă trimite titlurile, descrierile și pozele pe eMAG RO/HU/BG (fără răspuns, nu trimite nimic). Folosește-l când utilizatorul
   scrie „Produs: <COD>”, „listarea perfectă pentru <COD>”, „fă listarea completă”,
   „/emag-listare-completa <COD>” sau dă un cod de produs și cere listare/relistare cu poze pe limbi.
 ---
@@ -21,6 +21,7 @@ adaugă ordinea pașilor, sursele de date, uneltele și regulile de siguranță.
 **Regulă generală: NU publica nimic pe eMAG fără ca utilizatorul să spună explicit „trimite pe eMAG”
 (pentru acel produs și acea acțiune). „Salvează” înseamnă doar în aplicație (DB local).**
 Citirile din API (product_offer/read, category/read) sunt permise; scrierile nu.
+La finalul listării (pasul 8) **întrebi tu** dacă să trimiți pe eMAG. Un „Da” la acea întrebare ține loc de „trimite pe eMAG”, dar doar pentru produsul respectiv și doar pentru ce a ales utilizatorul.
 
 Citește [`references/lectii.md`](references/lectii.md) înainte de pașii 1, 3 și 6: conține capcanele deja întâlnite.
 
@@ -81,7 +82,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
 - Ce arată alt vânzător în pachet (sticluță, inel de lemn) nu e automat pachetul nostru: întreabă.
 
 ## 4. Titlu, descriere și caracteristici
-- **Titlu:** 80–120 de caractere, iar zona A (primele 50) trebuie să se înțeleagă singură pe telefon. Verifică-l cu `python3 .claude/skills/emag-listare-perfecta/scripts/verifica_listare.py titlu "..."`.
+- **Titlu:** 80–100 de caractere, **maximum 100** (același titlu merge pe Trendyol, care respinge peste 100), iar zona A (primele 50) trebuie să se înțeleagă singură pe telefon. Verifică-l cu `python3 .claude/skills/emag-listare-perfecta/scripts/verifica_listare.py titlu "..."`.
 - **Descriere:** 200–350 de cuvinte, verificată cu `verifica_listare.py descriere - <<'EOF' ... EOF` sau `verifica_listare.py descriere fisier.txt`.
   - Fără bold markdown (`**`): aplicația transformă textul în HTML cu `<p>`, iar asteriscurile ar apărea literal pe eMAG.
   - Fără diacritice în titlu și descriere, pentru consecvență cu catalogul.
@@ -95,7 +96,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   - O valoare care nu poate fi dovedită se marchează și se cere utilizatorului.
 - **Titlu și descriere în HU și BG** (de făcut întotdeauna, nu doar pe RO):
   - Citește ce e acum pe eMAG HU/BG: `trimite_texte.js` în dry-run (pasul 7) arată titlul și descrierea actuale. Des, descrierea lipsește sau titlul e o traducere automată cu `cod_produs` în față.
-  - Nu traduce cuvânt cu cuvânt: pornește de la textul RO aprobat și adaptează keyword-urile la cum se caută pe emag.hu / emag.bg (verifică 1–2 căutări cu WebFetch). Aceleași reguli de lungime: titlu 80–120 de caractere, zona A înțeleasă singură; descriere 200–350 de cuvinte, bullets cu „- ”, fără `**`.
+  - Nu traduce cuvânt cu cuvânt: pornește de la textul RO aprobat și adaptează keyword-urile la cum se caută pe emag.hu / emag.bg (verifică 1–2 căutări cu WebFetch). Aceleași reguli de lungime: titlu 80–100 de caractere, maximum 100, zona A înțeleasă singură; descriere 200–350 de cuvinte, bullets cu „- ”, fără `**`.
   - Spre deosebire de RO, aici **păstrezi diacriticele**: maghiara fără á, é, ő, ű e greu de citit, iar BG e în chirilică. Unitățile: „cm” în HU, „см” în BG.
   - Aceleași fapte ca pe RO (dimensiuni, conținutul pachetului, culoare): nimic în plus.
   - Scrie-le în `<dir>/texte_hu_bg.json` (`{"hu": {"name", "description"}, "bg": {...}}`) și verifică titlurile cu `verifica_listare.py titlu`.
@@ -140,7 +141,8 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   Copiază întâi scriptul cu `docker cp $SK/imagini_app.js emag-back:/tmp/`. Compară apoi `byte_size` din DB cu fișierele generate.
 - Trimite-i utilizatorului contact sheet-ul fiecărei limbi cu SendUserFile.
 
-## 7. Trimitere pe eMAG (DOAR când utilizatorul spune explicit „trimite pe eMAG”)
+## 7. Trimitere pe eMAG (DOAR după „trimite pe eMAG” sau după „Da” la întrebarea de la pasul 8)
+**Pe un produs poate fi în validare o singură platformă o dată.** Dacă o platformă e în status 11, eMAG respinge actualizările de pe celelalte (vezi lecțiile). Înainte de fiecare trimitere, verifică `validation_status` pe ro, hu și bg. Trimite pe platforma următoare doar după ce toate au status 9. Dacă așteptarea durează, pornește o verificare în fundal la 10 minute. Produse diferite pot merge în paralel.
 Ordinea: întâi caracteristicile, apoi titlul și descrierea HU/BG, apoi pozele. Fiecare script rulează implicit în **dry-run**. Arată-i utilizatorului rezultatul și adaugă `send` doar după aceea.
 - **Caracteristici:** scrie `schimbari.json` (`{"<id>": "valoare"}` sau `{"<id>": ["v1", "v2"]}` pentru multi-valoare), apoi:
   `docker cp $SK/trimite_caracteristici.js emag-back:/tmp/ && docker cp schimbari.json emag-back:/tmp/`
@@ -154,10 +156,22 @@ Ordinea: întâi caracteristicile, apoi titlul și descrierea HU/BG, apoi pozele
   `docker exec -w /app emag-back node /tmp/trimite_texte.js <offer_id> hu,bg /tmp/texte_hu_bg.json` pentru dry-run (titlul și descrierea înainte/după), apoi aceeași comandă cu `send`.
   - Citește oferta pe fiecare platformă și o retrimite completă cu valorile ei (preț în HUF/BGN, stoc, caracteristici, poze), înlocuind doar `name` și `description`. Descrierea trece prin `textToHtml`, ca la „Publică”.
   - Apoi recitește și confirmă titlul și descrierea. Dacă trimiți și pozele pe HU/BG, trimite întâi textele, apoi pozele.
-- Titlul și descrierea RO pleacă prin „Publică” din aplicație, fie de utilizator, fie la cererea lui explicită.
+- **Titlul și descrierea RO** pleacă prin „Publică” din aplicație, fie de utilizator, fie la cererea lui explicită (inclusiv „Da” la pasul 8). Pentru un singur produs, poți folosi și `trimite_texte.js <offer_id> ro <fișier>`, cu `{"ro": {"name", "description"}}` luate din `catalog_products` (`nume`, `descriere`).
 - Warning-ul „Please provide product characteristic values for the given family type” apare la produsele fără familie și nu blochează. „Invalid vendor ip” înseamnă că IP-ul serverului trebuie adăugat în contul eMAG HU/BG.
 
 ## 8. La final
+
+### Întrebarea de trimitere pe eMAG (obligatorie)
+După ce totul e salvat local, iar pozele sunt în aplicație pe RO, HU și BG, **întreabă-l pe utilizator cu AskUserQuestion** dacă să trimiți pe eMAG titlurile, descrierile și pozele. Întreabă și când pare evident, și nu trimite nimic înainte de răspuns.
+- În întrebare spune ce ar pleca, pe fiecare platformă (RO, HU, BG): titlul, descrierea, cele 8 poze și caracteristicile, dacă s-au schimbat.
+- Opțiuni (multiSelect: false):
+  - „Da, pe RO, HU și BG (Recommended)”;
+  - „Doar pe RO”;
+  - „Nu acum”, adică totul rămâne doar local.
+- La „Da” sau „Doar RO”, mergi la pasul 7 pentru platformele alese. Fiecare script rulează întâi în dry-run și trece la `send` dacă dry-run-ul e curat.
+- La „Nu acum”, scrie în rezumat ce a rămas netrimis. Pune acolo și textele HU/BG întregi, înainte de curățenie.
+
+### Rezumat
 Un rezumat scurt:
 - ce e salvat local, ce e pe eMAG și pe ce platforme (inclusiv titlul și descrierea HU/BG);
 - ce a rămas deschis: câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni.
