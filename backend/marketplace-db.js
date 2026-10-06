@@ -211,6 +211,80 @@ async function attachImages(products) {
   }
 }
 
+const CHANNEL_LABELS = { emag: "eMAG", trendyol: "Trendyol" };
+
+/**
+ * Inlocuieste promotiile canalului cu cele din preluarea completa (`remotes` = toate
+ * ofertele de pe canal); ofertele fara `promo` ies din tabel.
+ */
+async function replaceChannelPromotions(channel, remotes) {
+  await ensureSchema();
+  const ch = normalizeChannel(channel);
+  const promos = (remotes || []).filter((r) => r?.promo && r.id != null);
+  await withTransaction(async (client) => {
+    await client.query(`DELETE FROM channel_promotions WHERE channel = $1`, [ch]);
+    for (const r of promos) {
+      await client.query(
+        `INSERT INTO channel_promotions (channel, external_id, name, promo_price, sale_price)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [ch, String(r.id), r.promo.name, toNumOrNull(r.promo.promo_price), toNumOrNull(r.sale_price)]
+      );
+    }
+  });
+  return promos.length;
+}
+
+/** Promotia unei singure oferte, dupa o preluare punctuala. */
+async function upsertChannelPromotion(channel, remote) {
+  if (remote?.id == null) return;
+  await ensureSchema();
+  const ch = normalizeChannel(channel);
+  if (!remote.promo) {
+    await query(`DELETE FROM channel_promotions WHERE channel = $1 AND external_id = $2`, [
+      ch,
+      String(remote.id),
+    ]);
+    return;
+  }
+  await query(
+    `INSERT INTO channel_promotions (channel, external_id, name, promo_price, sale_price, seen_at)
+     VALUES ($1, $2, $3, $4, $5, now())
+     ON CONFLICT (channel, external_id) DO UPDATE
+       SET name = EXCLUDED.name, promo_price = EXCLUDED.promo_price,
+           sale_price = EXCLUDED.sale_price, seen_at = EXCLUDED.seen_at`,
+    [ch, String(remote.id), remote.promo.name, toNumOrNull(remote.promo.promo_price), toNumOrNull(remote.sale_price)]
+  );
+}
+
+/**
+ * `promotions` pe fiecare produs: eMAG dupa id-ul ofertei, Trendyol dupa EAN (= barcode).
+ * -> [{ channel, label, name, promo_price, sale_price, seen_at }]
+ */
+async function attachPromotions(products) {
+  const { rows } = await query(
+    `SELECT channel, external_id, name, promo_price, sale_price, seen_at FROM channel_promotions`
+  );
+  const byKey = new Map();
+  for (const r of rows) {
+    const key =
+      r.channel === "trendyol" ? `trendyol:${normalizeEan(r.external_id)}` : `${r.channel}:${r.external_id}`;
+    byKey.set(key, {
+      channel: r.channel,
+      label: CHANNEL_LABELS[r.channel] || r.channel,
+      name: r.name,
+      promo_price: toNumOrNull(r.promo_price),
+      sale_price: toNumOrNull(r.sale_price),
+      seen_at: r.seen_at instanceof Date ? r.seen_at.toISOString() : r.seen_at,
+    });
+  }
+  for (const p of products) {
+    const ean = normalizeEan(p.ean);
+    p.promotions = [byKey.get(`emag:${p.id}`), ean ? byKey.get(`trendyol:${ean}`) : null].filter(
+      Boolean
+    );
+  }
+}
+
 /**
  * Catalog indexat pe EAN normalizat (primul castiga la duplicate).
  * Folosit de sync Trendyol: join channel-view + diff.
@@ -288,6 +362,7 @@ function remoteToSnapshotShape(remote, fetchedAt) {
     status: toNumOrNull(remote.status),
     vat_id: toNumOrNull(remote.vat_id),
     currency: toTextOrNull(remote.currency),
+    promo: remote.promo || null,
     fetched_at: fetchedAt,
   };
 }
@@ -361,6 +436,7 @@ async function getCatalogRows(channel) {
   }
 
   await attachImages(products);
+  await attachPromotions(products);
   return products;
 }
 
@@ -1044,6 +1120,12 @@ function buildDiffFields(local, snap, fieldDefs) {
   });
 }
 
+/** Pretul de vanzare nu pleaca pe canal cat timp oferta e in promotie (vezi channel-push). */
+function markPromoLockedFields(fields, promo) {
+  if (!promo) return fields;
+  return fields.map((f) => (f.key === "sale_price" ? { ...f, locked: promo.name } : f));
+}
+
 function onlyRemoteEntry(s) {
   return {
     external_id: s.external_id,
@@ -1116,8 +1198,9 @@ async function getEmagChannelDiff() {
       continue;
     }
     snapByExt.delete(ext);
-    const fields = buildDiffFields(l, snap, DIFF_FIELDS);
+    const fields = markPromoLockedFields(buildDiffFields(l, snap, DIFF_FIELDS), snap.promo);
     matched.push({
+      promo: snap.promo,
       external_id: l.external_id,
       part_number: l.part_number || snap.part_number || "",
       catalog_cod: l.catalog_cod || null,
@@ -1209,8 +1292,9 @@ async function getTrendyolChannelDiff() {
       continue;
     }
     snapByEan.delete(ean);
-    const fields = buildDiffFields(l, snap, DIFF_FIELDS_TRENDYOL);
+    const fields = markPromoLockedFields(buildDiffFields(l, snap, DIFF_FIELDS_TRENDYOL), snap.promo);
     matched.push({
+      promo: snap.promo,
       external_id: snap.external_id,
       part_number: l.part_number || l.cod_produs || snap.part_number || "",
       catalog_cod: l.catalog_cod || null,
@@ -1282,6 +1366,7 @@ function remoteToViewRow(remote) {
     currency: toTextOrNull(remote.currency) || "RON",
     characteristics: toTextOrNull(remote.characteristics) || "",
     commission_rate: toNumOrNull(remote.commission_rate),
+    promo: remote.promo || null,
   };
 }
 
@@ -1446,4 +1531,6 @@ module.exports = {
   lookupCatalogPretCumparare,
   recalcPretCumparare,
   touchesPretCumparareInputs,
+  replaceChannelPromotions,
+  upsertChannelPromotion,
 };

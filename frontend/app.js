@@ -13,6 +13,8 @@ const {
   pricesEqual,
   stockSumFromArr,
   createPersister,
+  promoBadgeHtml,
+  priceLockedText,
 } = window.Pricing;
 /* Formulele din "CALCULATOR INFINITE VENTURES.xlsx" (servite de backend la /api/calculator.js). */
 const Calc = window.Calculator;
@@ -987,7 +989,7 @@ function rowHtml(product, index) {
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-calc")} data-value="${escapeHtml(pretCumparare)}">${formatPrice(pretCumparare, currency)}</td>`,
     pret_cumparare_usd: `<td data-col="pret_cumparare_usd"${cellClass("pret_cumparare_usd", "col-pret-cumparare-usd")}><input type="number" class="input-pret-cumparare-usd" min="0" step="0.01" value="${escapeHtml(pretCumparareUsd)}" /></td>`,
     link_cumparare: `<td data-col="link_cumparare"${cellClass("link_cumparare", "col-link-cumparare")}><div class="link-cumparare-wrap"><input type="url" class="input-link-cumparare" placeholder="https://…" value="${escapeHtml(linkCumparare)}" /><a class="btn-open-link"${linkCumparareSafe ? ` href="${escapeHtml(linkCumparareSafe)}" target="_blank" rel="noopener noreferrer"` : " hidden"} title="Deschide link" aria-label="Deschide link">↗</a></div></td>`,
-    pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" /></td>`,
+    pret_emag: `<td data-col="pret_emag"${cellClass("pret_emag", "col-pret-emag")}><input type="number" class="input-sale-price" min="0" step="0.01" value="${escapeHtml(saleAttr)}" />${(product.promotions || []).map((p) => promoBadgeHtml(p, currency)).join("")}</td>`,
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
@@ -2302,8 +2304,10 @@ function pushAllSummary(results, { perRow = false } = {}) {
     .map((r) => {
       if (!r.ok) return `${r.label}: eroare — ${r.error}`;
       if (perRow && r.unlinked) return `${r.label}: nelegat`;
-      if (r.count > 0) return `${r.label}: ${perRow ? "trimis" : `${r.count} trimise`}`;
-      return `${r.label}: nimic de trimis`;
+      const locked = priceLockedText(r.price_locked);
+      const suffix = locked ? `, ${locked}` : "";
+      if (r.count > 0) return `${r.label}: ${perRow ? "trimis" : `${r.count} trimise`}${suffix}`;
+      return `${r.label}: ${locked || "nimic de trimis"}`;
     })
     .join(" · ");
 }

@@ -385,7 +385,37 @@
     return schedulePersistListing;
   }
 
+  /**
+   * Eticheta de promotie a unei oferte. `promo` = { label?, name, promo_price? }
+   * (label = canalul, cand randul arata mai multe canale).
+   */
+  function promoBadgeHtml(promo, currency = "RON") {
+    if (!promo || !promo.name) return "";
+    const channel = promo.label ? `${promo.label}: ` : "";
+    const price =
+      promo.promo_price != null && Number.isFinite(Number(promo.promo_price))
+        ? ` · clientul vede ${formatPrice(promo.promo_price, currency)}`
+        : "";
+    const title = `${channel}${promo.name}${price}. Prețul de vânzare nu se trimite pe ${
+      promo.label || "canal"
+    } cât timp produsul e în promoție.`;
+    return `<span class="promo-badge" title="${escapeHtml(title)}">🏷 ${escapeHtml(
+      `${channel}${promo.name}`
+    )}${escapeHtml(price)}</span>`;
+  }
+
+  /** Text pentru ofertele al caror pret nu a plecat pe canal din cauza promotiei. */
+  function priceLockedText(priceLocked) {
+    const list = Array.isArray(priceLocked) ? priceLocked : [];
+    if (list.length === 0) return "";
+    return list.length === 1
+      ? `preț neschimbat (în promoție: ${list[0].promo})`
+      : `${list.length} prețuri neschimbate (produse în promoție)`;
+  }
+
   global.Pricing = {
+    promoBadgeHtml,
+    priceLockedText,
     DEFAULT_ALTE_COSTURI,
     DEFAULT_PROcentaj_EMAG,
     PCT_LEVEL_CLASSES,

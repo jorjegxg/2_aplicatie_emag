@@ -4080,3 +4080,18 @@ td .input-text-field {
     align-items: flex-start;
   }
 }
+
+/* ---------- Promotie activa pe canal (pretul nu se trimite) ---------- */
+.promo-badge {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--warn);
+  background: var(--tint-amber);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

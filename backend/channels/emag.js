@@ -108,6 +108,10 @@ function mapOffer(offer) {
     ean,
     characteristics: formatCharacteristics(offer.characteristics),
     images: normalizeImages(offer.images),
+    // Campania eMAG in care e inscrisa oferta; pretul de campanie nu vine prin API.
+    promo: offer.campaign_id
+      ? { name: String(offer.campaign_name || `Campanie ${offer.campaign_id}`).replace(/\s+/g, " ").trim(), promo_price: null }
+      : null,
   };
 }
 

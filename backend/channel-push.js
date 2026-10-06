@@ -23,6 +23,8 @@ function httpError(status, message) {
  * care nu trebuie sa scrie o oglinda partiala in cache.
  * `keepRemotePrice`: pretul trimis ramane cel de pe canal (eMAG cere mereu sale_price) —
  * push-ul automat de stoc nu publica modificari de pret nerevizuite.
+ * Ofertele in promotie pe canal (remote.promo) pastreaza mereu pretul de pe canal:
+ * schimbarea lui le-ar putea scoate din campanie. -> rezultatul canalului + `price_locked`.
  */
 async function pushOffersForChannel(
   channelName,
@@ -103,6 +105,8 @@ async function pushOffersForChannel(
   const offers = [];
   // Ce poze am trimis, ca sa notam amprenta doar dupa un push reusit.
   const pushedImages = [];
+  /** Oferte al caror pret nu a plecat pentru ca sunt in promotie: [{ id, promo }]. */
+  const priceLocked = [];
   for (const l of listings) {
     const effectiveMin =
       l.pret_minim_override != null && Number.isFinite(Number(l.pret_minim_override))
@@ -110,12 +114,13 @@ async function pushOffersForChannel(
         : l.min_sale_price;
 
     const remote = remoteCache.byId.get(String(l.external_id));
+    const keepPrice = (keepRemotePrice || Boolean(remote?.promo)) && remote?.sale_price != null;
     const merged = channel.mergeLocalWithRemoteCache(
       {
         id: l.external_id,
         name: l.name,
         description: l.description,
-        sale_price: keepRemotePrice && remote?.sale_price != null ? remote.sale_price : l.sale_price,
+        sale_price: keepPrice ? remote.sale_price : l.sale_price,
         recommended_price: l.recommended_price,
         min_sale_price: effectiveMin,
         max_sale_price: l.max_sale_price,
@@ -124,6 +129,12 @@ async function pushOffersForChannel(
       remote
     );
     const flags = contentFlagsById.get(String(l.external_id)) || emptyFlags();
+    if (remote?.promo && flags.includeSalePrice) {
+      flags.includeSalePrice = false;
+      priceLocked.push({ id: String(l.external_id), promo: remote.promo.name });
+      // Daca pretul era singura schimbare, oferta nu mai are ce publica.
+      if (!Object.values(flags).some(Boolean)) continue;
+    }
     // Fara URL public, pozele nu pot fi trimise — restul push-ului merge inainte.
     if (flags.includeImages && (channelName !== "emag" || !PUBLIC_BASE_URL)) {
       flags.includeImages = false;
@@ -145,7 +156,10 @@ async function pushOffersForChannel(
     offers.push(channel.buildPushPayload(merged, flags));
   }
 
-  const result = await channel.pushListings(offers);
+  if (offers.length === 0) {
+    return { count: 0, messages: [], price_locked: priceLocked };
+  }
+  const result = { ...(await channel.pushListings(offers)), price_locked: priceLocked };
 
   for (const entry of pushedImages) {
     try {

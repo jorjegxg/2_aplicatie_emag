@@ -320,6 +320,8 @@ const {
   procentajEmagInputHtml,
   createPersister,
   stockSumFromArr,
+  promoBadgeHtml,
+  priceLockedText,
 } = window.Pricing;
 
 const CHANNEL_PRICE_LABELS = { emag: "Pret emag", trendyol: "Pret trendyol" };
@@ -926,7 +928,10 @@ function pricingRowHtml(product, index) {
     pret_emag: `<td data-col="pret_emag"${cellClass(
       "pret_emag",
       "col-pret-emag"
-    )}${pretEmagDiff.dataVal}${pretEmagDiff.title}>${pretEmagDiff.html}</td>`,
+    )}${pretEmagDiff.dataVal}${pretEmagDiff.title}>${pretEmagDiff.html}${promoBadgeHtml(
+      product.promo,
+      currency
+    )}</td>`,
     prp: `<td data-col="prp"${cellClass("prp")}${prpDiff.dataVal}${prpDiff.title}>${
       prpDiff.html
     }</td>`,
@@ -1681,8 +1686,12 @@ async function pushToChannel() {
     }
     if (syncInfoBanner) syncInfoBanner.hidden = false;
     await Promise.all([loadDiff(), loadPricing()]);
+    const locked = priceLockedText(data?.price_locked);
+    const sent = data?.count ?? offers.length;
     setStatus(
-      `Trimise ${offers.length} oferte pe ${channel} (${contentLabel}). Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+      `Trimise ${sent} oferte pe ${channel} (${contentLabel})${
+        locked ? `; ${locked}` : ""
+      }. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
       "ok"
     );
   } catch (err) {
@@ -1794,6 +1803,7 @@ async function runPushQueue() {
         const { ok, data, status } = await postOffers(job.channel, [job.offer]);
         if (ok) {
           job.status = "done";
+          job.priceLocked = data?.price_locked || [];
           sentAny = true;
         } else {
           job.status = "error";
@@ -1829,8 +1839,11 @@ function reportPushQueueResult() {
       "error"
     );
   } else {
+    const locked = priceLockedText(jobs.flatMap((j) => j.priceLocked || []));
     setStatus(
-      `Trimise ${done} oferte pe ${jobs[0].channel}. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
+      `Trimise ${done} oferte pe ${jobs[0].channel}${
+        locked ? `; ${locked}` : ""
+      }. Apasă „Preia de la marketplace” peste 5-10 min ca să confirmi.`,
       "ok"
     );
   }

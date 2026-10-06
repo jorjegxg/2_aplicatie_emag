@@ -232,7 +232,20 @@ function mapVariant(content, variant, bucket) {
     content_id: content?.contentId ?? null,
     variant_id: variant?.variantId ?? null,
     commission_rate: toNumOrNull(variant?.commission),
+    promo: promoFromPrice(variant?.price),
   };
+}
+
+/**
+ * Trendyol nu spune numele promotiei, dar `priceSeenByCustomer` sub `salePrice`
+ * inseamna ca produsul e intr-o reducere (campanie, cupon, flash).
+ */
+function promoFromPrice(price) {
+  const sale = toNumOrNull(price?.salePrice);
+  const seen = toNumOrNull(price?.priceSeenByCustomer);
+  if (sale == null || seen == null || seen >= sale - 0.005) return null;
+  const pct = Math.round((1 - seen / sale) * 100);
+  return { name: `Reducere Trendyol −${pct}%`, promo_price: seen };
 }
 
 /** Compat: raspuns vechi flat (barcode pe produs) sau Product V2 cu variants[]. */

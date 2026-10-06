@@ -21,6 +21,8 @@ const {
   getListing,
   getChannelRemotes,
   getChannelViewRows,
+  replaceChannelPromotions,
+  upsertChannelPromotion,
   updateProduct,
   getProduct,
   getProductOfferId,
@@ -145,7 +147,9 @@ async function refreshEmagOffer(req) {
   if (!offerId || !getChannelRemotes("emag")) return;
   const result = await getChannel("emag").fetchListings({ filters: { id: offerId } });
   const remote = (result.listings || []).find((o) => String(o.id) === offerId);
-  if (remote) upsertChannelRemote("emag", remote);
+  if (!remote) return;
+  upsertChannelRemote("emag", remote);
+  await upsertChannelPromotion("emag", remote);
 }
 
 const EMAG_CALLBACKS = {
@@ -1214,6 +1218,11 @@ async function pullChannel(channelName) {
     }
 
     setChannelRemotes(channelName, remotes);
+    try {
+      await replaceChannelPromotions(channelName, remotes);
+    } catch (promoErr) {
+      console.warn("[sync-pull] promotii:", promoErr.message);
+    }
 
     const stats = await getChannelStats(channelName);
     console.log(
@@ -1269,6 +1278,11 @@ app.post("/api/sync/pull-offer", async (req, res) => {
     }
 
     upsertChannelRemote(channelName, remote);
+    try {
+      await upsertChannelPromotion(channelName, remote);
+    } catch (promoErr) {
+      console.warn("[sync-pull-offer] promotii:", promoErr.message);
+    }
     console.log(`[sync-pull-offer] ${channelName}: oferta ${offerId} actualizata in cache`);
     return res.json({
       ok: true,
@@ -1418,8 +1432,9 @@ app.post("/api/sync/push-all", async (req, res) => {
           const offers = rows.map(pushFlagsFromDiffRow).filter(Boolean);
           if (offers.length > 0) {
             const result = await pushOffersForChannel(ch.id, offers);
-            entry.count = offers.length;
+            entry.count = result?.count ?? offers.length;
             entry.messages = result?.messages || [];
+            entry.price_locked = result?.price_locked || [];
           }
           console.log(`${tag} ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
           if (ch.id === "emag") {
