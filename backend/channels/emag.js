@@ -57,6 +57,17 @@ function normalizeHandlingTime(handlingTime) {
   return [{ warehouse_id: 1, value: 0 }];
 }
 
+/** Zile pana la predarea la curier, trimise la fiecare save (0 = predam in aceeasi zi). */
+const HANDLING_DAYS = 0;
+
+/** handling_time pentru push: depozitele ofertei, cu termenul fixat la HANDLING_DAYS. */
+function pushHandlingTime(handlingTime) {
+  return normalizeHandlingTime(handlingTime).map((h) => ({
+    ...h,
+    value: HANDLING_DAYS,
+  }));
+}
+
 /** Poze oferta: doar URL-uri http(s), poza principala (display_type 1) prima. */
 function normalizeImages(images) {
   const list = (Array.isArray(images) ? images : [])
@@ -475,7 +486,7 @@ async function pushImages(platform, items) {
       status: Number(remote.status),
       sale_price: remote.sale_price,
       vat_id: Number(remote.vat_id),
-      handling_time: normalizeHandlingTime(remote.handling_time),
+      handling_time: pushHandlingTime(remote.handling_time),
       stock: normalizeStock(remote.stock, null),
       images: item.images,
       images_overwrite: 1,
@@ -522,7 +533,7 @@ async function pushImages(platform, items) {
 
 /**
  * Construieste payload-ul de push din valorile mele. Arunca daca lipsesc campuri.
- * Schelet obligatoriu eMAG: id, status, vat_id, sale_price, stock, handling_time.
+ * Schelet obligatoriu eMAG: id, status, vat_id, sale_price, stock, handling_time (mereu HANDLING_DAYS).
  * Optionale (PRP/min/max/name/description) doar daca flag-ul corespunzator e true.
  * Compat: includeContent = true ⇒ name + description.
  */
@@ -586,7 +597,7 @@ function buildPushPayload(
     status,
     sale_price,
     vat_id,
-    handling_time: normalizeHandlingTime(listing?.handling_time),
+    handling_time: pushHandlingTime(listing?.handling_time),
     stock: normalizeStock(listing?.stock, listing?.general_stock),
   };
   if (wantName) {
