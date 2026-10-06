@@ -330,6 +330,20 @@ async function fetchListings({ page = 1, filters } = {}) {
 const TITLE_MAX_LEN = 100;
 const PUSH_CHUNK_SIZE = 1000;
 
+/**
+ * Trendyol refuza (400 „duplicate product update request”) un content-bulk-update
+ * identic cat timp cel anterior e inca in procesare. Oglinda locala nu se
+ * actualizeaza dupa push, deci un al doilea push-all retrimite acelasi content —
+ * il sarim daca a plecat identic in ultimele 15 minute.
+ */
+const CONTENT_RESEND_GUARD_MS = 15 * 60 * 1000;
+/** contentId -> { stamp, at } */
+const recentContentPushes = new Map();
+
+function isDuplicateRequestError(err) {
+  return err?.status === 400 && /duplicat/i.test(`${err.message} ${err.detail || ""}`);
+}
+
 function invalidPush(message) {
   const err = new Error(message);
   err.status = 400;
