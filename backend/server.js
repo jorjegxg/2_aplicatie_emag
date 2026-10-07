@@ -139,7 +139,9 @@ async function refreshEmagOrder(req, kind) {
     if (kind === "order" || kind === "order-cancel") throw new Error("order_id lipsa");
     return;
   }
-  await processEmagOrderId(orderId, { via: `webhook:${kind}` });
+  // Pe eMAG HU/BG callback-ul se configureaza cu &platform=hu / &platform=bg.
+  const platform = callbackParam(req, "platform") || "ro";
+  await processEmagOrderId(orderId, { via: `webhook:${kind}`, platform });
 }
 
 /** Produs nou / documentatie aprobata: reimprospatam oferta in oglinda (doar daca oglinda e incarcata). */
@@ -479,6 +481,7 @@ app.get("/api/review-calls", requireReviewAuth, async (req, res) => {
                 WHERE s.order_id = e.order_id AND s.called = TRUE
               ) AS called
        FROM emag_orders e
+       WHERE e.platform = 'ro'
        ORDER BY order_date DESC NULLS LAST, order_id DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]

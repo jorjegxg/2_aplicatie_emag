@@ -1,20 +1,26 @@
+/**
+ * Importa istoricul comenzilor eMAG (fara notificari, fara miscari de stoc).
+ *   docker compose exec back node scripts/sync-orders.js            # RO
+ *   docker compose exec back node scripts/sync-orders.js hu bg      # HU + BG
+ */
 const {
   ITEMS_PER_PAGE,
   toEmagDatetime,
   resolveEmagAuth,
   emagOrderRead,
 } = require("../emag-client");
-const { applyEmagOrder } = require("../stock-movements");
+const { applyEmagOrder, normalizePlatform } = require("../stock-movements");
 
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const EMPTY_STREAK_STOP = 6;
 const FLOOR_DATE = new Date("2015-01-01T00:00:00");
 
-async function fetchWindowPage(auth, page, createdAfter, createdBefore) {
+async function fetchWindowPage(auth, platform, page, createdAfter, createdBefore) {
   const { response, json, text } = await emagOrderRead(auth, {
     page,
     createdAfter,
     createdBefore,
+    platform,
   });
 
   if (response.status === 401 || response.status === 403) {
@@ -30,7 +36,7 @@ async function fetchWindowPage(auth, page, createdAfter, createdBefore) {
   return Array.isArray(json.results) ? json.results : [];
 }
 
-async function syncWindow(auth, windowStart, windowEnd) {
+async function syncWindow(auth, platform, windowStart, windowEnd) {
   const createdAfter = toEmagDatetime(windowStart);
   const createdBefore = toEmagDatetime(windowEnd);
   let page = 1;
@@ -38,10 +44,10 @@ async function syncWindow(auth, windowStart, windowEnd) {
   let windowLines = 0;
 
   for (;;) {
-    const orders = await fetchWindowPage(auth, page, createdAfter, createdBefore);
+    const orders = await fetchWindowPage(auth, platform, page, createdAfter, createdBefore);
     let upserted = 0;
     for (const order of orders) {
-      await applyEmagOrder(order, { via: "sync", notify: false, adjustStock: false });
+      await applyEmagOrder(order, { via: "sync", notify: false, adjustStock: false, platform });
       upserted += Array.isArray(order?.products) ? order.products.length : 0;
     }
 
@@ -49,7 +55,7 @@ async function syncWindow(auth, windowStart, windowEnd) {
     windowLines += upserted;
 
     console.log(
-      `[sync:orders] ${createdAfter} → ${createdBefore} page=${page} ` +
+      `[sync:orders:${platform}] ${createdAfter} → ${createdBefore} page=${page} ` +
         `orders=${orders.length} lines=${upserted}`
     );
 
@@ -61,19 +67,25 @@ async function syncWindow(auth, windowStart, windowEnd) {
 }
 
 async function main() {
+  const platforms = (process.argv.slice(2).length ? process.argv.slice(2) : ["ro"]).map(
+    normalizePlatform
+  );
   const auth = await resolveEmagAuth("sync-orders");
+  for (const platform of platforms) await syncPlatform(auth, platform);
+}
 
+async function syncPlatform(auth, platform) {
   let windowEnd = new Date();
   let emptyStreak = 0;
   let totalOrders = 0;
   let totalLines = 0;
   let windows = 0;
 
-  console.log("[sync:orders] start walker istoric (ferestre 30 zile)");
+  console.log(`[sync:orders:${platform}] start walker istoric (ferestre 30 zile)`);
 
   while (windowEnd > FLOOR_DATE && emptyStreak < EMPTY_STREAK_STOP) {
     const windowStart = new Date(Math.max(windowEnd.getTime() - WINDOW_MS, FLOOR_DATE.getTime()));
-    const { windowOrders, windowLines } = await syncWindow(auth, windowStart, windowEnd);
+    const { windowOrders, windowLines } = await syncWindow(auth, platform, windowStart, windowEnd);
 
     windows += 1;
     totalOrders += windowOrders;
@@ -94,7 +106,7 @@ async function main() {
       : `floor ${toEmagDatetime(FLOOR_DATE)}`;
 
   console.log(
-    `[sync:orders] gata — stop: ${stopReason}; ` +
+    `[sync:orders:${platform}] gata — stop: ${stopReason}; ` +
       `windows=${windows} orders=${totalOrders} lines_upserted=${totalLines}`
   );
 }

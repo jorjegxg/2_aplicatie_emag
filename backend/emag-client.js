@@ -225,7 +225,7 @@ function logAuthResult(context, candidate, status, ok) {
 
 async function emagOrderRead(
   auth,
-  { page = 1, id, status, createdAfter, createdBefore, modifiedAfter, modifiedBefore }
+  { page = 1, id, status, createdAfter, createdBefore, modifiedAfter, modifiedBefore, platform }
 ) {
   const body = new URLSearchParams();
   body.set("currentPage", String(page));
@@ -243,7 +243,7 @@ async function emagOrderRead(
   if (createdAfter) body.set("createdAfter", String(createdAfter));
   if (createdBefore) body.set("createdBefore", String(createdBefore));
 
-  const response = await emagFetch(`${EMAG_API}/order/read`, {
+  const response = await emagFetch(`${emagApiBase(platform)}/order/read`, {
     method: "POST",
     headers: {
       Authorization: auth,

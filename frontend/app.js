@@ -1355,6 +1355,13 @@ function formatOrderHistoryDate(value) {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ro-RO");
 }
 
+/** "emag", "emag HU", "emag BG"… (platforma lipseste = RO). */
+function orderChannelLabel(order) {
+  const channel = order.channel || "emag";
+  const platform = String(order.platform || "ro").toLowerCase();
+  return platform === "ro" ? channel : `${channel} ${platform.toUpperCase()}`;
+}
+
 function renderOrderHistory(orders) {
   if (!Array.isArray(orders) || orders.length === 0) {
     orderHistoryBody.innerHTML = '<p class="muted">Nu există comenzi salvate pentru acest produs.</p>';
@@ -1381,7 +1388,7 @@ function renderOrderHistory(orders) {
             .map((order) => {
               const status = order.order_status ?? order.status;
               return `<tr>
-                <td>${escapeHtml(order.channel || "emag")}</td>
+                <td>${escapeHtml(orderChannelLabel(order))}</td>
                 <td>${escapeHtml(order.order_id ?? "—")}</td>
                 <td>${escapeHtml(formatOrderHistoryDate(order.order_date))}</td>
                 <td>${escapeHtml(ORDER_STATUS_LABELS[Number(status)] || status || "—")}</td>

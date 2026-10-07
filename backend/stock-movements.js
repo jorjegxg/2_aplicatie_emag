@@ -1,5 +1,6 @@
 const { query, withTransaction, ensureSchema } = require("./pg");
 const {
+  EMAG_HOSTS,
   ITEMS_PER_PAGE,
   toEmagDatetime,
   resolveEmagAuth,
@@ -12,6 +13,19 @@ const ORDER_CANCELED = 0;
 // Linie de produs: 1 activa, 0 scoasa din comanda.
 const LINE_ACTIVE = 1;
 const SINCE_KEY = "emag_stock_orders_since";
+// Platformele eMAG din care citim comenzi; stocul fizic e comun.
+const EMAG_ORDER_PLATFORMS = ["ro", "hu", "bg"];
+
+/** Platforma eMAG valida ('ro' implicit); arunca pentru valori necunoscute. */
+function normalizePlatform(platform) {
+  const key = String(platform || "ro").trim().toLowerCase();
+  if (!EMAG_HOSTS[key]) {
+    const err = new Error(`Platforma eMAG necunoscuta: ${key}`);
+    err.status = 400;
+    throw err;
+  }
+  return key;
+}
 
 function toNum(v) {
   if (v == null || v === "") return null;
@@ -63,7 +77,7 @@ async function findCatalogProduct(client, p) {
   return null;
 }
 
-async function upsertOrderHeader(client, order, products, via) {
+async function upsertOrderHeader(client, order, products, via, platform) {
   const customer = Array.isArray(order.customer) ? order.customer[0] : order.customer;
   const vouchers = Array.isArray(order.vouchers) ? order.vouchers : [];
   const active = products.filter((p) => Number(p.status) === LINE_ACTIVE);
@@ -79,10 +93,12 @@ async function upsertOrderHeader(client, order, products, via) {
   const { rows } = await client.query(
     `INSERT INTO emag_orders
        (order_id, channel, status, order_date, modified_at, payment_mode_id, payment_mode, customer_name,
-        currency, products_total, products_total_vat, shipping_tax, vouchers_total, raw, received_via)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        currency, products_total, products_total_vat, shipping_tax, vouchers_total, raw, received_via,
+        platform)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      ON CONFLICT (order_id) DO UPDATE SET
        channel = EXCLUDED.channel,
+       platform = EXCLUDED.platform,
        status = EXCLUDED.status,
        order_date = EXCLUDED.order_date,
        modified_at = EXCLUDED.modified_at,
@@ -113,20 +129,22 @@ async function upsertOrderHeader(client, order, products, via) {
       vouchersTotal,
       JSON.stringify(order),
       via,
+      platform,
     ]
   );
   return rows[0] || null;
 }
 
-async function upsertLine(client, order, p, catalogProductId) {
+async function upsertLine(client, order, p, catalogProductId, platform) {
   await client.query(
     `INSERT INTO order_line_history
        (line_id, order_id, channel, product_id, part_number, name, quantity, sale_price, status,
-        currency, order_date, vat, catalog_product_id)
-     VALUES ($1, $2, 'emag', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        currency, order_date, vat, catalog_product_id, platform)
+     VALUES ($1, $2, 'emag', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (line_id) DO UPDATE SET
        order_id = EXCLUDED.order_id,
        channel = EXCLUDED.channel,
+       platform = EXCLUDED.platform,
        product_id = EXCLUDED.product_id,
        part_number = EXCLUDED.part_number,
        name = EXCLUDED.name,
@@ -150,6 +168,7 @@ async function upsertLine(client, order, p, catalogProductId) {
       order.date || order.created || null,
       toNum(p.vat),
       catalogProductId,
+      platform,
     ]
   );
 }
@@ -200,12 +219,23 @@ async function insertMovement(
  * Salveaza comanda (antet + linii cu pret) si ajusteaza stocul local:
  * linie activa → scade o singura data; comanda anulata / linie scoasa → restituie.
  */
-async function applyEmagOrder(order, { via = "webhook", notify = true, adjustStock = true } = {}) {
+async function applyEmagOrder(
+  order,
+  { via = "webhook", notify = true, adjustStock = true, platform = "ro" } = {}
+) {
   await ensureSchema();
   if (!order || order.id == null) throw new Error("Comanda fara id");
+  platform = normalizePlatform(platform);
   const products = Array.isArray(order.products) ? order.products : [];
   const orderId = String(order.id);
-  const summary = { order_id: order.id, status: order.status, deducted: [], restored: [], unmatched: [] };
+  const summary = {
+    order_id: order.id,
+    platform,
+    status: order.status,
+    deducted: [],
+    restored: [],
+    unmatched: [],
+  };
   let isNewOrder = false;
   let headerRow = null;
 
@@ -217,7 +247,7 @@ async function applyEmagOrder(order, { via = "webhook", notify = true, adjustSto
     );
     const isRecent = recentRows[0]?.recent === true;
 
-    headerRow = await upsertOrderHeader(client, order, products, via);
+    headerRow = await upsertOrderHeader(client, order, products, via, platform);
     isNewOrder = Boolean(headerRow?.is_new);
 
     for (const p of products) {
@@ -225,7 +255,7 @@ async function applyEmagOrder(order, { via = "webhook", notify = true, adjustSto
       const offerId = p.product_id != null ? String(p.product_id) : null;
       const qty = toNum(p.quantity) || 0;
       const productId = await findCatalogProduct(client, p);
-      await upsertLine(client, order, p, productId);
+      await upsertLine(client, order, p, productId, platform);
       if (!adjustStock) continue;
 
       const lineActive = Number(order.status) !== ORDER_CANCELED && Number(p.status) === LINE_ACTIVE;
@@ -282,7 +312,7 @@ async function applyEmagOrder(order, { via = "webhook", notify = true, adjustSto
       source: "server",
       category: "webhook-emag",
       message:
-        `[${via}] comanda ${order.id}: scazut ${summary.deducted.length}, ` +
+        `[${via}] comanda ${platform.toUpperCase()} ${order.id}: scazut ${summary.deducted.length}, ` +
         `restituit ${summary.restored.length}, negasite ${summary.unmatched.length}`,
       detail: summary,
     });
@@ -295,6 +325,7 @@ async function applyEmagOrder(order, { via = "webhook", notify = true, adjustSto
       const { notifyNewOrder } = require("./push-notifications");
       void notifyNewOrder({
         order_id: headerRow?.order_id ?? order.id,
+        platform,
         customer_name: headerRow?.customer_name,
         currency: headerRow?.currency,
         products_total: headerRow?.products_total,
@@ -320,37 +351,59 @@ function scheduleStockPushFor(summary, originChannel) {
 }
 
 /** Citeste o comanda din eMAG (retry cu auth proaspat la 401/403). */
-async function fetchEmagOrders(context, params) {
+async function fetchEmagOrders(context, params, platform = "ro") {
+  const label = `eMAG ${platform.toUpperCase()}`;
   for (let attempt = 0; attempt < 2; attempt++) {
     const auth = await resolveEmagAuth(context, { fresh: attempt > 0 });
-    const { response, json, text } = await emagOrderRead(auth, params);
+    const { response, json, text } = await emagOrderRead(auth, { ...params, platform });
     if ((response.status === 401 || response.status === 403) && attempt === 0) continue;
-    if (!json) throw new Error(`Răspuns invalid eMAG (HTTP ${response.status}): ${text.slice(0, 300)}`);
-    if (json.isError) throw new Error(`eMAG eroare: ${JSON.stringify(json.messages || [])}`);
+    if (!json) throw new Error(`Răspuns invalid ${label} (HTTP ${response.status}): ${text.slice(0, 300)}`);
+    if (json.isError) throw new Error(`${label} eroare: ${JSON.stringify(json.messages || [])}`);
     return Array.isArray(json.results) ? json.results : [];
   }
   throw new Error("Autentificare eMAG eșuată");
 }
 
-async function processEmagOrderId(orderId, { via = "webhook" } = {}) {
-  const orders = await fetchEmagOrders("webhook", { id: orderId });
+async function processEmagOrderId(orderId, { via = "webhook", platform = "ro" } = {}) {
+  platform = normalizePlatform(platform);
+  const orders = await fetchEmagOrders("webhook", { id: orderId }, platform);
   const order = orders.find((o) => String(o.id) === String(orderId)) || orders[0];
-  if (!order) throw new Error(`Comanda ${orderId} nu a fost gasita in eMAG`);
-  return applyEmagOrder(order, { via });
+  if (!order) throw new Error(`Comanda ${orderId} nu a fost gasita in eMAG ${platform.toUpperCase()}`);
+  return applyEmagOrder(order, { via, platform });
 }
 
-/** Poller de rezerva: comenzile modificate in ultimele `lookbackMinutes` minute. */
+/** Toate comenzile unei platforme care se potrivesc filtrelor eMAG (paginat). */
+async function fetchAllEmagOrders(context, params, platform) {
+  const all = [];
+  for (let page = 1; ; page++) {
+    const orders = await fetchEmagOrders(context, { ...params, page }, platform);
+    all.push(...orders);
+    if (orders.length < ITEMS_PER_PAGE) break;
+  }
+  return all;
+}
+
+/**
+ * Poller de rezerva: comenzile modificate in ultimele `lookbackMinutes` minute, pe RO/HU/BG.
+ * O platforma care da eroare nu le opreste pe celelalte; eroarea se arunca la final.
+ */
 async function pollRecentEmagOrders({ lookbackMinutes = 30 } = {}) {
   const modifiedAfter = toEmagDatetime(new Date(Date.now() - lookbackMinutes * 60 * 1000));
   let processed = 0;
-  for (let page = 1; ; page++) {
-    const orders = await fetchEmagOrders("order-poll", { page, modifiedAfter });
-    for (const order of orders) {
-      await applyEmagOrder(order, { via: "poll" });
-      processed += 1;
+  const failures = [];
+  for (const platform of EMAG_ORDER_PLATFORMS) {
+    try {
+      const orders = await fetchAllEmagOrders("order-poll", { modifiedAfter }, platform);
+      for (const order of orders) {
+        await applyEmagOrder(order, { via: "poll", platform });
+        processed += 1;
+      }
+    } catch (err) {
+      if (err?.code === "CREDENTIALS_MISSING") throw err;
+      failures.push(`${platform.toUpperCase()}: ${err.message}`);
     }
-    if (orders.length < ITEMS_PER_PAGE) break;
   }
+  if (failures.length) throw new Error(failures.join("; "));
   return processed;
 }
 
@@ -359,7 +412,7 @@ async function listLocalOrders({ from, to, page = 1, limit = 50 } = {}) {
   const safeLimit = Math.min(Math.max(1, Number(limit) || 50), 200);
   const offset = (Math.max(1, Number(page) || 1) - 1) * safeLimit;
   const { rows: orders } = await query(
-    `SELECT order_id, channel, status, order_date, modified_at, payment_mode, customer_name, currency,
+    `SELECT order_id, channel, platform, status, order_date, modified_at, payment_mode, customer_name, currency,
             products_total, products_total_vat, shipping_tax, vouchers_total, received_via,
             created_at, updated_at
      FROM emag_orders
@@ -371,7 +424,7 @@ async function listLocalOrders({ from, to, page = 1, limit = 50 } = {}) {
   );
   if (orders.length === 0) return [];
   const { rows: lines } = await query(
-    `SELECT order_id, channel, line_id, product_id AS offer_id, catalog_product_id, part_number, name,
+    `SELECT order_id, channel, platform, line_id, product_id AS offer_id, catalog_product_id, part_number, name,
             quantity, sale_price, vat, status, currency
      FROM order_line_history WHERE order_id = ANY($1::int[]) ORDER BY line_id`,
     [orders.map((o) => o.order_id)]
@@ -398,7 +451,7 @@ async function listNewLocalOrders({ afterCreatedAt, limit = 20 } = {}) {
   }
   const safeLimit = Math.min(Math.max(1, Number(limit) || 20), 50);
   const { rows } = await query(
-    `SELECT order_id, status, order_date, customer_name, currency, products_total, created_at
+    `SELECT order_id, platform, status, order_date, customer_name, currency, products_total, created_at
      FROM emag_orders
      WHERE created_at > $1
      ORDER BY created_at ASC, order_id ASC
@@ -426,8 +479,11 @@ module.exports = {
   insertMovement,
   scheduleStockPushFor,
   applyEmagOrder,
+  EMAG_ORDER_PLATFORMS,
+  normalizePlatform,
   processEmagOrderId,
   pollRecentEmagOrders,
+  fetchAllEmagOrders,
   listLocalOrders,
   listNewLocalOrders,
   listStockMovements,

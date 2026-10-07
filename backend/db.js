@@ -232,7 +232,7 @@ async function getOrderLinesForProduct(offerId) {
   if (!Number.isFinite(id)) return [];
   try {
     const { rows } = await query(
-      `SELECT l.line_id, l.order_id, COALESCE(l.channel, o.channel, 'emag') AS channel,
+      `SELECT l.line_id, l.order_id, COALESCE(l.channel, o.channel, 'emag') AS channel, l.platform,
               l.product_id, l.part_number, l.name, l.quantity, l.sale_price,
               l.status, l.currency, l.order_date,
               o.status AS order_status, o.customer_name, o.payment_mode,

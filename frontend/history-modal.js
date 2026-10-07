@@ -231,7 +231,9 @@
           : "—";
         return `<tr>
         <td>${date}</td>
-        <td>${escapeHtml(o.order_id ?? "—")}</td>
+        <td>${escapeHtml(o.order_id ?? "—")}${
+          o.platform && o.platform !== "ro" ? ` · ${escapeHtml(o.platform.toUpperCase())}` : ""
+        }</td>
         <td>${escapeHtml(o.quantity ?? "—")}</td>
         <td>${formatPrice(o.sale_price, o.currency || "RON")}</td>
         <td>${escapeHtml(orderStatusLabel(o.status))}</td>

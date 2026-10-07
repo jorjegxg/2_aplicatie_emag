@@ -324,6 +324,9 @@ ALTER TABLE order_line_history
   ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'emag';
 ALTER TABLE order_line_history
   ADD COLUMN IF NOT EXISTS catalog_product_id INTEGER REFERENCES catalog_products (id) ON DELETE SET NULL;
+-- Platforma eMAG (ro/hu/bg).
+ALTER TABLE order_line_history ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'ro';
+ALTER TABLE emag_orders ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'ro';
 
 CREATE INDEX IF NOT EXISTS idx_order_line_order
   ON order_line_history (order_id);

@@ -145,8 +145,10 @@ function orderPayload(order) {
     const n = Number(total);
     amount = Number.isFinite(n) ? `${n.toFixed(2)} ${currency}` : `${total} ${currency}`;
   }
+  const platform = String(order?.platform || "ro").toLowerCase();
+  const site = platform === "ro" ? "eMAG" : `eMAG ${platform.toUpperCase()}`;
   return {
-    title: `Comandă eMAG #${id}`,
+    title: `Comandă ${site} #${id}`,
     body: `${name} · ${amount}`,
     tag: `emag-order-${id}`,
     url: "/vanzari.html",
