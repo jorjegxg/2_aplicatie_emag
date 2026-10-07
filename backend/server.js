@@ -82,6 +82,7 @@ const {
 const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const { query } = require("./pg");
 const { attachCustomerReviews } = require("./emag-reviews");
+const { getStats } = require("./stats");
 const {
   initPush,
   getPublicKey,
@@ -630,6 +631,7 @@ function categoryForPath(urlPath) {
   if (p.startsWith("/api/webhooks/ty")) return "webhook-trendyol";
   if (p.startsWith("/api/orders") || p.startsWith("/api/stock-movements")) return "orders";
   if (p.startsWith("/api/settings")) return "settings";
+  if (p.startsWith("/api/stats")) return "stats";
   if (p.startsWith("/api/credentials")) return "credentials";
   return "http";
 }
@@ -1717,6 +1719,18 @@ app.get("/api/orders/local/new", async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Eroare server" });
+  }
+});
+
+// Statistici (doar citire): vanzari, profit estimat, stoc, retururi, efectul preturilor.
+app.get("/api/stats", async (req, res) => {
+  try {
+    return res.json(
+      await getStats({ from: req.query.from, to: req.query.to, platform: req.query.platform })
+    );
+  } catch (err) {
+    console.error("[stats]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la statistici" });
   }
 });
 
