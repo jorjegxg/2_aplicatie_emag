@@ -29,7 +29,7 @@ const {
   getChannelDiff,
   getChannelStats,
   getListingCosts,
-  lookupCatalogPretCumparare,
+  lookupCatalogForOrderLine,
   recalcPretCumparare,
   touchesPretCumparareInputs,
   ensureSchema,
@@ -83,6 +83,7 @@ const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-o
 const { query } = require("./pg");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
+const { calcProduct } = require("./calculator");
 const {
   initPush,
   getPublicKey,
@@ -758,11 +759,39 @@ async function mapPool(items, limit, fn) {
 
 /* ---------------- comenzi (mapare) ---------------- */
 
-async function mapOrderProduct(product) {
+/**
+ * Profitul pe bucata ca in calculator (Profit Tren/Mare si Profit Aer), cu pretul real din
+ * comanda (cu TVA, cat a platit clientul) si comisionul ofertei.
+ */
+function orderLineCalc(catalog, product, pct, settings) {
+  if (!catalog || product.sale_price == null) return null;
+  const sale = Number(product.sale_price) * (1 + (Number(product.vat) || 0));
+  return calcProduct(
+    {
+      pret_fabrica: catalog.pret_cumparare_usd,
+      moneda: catalog.moneda_fabrica || "USD",
+      greutate: catalog.greutate,
+      latime: catalog.latime,
+      lungime: catalog.lungime,
+      inaltime: catalog.inaltime,
+      pret_vanzare: sale,
+      comision_emag: pct,
+    },
+    settings.calculator_params
+  );
+}
+
+async function mapOrderProduct(product, settings) {
   const name = product.name || product.product_name || "";
   const part_number = product.part_number || "";
   const product_id = product.product_id ?? null;
-  const costs = product_id != null ? await getListingCosts("emag", product_id) : null;
+  const [costs, catalog] = await Promise.all([
+    product_id != null ? getListingCosts("emag", product_id) : null,
+    lookupCatalogForOrderLine(part_number, name),
+  ]);
+  const procentaj_emag = costs?.procentaj_emag ?? null;
+  const pct = procentaj_emag != null ? Number(procentaj_emag) : settings.procentaj_emag ?? 25;
+  const calc = orderLineCalc(catalog, product, pct, settings);
   return {
     id: product.id ?? null,
     product_id,
@@ -770,22 +799,36 @@ async function mapOrderProduct(product) {
     part_number,
     quantity: product.quantity ?? null,
     sale_price: product.sale_price ?? null,
+    vat: product.vat ?? null,
     status: product.status ?? null,
     currency: product.currency || "RON",
-    pret_cumparare: await lookupCatalogPretCumparare(part_number, name),
+    pret_cumparare: catalog?.pret_cumparare ?? null,
     transport_override: costs?.transport_override ?? null,
-    procentaj_emag: costs?.procentaj_emag ?? null,
+    procentaj_emag,
     commission_value: costs?.commission_value ?? null,
     commission_fetched_at: costs?.commission_fetched_at ?? null,
+    profit_tren: calc?.profit_tren ?? null,
+    profit_aer: calc?.profit_aer ?? null,
   };
 }
 
-async function mapOrder(order) {
+/** Profitul comenzii = profitul pe bucata din calculator × cantitate, pe liniile neanulate. */
+function orderProfit(products) {
+  const lines = products.filter((p) => Number(p.status) !== 0);
+  if (lines.length === 0 || lines.some((p) => p.profit_tren == null)) return null;
+  const qty = (p) => (Number(p.quantity) > 0 ? Number(p.quantity) : 1);
+  return {
+    tren: lines.reduce((s, p) => s + p.profit_tren * qty(p), 0),
+    aer: lines.reduce((s, p) => s + p.profit_aer * qty(p), 0),
+  };
+}
+
+async function mapOrder(order, settings) {
   const customerRaw = Array.isArray(order.customer)
     ? order.customer[0]
     : order.customer;
   const products = Array.isArray(order.products)
-    ? await Promise.all(order.products.map(mapOrderProduct))
+    ? await Promise.all(order.products.map((p) => mapOrderProduct(p, settings)))
     : [];
   return {
     id: order.id,
@@ -794,6 +837,7 @@ async function mapOrder(order) {
     payment_mode_id: order.payment_mode_id ?? null,
     customer_name: customerRaw?.name || customerRaw?.billing_name || "",
     products,
+    profit: orderProfit(products),
   };
 }
 
@@ -1629,7 +1673,8 @@ app.get("/api/orders", async (req, res) => {
       }
 
       const results = Array.isArray(json.results) ? json.results : [];
-      const orders = await Promise.all(results.map(mapOrder));
+      const settings = await getSettings();
+      const orders = await Promise.all(results.map((o) => mapOrder(o, settings)));
 
       // Acumuleaza liniile de comanda local (istoric vanzari per produs).
       try {

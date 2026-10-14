@@ -8,9 +8,8 @@ const selectStatus = document.getElementById("order-status");
 const inputTotalProfit = document.getElementById("total-profit-page");
 const totalProfitLabel = document.getElementById("total-profit-label");
 
-const DEFAULT_ALTE_COSTURI = 0;
 const DEFAULT_PROcentaj_EMAG = 25;
-const ORDERS_CACHE_KEY = "emag-orders-cache-v2";
+const ORDERS_CACHE_KEY = "emag-orders-cache-v4";
 const MAX_DATE_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
 const DEFAULT_RANGE_DAYS = 7;
 
@@ -90,18 +89,6 @@ function formatPctDisplay(value) {
   return String(n);
 }
 
-function parseAlteCosturi(raw) {
-  if (raw == null || raw === "") return DEFAULT_ALTE_COSTURI;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : DEFAULT_ALTE_COSTURI;
-}
-
-
-/* Pretul de cumparare e costul final din calculator (include transportul) → fara cost separat. */
-function resolveAlteCosturi() {
-  return DEFAULT_ALTE_COSTURI;
-}
-
 function hasStoredProcentajEmag(product) {
   return (
     product.procentaj_emag != null && Number.isFinite(Number(product.procentaj_emag))
@@ -119,29 +106,6 @@ function isBuyPriceMissing(pretCumparare) {
   if (pretCumparare == null || pretCumparare === "") return true;
   const buy = Number(pretCumparare);
   return Number.isNaN(buy);
-}
-
-function calcProfit(
-  salePrice,
-  pretCumparare,
-  alteCosturi = DEFAULT_ALTE_COSTURI,
-  pctEmag
-) {
-  if (pctEmag == null || pctEmag === "") return null;
-  const pct = Number(pctEmag);
-  if (salePrice == null || salePrice === "" || Number.isNaN(pct)) {
-    return null;
-  }
-  if (isBuyPriceMissing(pretCumparare)) return null;
-
-  const sale = Number(salePrice);
-  if (Number.isNaN(sale)) return null;
-
-  const afterEmag = sale * (1 - pct / 100);
-  const buyCost = Number(pretCumparare);
-  const other = parseAlteCosturi(alteCosturi);
-
-  return afterEmag - buyCost - other;
 }
 
 function statusLabel(status) {
@@ -311,49 +275,26 @@ function restoreOrdersCache() {
   return true;
 }
 
-function productLineProfit(product) {
-  if (Number(product.status) === 0) return null;
-  if (isBuyPriceMissing(product.pret_cumparare)) return null;
-  const alte = resolveAlteCosturi(product);
-  const pctEmag = resolveProcentajEmag(product);
-  const perUnit = calcProfit(
-    product.sale_price,
-    product.pret_cumparare,
-    alte,
-    pctEmag
-  );
-  if (perUnit == null || !Number.isFinite(perUnit)) return null;
-  const qty = Number(product.quantity);
-  const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
-  return { perUnit, total: perUnit * q, alte, qty: q, pctEmag };
-}
-
-function orderProfitTotal(order) {
+/** Profitul comenzii din calculator (Tren/Mare si Aer), calculat pe server. */
+function orderProfit(order) {
   if (isOrderExcludedFromProfit(order)) return null;
-  let sum = 0;
-  let any = false;
-  for (const p of order.products || []) {
-    const line = productLineProfit(p);
-    if (line == null) continue;
-    sum += line.total;
-    any = true;
-  }
-  return any ? sum : null;
+  const pr = order.profit;
+  return pr && Number.isFinite(Number(pr.tren)) ? pr : null;
 }
 
 function updatePageProfitTotal() {
-  let sum = 0;
-  let any = false;
+  let tren = 0;
+  let aer = 0;
   let counted = 0;
   for (const order of loadedOrders) {
-    if (isOrderExcludedFromProfit(order)) continue;
-    const t = orderProfitTotal(order);
-    if (t == null || !Number.isFinite(t)) continue;
-    sum += t;
-    any = true;
+    const pr = orderProfit(order);
+    if (!pr) continue;
+    tren += Number(pr.tren);
+    aer += Number(pr.aer);
     counted += 1;
   }
-  inputTotalProfit.value = any ? `${sum.toFixed(2)} RON` : "—";
+  inputTotalProfit.value =
+    counted > 0 ? `Tren/mare ${tren.toFixed(2)} · Aer ${aer.toFixed(2)} RON` : "—";
   if (totalProfitLabel) {
     totalProfitLabel.textContent =
       counted > 0
@@ -367,13 +308,13 @@ function renderProductRows(order) {
   if (products.length === 0) {
     return `<tr class="order-detail-row" data-parent-id="${escapeHtml(order.id)}">
       <td></td>
-      <td colspan="7" class="order-products-empty">Niciun produs pe comandă.</td>
+      <td colspan="8" class="order-products-empty">Niciun produs pe comandă.</td>
     </tr>`;
   }
 
   const head = `<tr class="order-detail-row order-detail-head" data-parent-id="${escapeHtml(order.id)}">
     <td></td>
-    <td colspan="7">
+    <td colspan="8">
       <table class="order-products-table">
         <thead>
           <tr>
@@ -383,14 +324,13 @@ function renderProductRows(order) {
             <th>Preț vânzare</th>
             <th>Preț cumpărare</th>
             <th>Comision eMAG %</th>
-            <th>Profit / buc</th>
-            <th>Profit × cant.</th>
+            <th>Profit tren/mare / buc</th>
+            <th>Profit aer / buc</th>
           </tr>
         </thead>
         <tbody>
           ${products
             .map((p) => {
-              const line = productLineProfit(p);
               const pctEmag = resolveProcentajEmag(p);
               const pctStored = hasStoredProcentajEmag(p);
               const currency = p.currency || "RON";
@@ -403,8 +343,8 @@ function renderProductRows(order) {
                 <td>${formatPrice(p.sale_price, currency)}</td>
                 <td class="${buyMissing ? "is-missing" : ""}">${buyMissing ? "—" : formatPrice(p.pret_cumparare, currency)}</td>
                 <td class="${pctStored ? "" : "is-missing"}" title="${pctStored ? "Comision din DB" : `Fallback ${DEFAULT_PROcentaj_EMAG}%`}">${escapeHtml(pctEmag.toFixed(2))}${pctStored ? "" : ' <span class="muted">(default)</span>'}</td>
-                <td>${line ? formatPrice(line.perUnit, currency) : "—"}</td>
-                <td>${line ? formatPrice(line.total, currency) : "—"}</td>
+                <td>${formatPrice(p.profit_tren, currency)}</td>
+                <td>${formatPrice(p.profit_aer, currency)}</td>
               </tr>`;
             })
             .join("")}
@@ -421,7 +361,7 @@ function renderOrders(orders, { append }) {
   }
 
   if (!append && orders.length === 0) {
-    ordersBody.innerHTML = `<tr class="empty-row"><td colspan="8">Nicio comandă găsită pentru filtrele selectate.</td></tr>`;
+    ordersBody.innerHTML = `<tr class="empty-row"><td colspan="9">Nicio comandă găsită pentru filtrele selectate.</td></tr>`;
     return;
   }
 
@@ -430,7 +370,7 @@ function renderOrders(orders, { append }) {
 
   const frag = document.createDocumentFragment();
   for (const order of orders) {
-    const profit = orderProfitTotal(order);
+    const profit = orderProfit(order);
     const currency = order.products?.[0]?.currency || "RON";
     const tr = document.createElement("tr");
     tr.className = "order-row";
@@ -446,7 +386,8 @@ function renderOrders(orders, { append }) {
       <td>${escapeHtml(order.customer_name || "—")}</td>
       <td>${escapeHtml(paymentLabel(order.payment_mode_id))}</td>
       <td>${escapeHtml((order.products || []).length)}</td>
-      <td>${profit == null ? "—" : formatPrice(profit, currency)}</td>
+      <td>${profit ? formatPrice(profit.tren, currency) : "—"}</td>
+      <td>${profit ? formatPrice(profit.aer, currency) : "—"}</td>
     `;
     frag.appendChild(tr);
   }
@@ -525,7 +466,7 @@ async function loadOrders({ append }) {
     if (!res.ok) {
       showOrdersApiError(data, `HTTP ${res.status}`);
       if (!append && loadedOrders.length === 0) {
-        ordersBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(
+        ordersBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(
           data.error || "Eroare"
         )}</td></tr>`;
       }
@@ -556,7 +497,7 @@ async function loadOrders({ append }) {
   } catch (err) {
     setStatus(err.message || "Eroare la încărcare", "error");
     if (!append && loadedOrders.length === 0) {
-      ordersBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(err.message || "Eroare")}</td></tr>`;
+      ordersBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(err.message || "Eroare")}</td></tr>`;
       clearOrdersCache();
     }
   } finally {

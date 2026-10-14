@@ -1486,23 +1486,27 @@ async function getListingCosts(channel, externalId) {
   };
 }
 
-async function lookupCatalogPretCumparare(partNumber, name) {
+const CATALOG_CALC_COLUMNS = `pret_cumparare, pret_cumparare_usd, moneda_fabrica,
+            greutate, inaltime, lungime, latime`;
+
+/** Produsul din catalog pentru o linie de comanda (cod, apoi nume): pretul de cumparare + intrarile calculatorului. */
+async function lookupCatalogForOrderLine(partNumber, name) {
   await ensureSchema();
   const cod = toTextOrNull(partNumber);
   if (cod) {
     const { rows } = await query(
-      "SELECT pret_cumparare FROM catalog_products WHERE LOWER(cod_produs) = LOWER($1) LIMIT 1",
+      `SELECT ${CATALOG_CALC_COLUMNS} FROM catalog_products WHERE LOWER(cod_produs) = LOWER($1) LIMIT 1`,
       [cod]
     );
-    if (rows[0] && rows[0].pret_cumparare != null) return rows[0].pret_cumparare;
+    if (rows[0]) return rows[0];
   }
   const nume = toTextOrNull(name);
   if (nume) {
     const { rows } = await query(
-      "SELECT pret_cumparare FROM catalog_products WHERE LOWER(nume) = LOWER($1) LIMIT 1",
+      `SELECT ${CATALOG_CALC_COLUMNS} FROM catalog_products WHERE LOWER(nume) = LOWER($1) LIMIT 1`,
       [nume]
     );
-    if (rows[0] && rows[0].pret_cumparare != null) return rows[0].pret_cumparare;
+    if (rows[0]) return rows[0];
   }
   return null;
 }
@@ -1528,7 +1532,7 @@ module.exports = {
   getChannelViewRows,
   getChannelStats,
   getListingCosts,
-  lookupCatalogPretCumparare,
+  lookupCatalogForOrderLine,
   recalcPretCumparare,
   touchesPretCumparareInputs,
   replaceChannelPromotions,
