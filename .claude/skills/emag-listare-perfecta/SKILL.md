@@ -19,6 +19,12 @@ Scopul: o listare care apare în căutare, primește click pe telefon și răspu
 
 Ghidul lung (preț, recenzii, lansare, PNK): [`FISIERE/GHID-LISTARE-EMAG-VINDE.md`](../../../FISIERE/GHID-LISTARE-EMAG-VINDE.md). Cum au fost măsurate cifrele și cum le re-măsori: [`references/masuratori.md`](references/masuratori.md).
 
+**Teoria și checklisturile** (de citit la fiecare listare sau audit):
+- [`references/ghid-teorie.md`](references/ghid-teorie.md): de ce funcționează regulile. Conține ce vrea clientul (Jobs to Be Done, momentul declanșator, nivelurile lui Schwartz, Kano), alternativele (Dunford), cum decide creierul, cele 6 tipuri de frici, încrederea (Cialdini, efectul de pată, recenziile), regulile Amazon/eBay/Etsy/Trendyol/Google, asistenții AI (eMAG iZi, Amazon Rufus), regulile legale UE (GPSR, Omnibus, raritate falsă), mituri, cărți și surse.
+- [`references/checklist.md`](references/checklist.md): checklisturile detaliate, în ordinea lucrului (înainte să scrii → titlu → poze → descriere și caracteristici → verificare finală → ofertă și recenzii), plus șabloanele de completat (fișa clientului, alternativele, fricile, galeria, cele 7 întrebări).
+
+Sunt aceleași texte ca paginile Notion din `FISIERE/notion/`; când schimbi una, actualizează-o și pe cealaltă. Unde exemplele generale din ele contrazic regulile de mai jos (diacritice, formatare, lungime), regulile din acest fișier au prioritate.
+
 ## Cifrele care dictează tot
 
 **Mobilul e aproape tot traficul.** De Black Friday 2025, 87,75% dintre clienți au intrat de pe mobil (date oficiale eMAG). De aceea construiești listarea pentru telefon, iar desktopul vine pe locul doi.
@@ -82,6 +88,18 @@ Din research ies 3 liste scurte:
 - **de ce le e frică:** 3–5 obiecții.
 
 Dacă nu poți accesa eMAG, spune asta și marchează keyword-urile drept presupuneri.
+
+### 1b. Ce vrea clientul, ce alternative are, de ce îi e frică
+
+Teoria e în `references/ghid-teorie.md` (cap. 2, 3, 5), iar tabelele de completat sunt la finalul `references/checklist.md`.
+
+- **Rezultatul, nu produsul:** problema într-o frază, cu cuvintele clientului, plus rezultatul funcțional (ce face), emoțional (cum se simte) și social (cum pare). Funcționalul merge în bullets, emoționalul în poza 2 și în fraza de deschidere, socialul în contextul pozelor.
+- **Momentul declanșator** (de ce caută acum): de aici vin cuvintele căutate, urgența și scena pozei 2.
+- **Cine cumpără și cine folosește:** la cadouri, cumpărătorul vrea întâi să nu dea greș.
+- **Cât de bine știe ce caută:** după problemă („durere spate la condus”), după soluție („perna lombara auto”) sau după produs („perna lombara memory foam 38x33”). De asta depind poza 1 și zona A a titlului.
+- **Alternativele** („ce ar face dacă produsul n-ar exista?”): nu face nimic, improvizează, același produs mai ieftin, varianta de brand, altă soluție, magazinul fizic, mai târziu. Pentru fiecare: de ce ar alege-o, ce răspuns are listarea și unde apare. Din diferențe ies 2–3 argumente (ce avem noi → ce înseamnă pentru client → dovada) și un diferențiator într-o frază.
+- **Fricile**, pe cele 6 riscuri: performanță, financiar, fizic, social, psihologic, timp. Fiecare are o dovadă (poză, cifră, recenzie) și un loc în listare.
+- **Limita cinstită:** ce NU face produsul și pentru cine NU e. Merge în descriere, după argumente.
 
 ### 2. Ce îi face să cumpere
 
@@ -232,6 +250,7 @@ Descrierea o citește doar cine e încă nehotărât, și o citește pe telefon,
 | Fraza de deschidere (problemă → soluție) | 15–20 |
 | 5 bullets care încep cu beneficiul, 2–4 cuvinte în bold | 12–20 fiecare |
 | Pentru cine este: 3–4 profiluri | ≤10 fiecare |
+| Nu e potrivit pentru: o limitare mică, spusă cinstit, după argumente (crește încrederea, scade retururile) | o frază |
 | Specificații | Doar cifre |
 | Întreținere și folosire | 30–50 |
 | Ce conține pachetul | Doar listă |
@@ -256,6 +275,13 @@ python3 .claude/skills/emag-listare-perfecta/scripts/verifica_listare.py descrie
 
 Completează toate caracteristicile, inclusiv cele opționale. Fiecare filtru din stânga lăsat gol te face invizibil pentru cine filtrează: nu apari deloc, nu doar mai jos în listă. Nu inventa valori; o valoare necunoscută se marchează și se cere utilizatorului.
 
+### 12. Verificarea finală
+
+Înainte să arăți listarea ca gata, treci prin `references/checklist.md`, secțiunea „Checklist: verificarea finală”:
+- **testele clientului:** 3 secunde (poza 1 + ce se vede din titlu pe telefon), miniatura la 150×150, cele 7 întrebări, primele 4 poze, alternativele, fricile, coerența cifrelor, promisiunea (ce primește = ce a înțeles), străinul;
+- **testul asistentului AI** (eMAG iZi, Amazon Rufus): răspunsurile la întrebările tipice („se potrivește la...?”, „se spală?”, „cât de mare e?”) sunt scrise în listare, în propoziții clare, cu situațiile de folosire;
+- **regulile legale UE:** datele GPSR (producătorul cu adresă poștală și electronică, persoana responsabilă din UE, avertismentele în limba țării); la o reducere, referința e cel mai mic preț din ultimele 30 de zile; fără raritate sau urgență falsă; fără afirmații medicale; doar poze pe care avem dreptul să le folosim. Ce lipsește se semnalează utilizatorului, nu se inventează.
+
 ## Formatul răspunsului
 
 ```markdown
@@ -265,6 +291,13 @@ Completează toate caracteristicile, inclusiv cele opționale. Fiecare filtru di
 - Frici și obiecții: …
 - De ce cumpără (cuvintele clienților): …
 - Persona principală / secundare: …
+
+## Client, alternative, frici
+- Problema și rezultatul (funcțional / emoțional / social): … | Momentul declanșator: … | Cum caută (problemă / soluție / produs): …
+- Alternative (tabel: alternativa → de ce ar alege-o → răspunsul nostru → unde apare)
+- Diferențiatorul, într-o frază: …
+- Frici (tabel: riscul → frica → dovada → unde o arătăm)
+- Limita cinstită („Nu e potrivit pentru”): …
 
 ## Date din DB
 - Produs: id … / cod_produs … / familie … / variante: …
@@ -293,6 +326,10 @@ Textul gata de lipit + numărul de cuvinte din script
 - [ ] Infografice: ≤20 de cuvinte, titlu ≥120px, text ≥80px
 - [ ] Descriere 200–350 de cuvinte, bullets ≤20, paragrafe ≤40
 - [ ] Aceleași dimensiuni peste tot; toate caracteristicile completate
+- [ ] Fiecare alternativă și fiecare frică au un răspuns vizibil în listare
+- [ ] Descrierea are „Nu e potrivit pentru”
+- [ ] Testele finale trecute (3 secunde, miniatura, 7 întrebări, străinul, asistentul AI)
+- [ ] Reguli legale: date GPSR, reduceri corecte, fără raritate falsă, fără afirmații medicale
 ```
 
 Când utilizatorul cere doar o parte (de exemplu doar titlul), livrează doar acea parte, dar păstrează research-ul scurt de la început: fără el, titlul e scris pe ghicite.

@@ -46,6 +46,7 @@ La început, spune-i utilizatorului ce e în memorie (MEMORY.md și fișierele l
 - Căutări pe keyword-urile principale: titlurile și prețurile concurenților, filtrele din stânga.
 - Recenziile de 1–3★ la concurenții direcți (ca să găsești fricile) și întrebările clienților.
 - Din toate astea scoți: cum caută, ce compară, ce frici au, de ce cumpără, persona.
+- Completezi și partea de client din `emag-listare-perfecta` (pasul 1b): rezultatul dorit, momentul declanșator, alternativele (inclusiv „nu face nimic” și improvizația), fricile pe cele 6 riscuri și limita cinstită. Tabelele sunt la finalul `.claude/skills/emag-listare-perfecta/references/checklist.md`.
 
 ## 3. Conținutul setului, specificații și poze de la furnizor
 
@@ -100,7 +101,8 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   - Spre deosebire de RO, aici **păstrezi diacriticele**: maghiara fără á, é, ő, ű e greu de citit, iar BG e în chirilică. Unitățile: „cm” în HU, „см” în BG.
   - Aceleași fapte ca pe RO (dimensiuni, conținutul pachetului, culoare): nimic în plus.
   - Scrie-le în `<dir>/texte_hu_bg.json` (`{"hu": {"name", "description"}, "bg": {...}}`) și verifică titlurile cu `verifica_listare.py titlu`.
-- **Arată-i utilizatorului totul înainte de salvare**, într-un tabel înainte/după (RO, HU și BG), plus întrebările deschise.
+- Înainte să arăți textele, treci prin `.claude/skills/emag-listare-perfecta/references/checklist.md` (titlu, descriere și caracteristici, verificarea finală). Pentru pozele de la pasul 6 folosește secțiunea de poze din același fișier.
+- **Arată-i utilizatorului totul înainte de salvare**, într-un tabel înainte/după (RO, HU și BG), plus întrebările deschise. Pune acolo și ce lipsește din regulile legale (date GPSR: producător, persoana responsabilă din UE, avertismente).
 
 ## 5. Salvare în aplicație (doar local, după confirmare)
 - Fă întâi backup cu valorile vechi: JSON în scratchpad cu `nume`, `descriere` și `characteristics`.
