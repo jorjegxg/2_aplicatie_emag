@@ -5,7 +5,7 @@ description: >-
   (PNK, cod_produs, EAN, offer id sau id din DB): reamintiri din memorie, date doar din DB,
   research pe emag.ro, căutare după imagine pe Alibaba + pozele furnizorului la rezoluție maximă,
   titlu/descriere (RO, HU, BG)/caracteristici verificate, salvare DOAR locală, galerie de 8 poze 2000×2000
-  pe RO/HU/BG, iar la final întrebarea dacă trimite titlurile, descrierile și pozele pe eMAG RO/HU/BG (fără răspuns, nu trimite nimic). Folosește-l când utilizatorul
+  în stil Amazon (Playfair + Montserrat, discret), clare la 100%, pe RO/HU/BG, iar la final întrebarea dacă trimite titlurile, descrierile și pozele pe eMAG RO/HU/BG (fără răspuns, nu trimite nimic). Folosește-l când utilizatorul
   scrie „Produs: <COD>”, „listarea perfectă pentru <COD>”, „fă listarea completă”,
   „/emag-listare-completa <COD>” sau dă un cod de produs și cere listare/relistare cu poze pe limbi.
 ---
@@ -37,7 +37,7 @@ La început, spune-i utilizatorului ce e în memorie (MEMORY.md și fișierele l
 - Rulează `.claude/skills/emag-listare-perfecta/scripts/produs_din_db.sh <COD_PRODUS>`. Datele vin DOAR din DB (`catalog_products`), nu din Excel-urile din FISIERE.
 - Citește și oferta de pe eMAG (doar citire), pentru că pe eMAG pot fi mai multe caracteristici decât în copia locală:
   `docker cp $SK/emag_oferta_citeste.js emag-back:/tmp/ && docker exec -w /app emag-back node /tmp/emag_oferta_citeste.js <offer_id>`
-- Semnalează ce e greșit: descriere șablon de la alt produs, caracteristici incomplete (mai ales „Destinat pentru” și alte filtre), poze puține sau doar pe platforma `en`, variante din familie cu nume sau culori greșite.
+- Semnalează ce e greșit: descriere șablon de la alt produs, caracteristici incomplete (mai ales „Destinat pentru” și alte filtre), poze puține sau doar pe platforma `en`, poze cu watermark (de ex. „DERMAY” repetat pe diagonală), variante din familie cu nume sau culori greșite.
 - `nr_bucati` și dimensiunile din DB: vezi lecțiile. Nu le modifica.
 - Dacă nu există link de furnizor, întreabă. Nu inventa specificații.
 
@@ -77,7 +77,7 @@ Prima formă ia URL-urile din JSON, a doua le primește direct. Scriptul:
 - scrie `<dir>_sheet.jpg` (nume + rezoluție) și `_index.json`.
 
 Merge și pentru AliExpress (`ae01.alicdn.com`).
-- Uită-te la contact sheet și **filtrează**: pagina conține și recomandări (alte produse), alte culori și poze cu obiecte care nu sunt în pachet.
+- Uită-te la contact sheet și **filtrează**: pagina conține și recomandări (alte produse), alte culori și poze cu obiecte care nu sunt în pachet. Elimină și pozele cu watermark (numele altui vânzător sau al unei mărci, de obicei semitransparent și repetat): caută aceeași poză curată la alt furnizor.
 - Raportează rezoluția: pozele Alibaba au adesea doar 750–800px, deci vor fi mărite cu `upsharp`.
 - Verifică dimensiunile de pe poze față de text și între surse. Dacă se contrazic, arată-i utilizatorului un tabel cu sursa fiecărei valori și nu alege singur în tăcere.
 - Ce arată alt vânzător în pachet (sticluță, inel de lemn) nu e automat pachetul nostru: întreabă.
@@ -127,13 +127,30 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   7. pozele furnizorului cu etichetele traduse, sau „Cum funcționează”;
   8. „Unde îl folosești” / „Pentru cine este”.
 - Scoate pozele care promit ceva ce nu e în set și textele promoționale. Acoperă TOT textul în engleză și logo-urile vânzătorilor.
+- **Niciun watermark pe niciuna dintre cele 8 poze.** eMAG respinge pozele cu watermark, iar o poză marcată de alt vânzător e a lui, deci folosirea ei poate închide listarea. Nu șterge watermark-ul altcuiva din poză, nici cu PIL: înlocuiește poza cu una curată de la furnizor. Dacă nu există alta, spune-i utilizatorului ce rol rămâne fără poză.
+- **Stil (aprobat de utilizator: profesionist, ca pe Amazon, discret, nimic prea bold):**
+  - Două fonturi, nu mai multe, ambele în skill (`fonts/`, licență OFL, cu ș/ț, ő/ű și chirilică):
+    - **titluri** în Playfair Display **SemiBold**, MAJUSCULE, litere ușor spațiate. Pe bandă închisă (#16181E) sunt aurii, în degradeu, cu o linie fină și un romb dedesubt (`head()`); pe crem sunt în culoarea cernelii (`head(..., dark=False)`);
+    - **restul textului** în Montserrat **Medium** (`font(size)`). **SemiBold** (`font(size, extra=True)`) doar pentru pastile, cifre și etichete scurte.
+  - **Interzis:** Bold, ExtraBold, Black, OpenSans/Arial, contur sau umbră pe text, text înclinat, mai mult de 3 mărimi de text pe o poză, MAJUSCULE în afara titlului, culori stridente (roșu, verde neon), săgeți și stickere „PROMO”.
+  - Paleta: cerneală #16181E, crem #F6F2EA, auriu #C8983A, gri cald pentru textul secundar, alb. Principala rămâne pe alb pur.
+  - Mult spațiu liber: margine ≥100px, o singură idee pe poză, textul pe fundal, niciodată peste produs.
+  - Pozele reale ale variantei exacte; nu folosi același decupaj alb pe mai mult de 2 poze.
+- **Rezoluție (fiecare poză trebuie să fie clară la 100%):**
+  - Pentru fiecare rol alege sursa cea mai mare (pasul 3c). Toate pozele intră în galerie DOAR prin `photo(im, w=..., rol="...")`. Funcția micșorează sau mărește cu LANCZOS, aplică un sharpen dozat după factor, notează factorul și **oprește scriptul peste 2×**.
+  - Între 1,5× și 2× poza apare cu ⚠ în raport: verific-o în crop-ul 1:1. Peste 2× NU mări: caută o sursă mai mare (alt furnizor Alibaba/AliExpress, originalul fără sufix de miniatură) sau pune poza într-un cadru mai mic (cel mult 2× lățimea sursei, pe fundal crem sau închis). `max_up` mai mare se folosește doar cu acordul utilizatorului.
+  - Nu decupa o zonă mică pentru a o umfla pe toată lățimea; un detaliu se ia dintr-o poză de ≥1000px.
+  - `load()` deschide pozele cu rotirea EXIF aplicată și cu conversie în sRGB. Pașii intermediari se salvează în PNG, nu în JPG peste JPG.
+  - Cercurile, pastilele, liniile oblice și ornamentele se desenează cu `aa_shape` / `aa_line` / `aa_polygon`, adică netezite (randate la 4× și micșorate). `ImageDraw.ellipse`/`rounded_rectangle` lasă margini zimțate.
+  - `save_all` scrie JPG la calitate 95, 4:4:4, progresiv, sub 5,5 MB. Pe lângă contact sheet scrie `sheet_<lang>_1la1.jpg` (zona titlului și centrul fiecărei poze la 100%) și afișează raportul cu factorii de mărire.
 - **Tehnic:**
-  - Python + PIL (nu există numpy/cv2). Helperii sunt în `$SK/galerie_common.py`, iar exemplul complet în `$SK/build_lang_exemplu.py` și `$SK/texte_exemplu.json`.
-  - Fonturile OpenSans Bold/ExtraBold (au diacritice RO și HU și chirilică) le copiezi în `<dir>/fonts/` din `/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/162/fs/usr/share/fonts/opensans/`.
+  - Python + PIL (nu există numpy/cv2). Helperii sunt în `$SK/galerie_common.py`. Exemplul complet, cu stilul aprobat (56 PARF-SOL-AURIU), e în `$SK/build_lang_exemplu.py` și `$SK/texte_exemplu.json`: copiază-l și adaptează-l.
+  - Fonturile se iau automat din `.claude/skills/emag-listare-completa/fonts/`; nu le copia.
   - Un singur script `build_lang.py <lang>` care citește textele din `texte.json` (`{ro, hu, bg}`). Unitatea „cm” devine „см” în BG.
-  - Titlu ≥120px (dacă trebuie micșorat mult, scurtează textul), etichete ≥60–80px, ≤20 de cuvinte pe imagine.
+  - Mărimi: titlu 120–132px (implicit 132; dacă nu încape la 120, scurtează textul), text explicativ 76–88px, text secundar ≥60px, ≤20 de cuvinte pe imagine.
   - Verifică fiecare set de texte cu `verifica_listare.py infografic "titlu" "eticheta" ...`.
-  - Uită-te la fiecare poză (contact sheet, plus crop la ~700px pe zonele reparate) și repară suprapunerile de text, liniile de cotă șterse și resturile de text în engleză.
+  - Uită-te la fiecare poză (contact sheet, `_1la1.jpg` și crop la ~700px pe zonele reparate) și repară: text care se suprapune, iese din cadru sau atinge produsul, linii de cotă șterse, resturi de text în engleză, zone moi sau pixelate, margini zimțate și halou alb în jurul decupajului.
+  - Arată-i utilizatorului întâi contact sheet-ul RO și construiește HU/BG doar după ce îl aprobă.
   - Pe poze folosește diacritice corecte (ș, ț cu virgulă).
 - **Încărcare în aplicație** (doar local), cu `docker cp out emag-back:/tmp/p<id>`, apoi:
   - galerie nouă: `docker exec -w /app emag-back node /tmp/imagini_app.js add <id> <cod_produs> /tmp/p<id>`;
