@@ -43,9 +43,14 @@ const S3_SECRET_KEY = process.env.S3_SECRET_KEY || "minioadmin";
 const S3_FORCE_PATH_STYLE =
   String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() !== "false";
 const S3_KEY_PREFIX = "products/";
+/** Folderele din bucket: pozele din galerie in products/, variantele Trendyol in trendyol/. */
+const S3_FOLDERS = ["products", "trendyol"];
+const DEFAULT_FOLDER = "products";
 
 /** Seturi de poze: 'en' e setul implicit, folosit cand platforma nu are poze proprii. */
 const PLATFORMS = ["en", "ro", "bg", "hu"];
+/** Canale (in afara de eMAG) a caror stare de push pe poze o tinem separat. */
+const PUSH_STATE_CHANNELS = ["trendyol"];
 const FALLBACK_PLATFORM = "en";
 // URL-ul public al aplicatiei — eMAG descarca pozele de aici, deci trebuie absolut.
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -55,6 +60,8 @@ const PUBLIC_IMAGE_BASE_URL = String(process.env.PUBLIC_IMAGE_BASE_URL || "").re
   /\/+$/,
   ""
 );
+/** Pozele pot pleca pe marketplace doar daca au un URL public (bucket sau aplicatie). */
+const IMAGES_PUBLIC = Boolean(PUBLIC_IMAGE_BASE_URL || PUBLIC_BASE_URL);
 
 /** @param {unknown} value @returns {"en"|"ro"|"bg"|"hu"} */
 function normalizePlatform(value) {
@@ -88,14 +95,19 @@ const s3 = new S3Client({
 let bucketReady = false;
 let bucketPromise = null;
 
-function objectKey(storedName) {
+function objectKey(storedName, folder = DEFAULT_FOLDER) {
   const name = String(storedName || "").replace(/^.*[\\/]/, "");
   if (!name || name === "." || name === "..") {
     const err = new Error("stored_name invalid");
     err.status = 400;
     throw err;
   }
-  return `${S3_KEY_PREFIX}${name}`;
+  if (!S3_FOLDERS.includes(folder)) {
+    const err = new Error(`Folder necunoscut: ${folder}`);
+    err.status = 400;
+    throw err;
+  }
+  return `${folder}/${name}`;
 }
 
 function publicUrl(storedName) {
@@ -139,18 +151,22 @@ function signingSecret() {
   return imageSignSecret;
 }
 
-/** Semnatura unei poze: doar pozele pe care le trimitem la eMAG devin descarcabile. */
-function imageSignature(storedName) {
+/**
+ * Semnatura unei poze: doar pozele pe care le trimitem la eMAG devin descarcabile.
+ * Pentru products/ se semneaza doar numele, ca link-urile deja trimise sa ramana valide.
+ */
+function imageSignature(storedName, folder = DEFAULT_FOLDER) {
+  const subject = folder === DEFAULT_FOLDER ? String(storedName) : `${folder}/${storedName}`;
   return crypto
     .createHmac("sha256", signingSecret())
-    .update(String(storedName))
+    .update(subject)
     .digest("hex")
     .slice(0, 32);
 }
 
 /** @returns {boolean} true doar pentru semnatura corecta a pozei cerute. */
-function verifyImageSignature(storedName, signature) {
-  const expected = Buffer.from(imageSignature(storedName));
+function verifyImageSignature(storedName, signature, folder = DEFAULT_FOLDER) {
+  const expected = Buffer.from(imageSignature(storedName, folder));
   const got = Buffer.from(String(signature || ""));
   if (expected.length !== got.length) return false;
   return crypto.timingSafeEqual(expected, got);
@@ -161,10 +177,10 @@ function verifyImageSignature(storedName, signature) {
  * Cu PUBLIC_IMAGE_BASE_URL, link direct in bucket; altfel prin aplicatie, semnat.
  * Arunca daca lipsesc amandoua.
  */
-function absoluteUrl(storedName) {
+function absoluteUrl(storedName, folder = DEFAULT_FOLDER) {
   if (PUBLIC_IMAGE_BASE_URL) {
-    const name = objectKey(storedName).slice(S3_KEY_PREFIX.length);
-    return `${PUBLIC_IMAGE_BASE_URL}/${S3_KEY_PREFIX}${encodeURIComponent(name)}`;
+    const name = objectKey(storedName, folder).slice(folder.length + 1);
+    return `${PUBLIC_IMAGE_BASE_URL}/${folder}/${encodeURIComponent(name)}`;
   }
   if (!PUBLIC_BASE_URL) {
     const err = new Error(
@@ -174,7 +190,9 @@ function absoluteUrl(storedName) {
     throw err;
   }
   const name = encodeURIComponent(storedName);
-  return `${PUBLIC_BASE_URL}/public/product-image/${name}?sig=${imageSignature(storedName)}`;
+  const sig = imageSignature(storedName, folder);
+  const extra = folder === DEFAULT_FOLDER ? "" : `&folder=${folder}`;
+  return `${PUBLIC_BASE_URL}/public/product-image/${name}?sig=${sig}${extra}`;
 }
 
 function mapRow(r) {
@@ -361,6 +379,12 @@ async function getPushedFingerprints(productIds) {
   return map;
 }
 
+/** Cheia din product_images_push_state: platforma eMAG sau un canal cu galerie proprie. */
+function pushStateKey(platform) {
+  const p = String(platform ?? "").trim().toLowerCase();
+  return PUSH_STATE_CHANNELS.includes(p) ? p : normalizePlatform(p);
+}
+
 /** Retine ce set de poze a fost trimis, ca sa nu-l retrimitem la fiecare push. */
 async function markImagesPushed(productId, platform, fingerprint) {
   await ensureSchema();
@@ -371,7 +395,7 @@ async function markImagesPushed(productId, platform, fingerprint) {
      VALUES ($1, $2, $3, now())
      ON CONFLICT (product_id, platform)
      DO UPDATE SET fingerprint = EXCLUDED.fingerprint, pushed_at = now()`,
-    [pid, normalizePlatform(platform), String(fingerprint || "")]
+    [pid, pushStateKey(platform), String(fingerprint || "")]
   );
 }
 
@@ -395,12 +419,12 @@ function makeStoredName(mime) {
   return `${crypto.randomUUID()}${ext}`;
 }
 
-async function putObject(storedName, buffer, mime) {
+async function putObject(storedName, buffer, mime, folder = DEFAULT_FOLDER) {
   await ensureBucket();
   await s3.send(
     new PutObjectCommand({
       Bucket: S3_BUCKET,
-      Key: objectKey(storedName),
+      Key: objectKey(storedName, folder),
       Body: buffer,
       ContentType: mime,
       ContentLength: buffer.length,
@@ -432,12 +456,12 @@ async function removeObject(storedName) {
  * Stream obiect S3 pentru proxy HTTP.
  * @returns {Promise<{ body: import("stream").Readable, contentType: string, contentLength: number|null }>}
  */
-async function getObjectStream(storedName) {
+async function getObjectStream(storedName, folder = DEFAULT_FOLDER) {
   await ensureBucket();
   const out = await s3.send(
     new GetObjectCommand({
       Bucket: S3_BUCKET,
-      Key: objectKey(storedName),
+      Key: objectKey(storedName, folder),
     })
   );
   return {
@@ -452,8 +476,8 @@ async function getObjectStream(storedName) {
  * @param {string} storedName
  * @returns {Promise<Buffer>}
  */
-async function getObjectBuffer(storedName) {
-  const { body } = await getObjectStream(storedName);
+async function getObjectBuffer(storedName, folder = DEFAULT_FOLDER) {
+  const { body } = await getObjectStream(storedName, folder);
   const chunks = [];
   for await (const chunk of body) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -501,13 +525,13 @@ async function preferWhiteBackgroundPrimary(productId) {
   return listForProduct(pid, FALLBACK_PLATFORM);
 }
 
-async function objectExists(storedName) {
+async function objectExists(storedName, folder = DEFAULT_FOLDER) {
   await ensureBucket();
   try {
     await s3.send(
       new HeadObjectCommand({
         Bucket: S3_BUCKET,
-        Key: objectKey(storedName),
+        Key: objectKey(storedName, folder),
       })
     );
     return true;
@@ -897,6 +921,7 @@ module.exports = {
   PLATFORMS,
   FALLBACK_PLATFORM,
   PUBLIC_BASE_URL,
+  IMAGES_PUBLIC,
   normalizePlatform,
   absoluteUrl,
   imageSignature,
@@ -910,6 +935,7 @@ module.exports = {
   getPushedFingerprints,
   markImagesPushed,
   S3_BUCKET,
+  S3_FOLDERS,
   S3_ENDPOINT,
   ensureBucket,
   listByProductIds,
@@ -920,6 +946,7 @@ module.exports = {
   productExists,
   getObjectStream,
   getObjectBuffer,
+  putObject,
   objectExists,
   objectKey,
   downloadImage,

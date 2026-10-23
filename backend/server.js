@@ -50,11 +50,12 @@ const {
   getPushedFingerprints,
   listByPlatformForProductIds,
   pickEffective,
-  PUBLIC_BASE_URL,
+  IMAGES_PUBLIC,
   normalizePlatform,
   absoluteUrl,
   verifyImageSignature,
   getObjectStream,
+  S3_FOLDERS,
 } = require("./product-images");
 const { getChannel, listChannels } = require("./channels");
 const { httpError, pushOffersForChannel } = require("./channel-push");
@@ -232,10 +233,15 @@ app.post("/api/webhooks/ty/order", (req, res) => {
 app.get("/public/product-image/:storedName", async (req, res) => {
   try {
     const storedName = path.basename(String(req.params.storedName || ""));
-    if (!storedName || !verifyImageSignature(storedName, req.query.sig)) {
+    const folder = String(req.query.folder || "products");
+    if (
+      !storedName ||
+      !S3_FOLDERS.includes(folder) ||
+      !verifyImageSignature(storedName, req.query.sig, folder)
+    ) {
       return res.status(404).end();
     }
-    const obj = await getObjectStream(storedName);
+    const obj = await getObjectStream(storedName, folder);
     res.setHeader("Content-Type", obj.contentType);
     if (obj.contentLength != null) {
       res.setHeader("Content-Length", String(obj.contentLength));
@@ -1392,7 +1398,7 @@ async function pushImagesToSecondaryPlatforms(diffRows) {
   const rows = (diffRows || []).filter((r) => r.product_id && r.external_id);
   const out = [];
   // Fara URL public eMAG nu poate descarca pozele — sarim peste, fara sa raportam erori.
-  if (!rows.length || !PUBLIC_BASE_URL) return out;
+  if (!rows.length || !IMAGES_PUBLIC) return out;
 
   const productIds = rows.map((r) => r.product_id);
   const imagesByProduct = await listByPlatformForProductIds(productIds);

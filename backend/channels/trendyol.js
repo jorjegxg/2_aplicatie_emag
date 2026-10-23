@@ -342,6 +342,8 @@ async function fetchListings({ page = 1, filters } = {}) {
 
 const TITLE_MAX_LEN = 100;
 const PUSH_CHUNK_SIZE = 1000;
+/** Trendyol accepta cel mult 8 poze pe produs. */
+const IMAGES_MAX = 8;
 
 /**
  * Trendyol refuza (400 „duplicate product update request”) un content-bulk-update
@@ -413,6 +415,7 @@ function buildPushPayload(
     includeStock = false,
     includeMinSalePrice: _min = false,
     includeMaxSalePrice: _max = false,
+    includeImages = false,
   } = {}
 ) {
   const barcode = String(listing?.id ?? listing?.barcode ?? "").trim();
@@ -423,8 +426,10 @@ function buildPushPayload(
   const wantSale = includeSalePrice;
   const wantList = includeRecommendedPrice;
   const wantStock = includeStock;
+  const images = includeImages ? normalizePushImages(listing?.images) : [];
+  const wantImages = images.length > 0;
 
-  if (!wantName && !wantDescription && !wantSale && !wantList && !wantStock) {
+  if (!wantName && !wantDescription && !wantSale && !wantList && !wantStock && !wantImages) {
     throw invalidPush(`Oferta ${barcode}: nimic de publicat`);
   }
 
@@ -491,7 +496,7 @@ function buildPushPayload(
     if (inventory.salePrice != null) payload.sale_price = inventory.salePrice;
   }
 
-  if (wantName || wantDescription) {
+  if (wantName || wantDescription || wantImages) {
     const contentId = toNum(listing?.content_id);
     if (contentId == null) {
       throw invalidPush(
@@ -515,12 +520,22 @@ function buildPushPayload(
       const description = String(listing.description).trim();
       if (description) content.description = description;
     }
-    if (content.title != null || content.description != null) {
+    if (wantImages) content.images = images;
+    if (content.title != null || content.description != null || content.images != null) {
       payload.content = content;
     }
   }
 
   return payload;
+}
+
+/** Pozele de trimis: [{ url }], doar URL-uri https, cel mult IMAGES_MAX. */
+function normalizePushImages(images) {
+  return (Array.isArray(images) ? images : [])
+    .map((img) => String(typeof img === "string" ? img : img?.url ?? "").trim())
+    .filter((url) => /^https:\/\//i.test(url))
+    .slice(0, IMAGES_MAX)
+    .map((url) => ({ url }));
 }
 
 /** Trimite loturi de pret/stoc și/sau content. -> { count, authUsed, batchRequestIds, messages } */
@@ -542,6 +557,7 @@ async function pushListings(offers) {
       const prev = contentById.get(cid) || { contentId: cid };
       if (o.content.title != null) prev.title = o.content.title;
       if (o.content.description != null) prev.description = o.content.description;
+      if (o.content.images != null) prev.images = o.content.images;
       contentById.set(cid, prev);
     }
   }

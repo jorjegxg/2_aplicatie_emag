@@ -15,7 +15,7 @@ const {
   imagesStamp,
   getPushedFingerprints,
   FALLBACK_PLATFORM,
-  PUBLIC_BASE_URL,
+  IMAGES_PUBLIC,
 } = require("./product-images");
 const {
   getChannelRemotes,
@@ -1073,7 +1073,7 @@ const DIFF_FIELDS = [
 
 /** Trendyol nu expune min/max — le excludem ca sa nu marcheze totul ca diferit. */
 const DIFF_FIELDS_TRENDYOL = DIFF_FIELDS.filter(
-  (f) => f.key !== "min_sale_price" && f.key !== "max_sale_price" && f.key !== "images"
+  (f) => f.key !== "min_sale_price" && f.key !== "max_sale_price"
 );
 
 function valuesDiffer(type, mine, theirs) {
@@ -1164,12 +1164,12 @@ async function getEmagChannelDiff() {
   }
 
   // Poze: setul efectiv RO (sau EN) fata de ce am trimis ultima data pe eMAG RO.
-  // Fara PUBLIC_BASE_URL nu putem trimite poze, deci nici nu le raportam ca diferente.
+  // Fara URL public nu putem trimite poze, deci nici nu le raportam ca diferente.
   const productIds = locals.map((l) => l.product_id);
-  const pushedStamps = PUBLIC_BASE_URL
+  const pushedStamps = IMAGES_PUBLIC
     ? await getPushedFingerprints(productIds)
     : new Map();
-  if (PUBLIC_BASE_URL) {
+  if (IMAGES_PUBLIC) {
     const imagesByProduct = await listByPlatformForProductIds(productIds);
     for (const l of locals) {
       l.images_stamp = imagesStamp(
@@ -1271,6 +1271,20 @@ async function getTrendyolChannelDiff() {
     }
   }
 
+  // Poze: setul efectiv RO fata de ce am trimis ultima data pe Trendyol (cheie separata de eMAG).
+  const productIds = locals.map((l) => l.product_id);
+  const pushedStamps = IMAGES_PUBLIC
+    ? await getPushedFingerprints(productIds)
+    : new Map();
+  if (IMAGES_PUBLIC) {
+    const imagesByProduct = await listByPlatformForProductIds(productIds);
+    for (const l of locals) {
+      l.images_stamp = imagesStamp(
+        pickEffective(imagesByProduct.get(Number(l.product_id)), "ro")
+      );
+    }
+  }
+
   const matched = [];
   const onlyLocal = [];
   const seenLocalEan = new Set();
@@ -1292,6 +1306,7 @@ async function getTrendyolChannelDiff() {
       continue;
     }
     snapByEan.delete(ean);
+    snap.images = pushedStamps.get(`${Number(l.product_id)}:trendyol`) || null;
     const fields = markPromoLockedFields(buildDiffFields(l, snap, DIFF_FIELDS_TRENDYOL), snap.promo);
     matched.push({
       promo: snap.promo,

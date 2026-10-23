@@ -6,8 +6,9 @@ const {
   imagesStamp,
   markImagesPushed,
   absoluteUrl,
-  PUBLIC_BASE_URL,
+  IMAGES_PUBLIC,
 } = require("./product-images");
+const { trendyolImageUrl } = require("./image-trendyol");
 
 /** Eroare "asteptata" (validare) — raspuns JSON simplu, fara log de canal. */
 function httpError(status, message) {
@@ -136,21 +137,32 @@ async function pushOffersForChannel(
       if (!Object.values(flags).some(Boolean)) continue;
     }
     // Fara URL public, pozele nu pot fi trimise — restul push-ului merge inainte.
-    if (flags.includeImages && (channelName !== "emag" || !PUBLIC_BASE_URL)) {
+    const imagesChannel = channelName === "emag" || channelName === "trendyol";
+    if (flags.includeImages && (!imagesChannel || !IMAGES_PUBLIC)) {
       flags.includeImages = false;
     }
     if (flags.includeImages) {
       // Pozele platformei RO (sau setul EN, cand RO nu are poze proprii).
+      // Pe Trendyol pleaca varianta 2:3 (1200x1800) a fiecarei poze.
       const effective = await effectiveImages(l.product_id, "ro");
       if (effective.images.length) {
-        merged.images = effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) }));
+        merged.images =
+          channelName === "trendyol"
+            ? await Promise.all(
+                effective.images.slice(0, 8).map(async (img) => ({
+                  url: await trendyolImageUrl(img.stored_name),
+                }))
+              )
+            : effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) }));
         pushedImages.push({
           productId: l.product_id,
-          platform: "ro",
+          platform: channelName === "trendyol" ? "trendyol" : "ro",
           fingerprint: imagesStamp(effective),
         });
       } else {
         flags.includeImages = false;
+        // Trendyol respinge oferta fara nimic de publicat; pe eMAG pleaca ca inainte.
+        if (channelName === "trendyol" && !Object.values(flags).some(Boolean)) continue;
       }
     }
     offers.push(channel.buildPushPayload(merged, flags));
