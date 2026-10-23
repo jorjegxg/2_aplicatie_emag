@@ -86,12 +86,33 @@ services:
       retries: 5
       start_period: 30s
 
+  # Coada de trimiteri eMAG amânate (emag_push_queue): trimite pe RO/HU/BG când devine posibil,
+  # de ex. BG abia după ce HU a terminat validarea. QUEUE_SEND=1 în .env ca să trimită pe bune.
+  # Intrări noi: docker exec emag-queue node scripts/coada-emag.js add --produs 45 --platforma bg
+  queue:
+    build: ./backend
+    container_name: emag-queue
+    restart: unless-stopped
+    command: ["node", "queue-worker.js"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
+      S3_ENDPOINT: ${S3_ENDPOINT_DOCKER:-http://minio:9000}
+      QUEUE_SEND: ${QUEUE_SEND:-0}
+      QUEUE_INTERVAL_SEC: ${QUEUE_INTERVAL_SEC:-300}
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
   front:
     build: ./frontend
     container_name: emag-front
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:80"
+      - "8080:80"
     depends_on:
       - back
 

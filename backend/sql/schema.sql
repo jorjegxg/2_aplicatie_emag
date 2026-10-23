@@ -129,6 +129,38 @@ CREATE TABLE IF NOT EXISTS channel_promotions (
   PRIMARY KEY (channel, external_id)
 );
 
+-- Coada de trimiteri eMAG amânate (vezi migrarea 026 și queue-worker.js).
+CREATE TABLE IF NOT EXISTS emag_push_queue (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES catalog_products(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('ro', 'hu', 'bg')),
+  send_images BOOLEAN NOT NULL DEFAULT true,
+  name TEXT,
+  description TEXT,
+  name_from_app BOOLEAN NOT NULL DEFAULT false,
+  description_from_app BOOLEAN NOT NULL DEFAULT false,
+  characteristics JSONB,
+  not_before TIMESTAMPTZ NOT NULL DEFAULT now(),
+  after_id INTEGER REFERENCES emag_push_queue(id) ON DELETE SET NULL,
+  replace_pending BOOLEAN NOT NULL DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'sent', 'done', 'skipped', 'failed', 'cancelled')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  seen_pending BOOLEAN NOT NULL DEFAULT false,
+  note TEXT,
+  last_message TEXT,
+  last_check_at TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ,
+  done_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_emag_push_queue_open
+  ON emag_push_queue (status, not_before)
+  WHERE status IN ('pending', 'sent');
+
 -- Index doar daca coloana exista (DB vechi: migrarea 003 o adauga)
 DO $$
 BEGIN
