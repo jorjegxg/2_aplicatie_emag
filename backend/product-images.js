@@ -49,6 +49,12 @@ const PLATFORMS = ["en", "ro", "bg", "hu"];
 const FALLBACK_PLATFORM = "en";
 // URL-ul public al aplicatiei — eMAG descarca pozele de aici, deci trebuie absolut.
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+// Domeniul public al bucket-ului (ex. Cloudflare R2). Daca e setat, eMAG ia pozele
+// direct din bucket, fara sa treaca prin aplicatie — merge si cu PC-ul inchis.
+const PUBLIC_IMAGE_BASE_URL = String(process.env.PUBLIC_IMAGE_BASE_URL || "").replace(
+  /\/+$/,
+  ""
+);
 
 /** @param {unknown} value @returns {"en"|"ro"|"bg"|"hu"} */
 function normalizePlatform(value) {
@@ -152,12 +158,17 @@ function verifyImageSignature(storedName, signature) {
 
 /**
  * URL absolut si semnat pentru consumatori externi — eMAG descarca pozele de aici.
- * Arunca daca PUBLIC_BASE_URL lipseste.
+ * Cu PUBLIC_IMAGE_BASE_URL, link direct in bucket; altfel prin aplicatie, semnat.
+ * Arunca daca lipsesc amandoua.
  */
 function absoluteUrl(storedName) {
+  if (PUBLIC_IMAGE_BASE_URL) {
+    const name = objectKey(storedName).slice(S3_KEY_PREFIX.length);
+    return `${PUBLIC_IMAGE_BASE_URL}/${S3_KEY_PREFIX}${encodeURIComponent(name)}`;
+  }
   if (!PUBLIC_BASE_URL) {
     const err = new Error(
-      "PUBLIC_BASE_URL nu e setat — eMAG nu poate descarca pozele fara un URL public"
+      "Nici PUBLIC_IMAGE_BASE_URL, nici PUBLIC_BASE_URL nu e setat — eMAG nu poate descarca pozele fara un URL public"
     );
     err.status = 400;
     throw err;

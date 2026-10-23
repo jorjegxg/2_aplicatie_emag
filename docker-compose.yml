@@ -18,16 +18,20 @@ services:
       timeout: 5s
       retries: 10
 
+  # Pozele stau in Cloudflare R2; MinIO local ramane doar backup si porneste
+  # numai la cerere: docker compose --profile minio up -d minio
   minio:
     image: minio/minio:latest
     container_name: emag-minio
     restart: unless-stopped
+    profiles: ["minio"]
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      # MINIO_* separat de S3_*, ca aplicatia sa poata folosi R2 fara sa schimbe MinIO.
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-${S3_ACCESS_KEY:-minioadmin}}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-${S3_SECRET_KEY:-minioadmin}}
     volumes:
       - emag_minio_data:/data
     command: server /data --console-address ":9001"
@@ -39,13 +43,14 @@ services:
 
   minio-init:
     image: minio/mc:latest
+    profiles: ["minio"]
     depends_on:
       minio:
         condition: service_healthy
     environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_BUCKET: ${S3_BUCKET:-emag-products}
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-${S3_ACCESS_KEY:-minioadmin}}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-${S3_SECRET_KEY:-minioadmin}}
+      S3_BUCKET: ${MINIO_BUCKET:-${S3_BUCKET:-emag-products}}
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY &&
@@ -65,14 +70,14 @@ services:
     environment:
       PORT: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
-      S3_ENDPOINT: http://minio:9000
+      # S3_ENDPOINT_DOCKER din .env (ex. Cloudflare R2) inlocuieste MinIO-ul local.
+      # Fara el, porneste si MinIO: docker compose --profile minio up -d
+      S3_ENDPOINT: ${S3_ENDPOINT_DOCKER:-http://minio:9000}
     volumes:
       # Păstrează cheile VAPID între recreări/restarturi ale containerului.
       - ./backend/data:/app/data
     depends_on:
       db:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
