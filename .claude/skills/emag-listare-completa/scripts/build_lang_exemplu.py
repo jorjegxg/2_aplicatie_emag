@@ -13,7 +13,7 @@ textul prin font() (Montserrat Medium/SemiBold). Nu folosi ImageDraw.ellipse/rou
 """
 import json, math, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, "/home/base/2_aplicatie_emag/.claude/skills/emag-listare-completa/scripts")
+sys.path.insert(0, "/home/gxg/2_aplicatie_emag/.claude/skills/emag-listare-completa/scripts")
 from galerie_common import *  # noqa
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance
 

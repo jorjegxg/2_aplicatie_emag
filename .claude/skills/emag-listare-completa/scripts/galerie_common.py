@@ -16,7 +16,7 @@ Rezoluția: pozele se pun DOAR prin photo(), care refuză mărirea peste 2× și
 Cercurile, pastilele și liniile oblice se desenează netezit (aa_*), nu cu ImageDraw direct.
 """
 import io, math, os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, features
 
 try:
     from PIL import ImageCms
@@ -38,6 +38,8 @@ W_TITLE = 600  # Playfair Display SemiBold
 W_TEXT = 500   # Montserrat Medium
 W_EMPH = 600   # Montserrat SemiBold
 TRACK_TITLE = 0.04  # spațierea literelor din titlu, în em
+# Playfair are implicit cifre „old-style” (2, 3, 6 mai mici decât majusculele); în titluri vrem cifre de înălțimea majusculelor
+LNUM = ["lnum"] if features.check("raqm") else None
 
 UPSCALE_WARN, UPSCALE_MAX = 1.5, 2.0
 RAPORT = []  # (rol, sursă WxH, țintă WxH, factor)
@@ -122,7 +124,7 @@ def title_img(text, size, color="gold", upper=True):
     f = tfont(size)
     tr = size * TRACK_TITLE
     dd = _d()
-    ws = [dd.textlength(ch, font=f) for ch in text]
+    ws = [dd.textlength(ch, font=f, features=LNUM) for ch in text]
     W = int(sum(ws) + tr * (len(text) - 1)) + 8
     pad = int(size * 0.5)
     H = int(size * 1.4) + 2 * pad
@@ -130,7 +132,7 @@ def title_img(text, size, color="gold", upper=True):
     md = ImageDraw.Draw(m)
     x = 0.0
     for ch, w in zip(text, ws):
-        md.text((x, pad), ch, font=f, fill=255)
+        md.text((x, pad), ch, font=f, fill=255, features=LNUM)
         x += w + tr
     hb = f.getbbox("H")
     yc = pad + (hb[1] + hb[3]) / 2

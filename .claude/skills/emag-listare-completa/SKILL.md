@@ -127,14 +127,24 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   7. pozele furnizorului cu etichetele traduse, sau „Cum funcționează”;
   8. „Unde îl folosești” / „Pentru cine este”.
 - Scoate pozele care promit ceva ce nu e în set și textele promoționale. Acoperă TOT textul în engleză și logo-urile vânzătorilor.
+- **Conținutul pozelor** (din checklistul de poze, `.claude/skills/emag-listare-perfecta/references/checklist.md`, secțiunile C–G):
+  - principala: alb pur (255, 255, 255), verificat pe pixelii din colțuri și de lângă produs; produsul întreg, centrat, ~85% din cadru; o singură vedere (nu față și spate împreună); doar varianta livrată și accesoriile din cutie;
+  - fiecare poză răspunde la altă întrebare; nicio poză nu o repetă pe alta;
+  - poza de pachet: fiecare piesă numerotată și etichetată;
+  - cosmetice: textura de aproape, folosirea în 3 pași, ingredientele-cheie; electronice: cifrele mari (autonomie, putere), conectivitatea, butoanele, compatibilitatea;
+  - beneficii concrete cu cifre („42 de ore de muzică”, nu „baterie 400 mAh”); o singură limbă pe poză; unitățile pieței (cm, kg, ml; „см” în BG); ortografia verificată de două ori;
+  - culoarea produsului rămâne cea reală: nu schimba nuanța pozelor furnizorului; compar-o cu poza variantei din aplicație.
+- **Interzis pe orice poză:** stele de rating, citate din recenzii, „livrare gratuită”, insigne de platformă sau imitații ale lor, logo-uri sau produse ale concurenței, cifre comparative fără dovadă („10X”, „-44%”, „#1”), afirmații ecologice generice („eco”, „biodegradabil”, „prietenos cu mediul”; interzise în UE din 27.09.2026), promisiuni medicale, iar la cosmetice „fără parabeni” sau „fără conservanți”. Logo-urile de certificare de pe pozele furnizorului (CE, FDA, RoHS, BIO, OEKO-TEX) se scot dacă nu avem documentul; dacă nu se pot scoate curat, alege altă poză.
 - **Niciun watermark pe niciuna dintre cele 8 poze.** eMAG respinge pozele cu watermark, iar o poză marcată de alt vânzător e a lui, deci folosirea ei poate închide listarea. Nu șterge watermark-ul altcuiva din poză, nici cu PIL: înlocuiește poza cu una curată de la furnizor. Dacă nu există alta, spune-i utilizatorului ce rol rămâne fără poză.
 - **Stil (aprobat de utilizator: profesionist, ca pe Amazon, discret, nimic prea bold):**
   - Două fonturi, nu mai multe, ambele în skill (`fonts/`, licență OFL, cu ș/ț, ő/ű și chirilică):
     - **titluri** în Playfair Display **SemiBold**, MAJUSCULE, litere ușor spațiate. Pe bandă închisă (#16181E) sunt aurii, în degradeu, cu o linie fină și un romb dedesubt (`head()`); pe crem sunt în culoarea cernelii (`head(..., dark=False)`);
     - **restul textului** în Montserrat **Medium** (`font(size)`). **SemiBold** (`font(size, extra=True)`) doar pentru pastile, cifre și etichete scurte.
   - **Interzis:** Bold, ExtraBold, Black, OpenSans/Arial, contur sau umbră pe text, text înclinat, mai mult de 3 mărimi de text pe o poză, MAJUSCULE în afara titlului, culori stridente (roșu, verde neon), săgeți și stickere „PROMO”.
-  - Paleta: cerneală #16181E, crem #F6F2EA, auriu #C8983A, gri cald pentru textul secundar, alb. Principala rămâne pe alb pur.
-  - Mult spațiu liber: margine ≥100px, o singură idee pe poză, textul pe fundal, niciodată peste produs.
+  - Paleta: cerneală #16181E, crem #F6F2EA, auriu #C8983A, gri cald pentru textul secundar, alb. Principala rămâne pe alb pur. Paleta e fixă (kitul aprobat) și nu se schimbă de la un produs la altul.
+  - **Contrast** (minim 4,5:1 pentru text mic, 3:1 pentru titluri). Măsurat pe paletă: auriu pe cerneală 6,8:1, cerneală pe crem 15,9:1, gri cald (`GREY`) pe crem 4,7:1 și pe alb 5,2:1, deci toate trec. **Auriul pe alb sau crem are doar 2,4–2,6:1**: pe fundal deschis auriul se folosește doar pentru linii, contururi, ornamente și pastile cu text de cerneală (`gold_pill`), niciodată pentru text. Niciun text mai deschis decât `GREY` pe fundal deschis.
+  - Mult spațiu liber: margine de 100–120px (5–6%), o singură idee pe poză, textul pe fundal, niciodată peste produs. Text peste fotografie doar în zone liniștite sau pe bandă închisă (`dark_top`).
+  - Spațiere între rânduri de 115–130% din mărimea fontului.
   - Pozele reale ale variantei exacte; nu folosi același decupaj alb pe mai mult de 2 poze.
 - **Rezoluție (fiecare poză trebuie să fie clară la 100%):**
   - Pentru fiecare rol alege sursa cea mai mare (pasul 3c). Toate pozele intră în galerie DOAR prin `photo(im, w=..., rol="...")`. Funcția micșorează sau mărește cu LANCZOS, aplică un sharpen dozat după factor, notează factorul și **oprește scriptul peste 2×**.
@@ -150,6 +160,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   - Mărimi: titlu 120–132px (implicit 132; dacă nu încape la 120, scurtează textul), text explicativ 76–88px, text secundar ≥60px, ≤20 de cuvinte pe imagine.
   - Verifică fiecare set de texte cu `verifica_listare.py infografic "titlu" "eticheta" ...`.
   - Uită-te la fiecare poză (contact sheet, `_1la1.jpg` și crop la ~700px pe zonele reparate) și repară: text care se suprapune, iese din cadru sau atinge produsul, linii de cotă șterse, resturi de text în engleză, zone moi sau pixelate, margini zimțate și halou alb în jurul decupajului.
+  - Fă și cele două teste de lizibilitate: fiecare poză micșorată la 375px lățime (titlul se citește fără zoom) și la ~180px (mesajul se înțelege într-o secundă). Miniaturile din contact sheet au 500px, deci micșorează separat, în afara lui `out/` (care urcă în aplicație): `mkdir -p <dir>/test && python3 -c 'import sys,os;from PIL import Image;[Image.open(f).resize((s,s),Image.LANCZOS).save(f"{sys.argv[1]}/{s}_{os.path.basename(f)[:-4]}.png") for f in sys.argv[2:] for s in (375,180)]' <dir>/test <dir>/out/*.jpg`.
   - Arată-i utilizatorului întâi contact sheet-ul RO și construiește HU/BG doar după ce îl aprobă.
   - Pe poze folosește diacritice corecte (ș, ț cu virgulă).
 - **Încărcare în aplicație** (doar local), cu `docker cp out emag-back:/tmp/p<id>`, apoi:
@@ -162,6 +173,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
 
 ## 7. Trimitere pe eMAG (DOAR după „trimite pe eMAG” sau după „Da” la întrebarea de la pasul 8)
 **Pe un produs poate fi în validare o singură platformă o dată.** Dacă o platformă e în status 11, eMAG respinge actualizările de pe celelalte (vezi lecțiile). Înainte de fiecare trimitere, verifică `validation_status` pe ro, hu și bg. Trimite pe platforma următoare doar după ce toate au status 9. Dacă așteptarea durează, pornește o verificare în fundal la 10 minute. Produse diferite pot merge în paralel.
+**Totul pleacă prin API, cu scripturile de mai jos. Nu deschide browserul în portalul Marketplace (marketplace.emag.ro/hu/bg) ca să urci poze sau să editezi produsul.** Din 2026-10-23 pozele stau în Cloudflare R2 (`https://poze.hostera24.com/products/...`), pe care eMAG le descarcă și cu PC-ul închis.
 Ordinea: întâi caracteristicile, apoi titlul și descrierea HU/BG, apoi pozele. Fiecare script rulează implicit în **dry-run**. Arată-i utilizatorului rezultatul și adaugă `send` doar după aceea.
 - **Caracteristici:** scrie `schimbari.json` (`{"<id>": "valoare"}` sau `{"<id>": ["v1", "v2"]}` pentru multi-valoare), apoi:
   `docker cp $SK/trimite_caracteristici.js emag-back:/tmp/ && docker cp schimbari.json emag-back:/tmp/`
@@ -193,7 +205,7 @@ După ce totul e salvat local, iar pozele sunt în aplicație pe RO, HU și BG, 
 ### Rezumat
 Un rezumat scurt:
 - ce e salvat local, ce e pe eMAG și pe ce platforme (inclusiv titlul și descrierea HU/BG);
-- ce a rămas deschis: câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni.
+- ce a rămas deschis: câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni. Pentru pozele de făcut real, dă lista exactă de cadre (frontal, 3/4, lateral, spate, de sus, detaliu de aproape, în mână, în folosire, ambalaj, conținutul pachetului) și trimite la setup-ul din checklistul de poze, secțiunea B.
 
 Actualizează memoria dacă s-a rezolvat sau a apărut o problemă eMAG de reamintit.
 

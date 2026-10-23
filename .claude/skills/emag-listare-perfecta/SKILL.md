@@ -21,7 +21,7 @@ Ghidul lung (preț, recenzii, lansare, PNK): [`FISIERE/GHID-LISTARE-EMAG-VINDE.m
 
 **Teoria și checklisturile** (de citit la fiecare listare sau audit):
 - [`references/ghid-teorie.md`](references/ghid-teorie.md): de ce funcționează regulile. Conține ce vrea clientul (Jobs to Be Done, momentul declanșator, nivelurile lui Schwartz, Kano), alternativele (Dunford), cum decide creierul, cele 6 tipuri de frici, încrederea (Cialdini, efectul de pată, recenziile), regulile Amazon/eBay/Etsy/Trendyol/Google, asistenții AI (eMAG iZi, Amazon Rufus), regulile legale UE (GPSR, Omnibus, raritate falsă), mituri, cărți și surse.
-- [`references/checklist.md`](references/checklist.md): checklisturile detaliate, în ordinea lucrului (înainte să scrii → titlu → poze → descriere și caracteristici → verificare finală → ofertă și recenzii), plus șabloanele de completat (fișa clientului, alternativele, fricile, galeria, cele 7 întrebări).
+- [`references/checklist.md`](references/checklist.md): checklisturile detaliate, în ordinea lucrului (înainte să scrii → titlu → poze → descriere și caracteristici → verificare finală → ofertă și recenzii), plus șabloanele de completat (fișa clientului, alternativele, fricile, galeria, cele 7 întrebări). La poze: planul galeriei, fotografierea proprie (lumină, cameră, cadre), principala, galeria, textul, culorile și contrastul, afirmațiile interzise, exportul, cerințele eMAG/Trendyol/Amazon/Shopify și ce urmărești după publicare.
 
 Sunt aceleași texte ca paginile Notion din `FISIERE/notion/`; când schimbi una, actualizează-o și pe cealaltă. Unde exemplele generale din ele contrazic regulile de mai jos (diacritice, formatare, lungime), regulile din acest fișier au prioritate.
 
@@ -222,9 +222,11 @@ Pe telefon, o poză de 2000px e afișată la ~390px, adică micșorată de ~5 or
 
 **Alte reguli:**
 - O singură idee pe imagine.
-- Lasă o margine liberă de ~100px.
-- Contrast puternic; textul stă pe fundal, nu peste produs.
-- Textul e doar informativ, niciodată promoțional.
+- Lasă o margine liberă de 100–120px; spațierea între rânduri e 115–130% din mărimea fontului.
+- Maximum 2 fonturi, aceleași pe toată galeria, cu toate diacriticele (ș ț cu virgulă).
+- Contrast de cel puțin 4,5:1 pentru textul mic și 3:1 pentru titluri; textul stă pe fundal, nu peste produs. Auriul, galbenul și portocaliul se pun doar pe fundal închis, niciodată ca text pe alb.
+- O singură limbă pe imagine, cu unitățile pieței (cm, kg, ml).
+- Textul e doar informativ, niciodată promoțional. Fără stele, citate din recenzii, insigne, cifre comparative fără dovadă sau afirmații ecologice generice (interzise în UE din 27.09.2026).
 
 **Verifică textele cu scriptul:**
 
@@ -323,7 +325,7 @@ Textul gata de lipit + numărul de cuvinte din script
 ## Checklist numeric
 - [ ] Titlu 80–100 car. (maximum 100, pentru Trendyol), zona A (50 car.) se înțelege singură
 - [ ] Poza 1 albă, fără text; 7–8 poze de 2000×2000px, fiecare cu un rol
-- [ ] Infografice: ≤20 de cuvinte, titlu ≥120px, text ≥80px
+- [ ] Infografice: ≤20 de cuvinte, titlu ≥120px, text ≥80px, contrast ≥4,5:1, lizibile la 375px lățime
 - [ ] Descriere 200–350 de cuvinte, bullets ≤20, paragrafe ≤40
 - [ ] Aceleași dimensiuni peste tot; toate caracteristicile completate
 - [ ] Fiecare alternativă și fiecare frică au un răspuns vizibil în listare
