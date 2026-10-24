@@ -33,6 +33,10 @@ Dă-i utilizatorului câte un mesaj scurt de progres la fiecare pas: research-ul
 ## 0. Reamintiri
 La început, spune-i utilizatorului ce e în memorie (MEMORY.md și fișierele legate) despre problemele eMAG nerezolvate.
 
+**Listări neterminate.** Citește tabelul din memorie `/home/gxg/.claude/projects/-home-gxg-2-aplicatie-emag/memory/listari-neterminate.md`: are câte un rând pentru fiecare produs rămas la jumătate (ce mai e de făcut, ce așteaptă, unde sunt fișierele).
+- Spune-i utilizatorului pe scurt câte produse sunt deschise și care așteaptă doar o acțiune a lui (preț, ofertă nouă, poze reale).
+- Dacă produsul cerut acum e în tabel, **continuă de unde a rămas**, nu reface listarea de la zero. Citește fișierul lui de memorie (coloana „Detalii”) și fișierele din `.claude/tmp-listare/<cod>/`, apoi verifică starea reală (`docker exec emag-queue node scripts/coada-emag.js list` și `product_offer/read`) înainte să acționezi.
+
 ## 1. Date din DB
 - Rulează `.claude/skills/emag-listare-perfecta/scripts/produs_din_db.sh <COD_PRODUS>`. Datele vin DOAR din DB (`catalog_products`), nu din Excel-urile din FISIERE.
 - Citește și oferta de pe eMAG (doar citire), pentru că pe eMAG pot fi mai multe caracteristici decât în copia locală:
@@ -208,6 +212,19 @@ Un rezumat scurt:
 - ce a rămas deschis: câmpuri suspecte din DB, valori nedovedite (aromă, conținutul pachetului), poze care ar trebui făcute real (de ex. înainte/după, produsul în mașină), conflicte de dimensiuni. Pentru pozele de făcut real, dă lista exactă de cadre (frontal, 3/4, lateral, spate, de sus, detaliu de aproape, în mână, în folosire, ambalaj, conținutul pachetului) și trimite la setup-ul din checklistul de poze, secțiunea B.
 
 Actualizează memoria dacă s-a rezolvat sau a apărut o problemă eMAG de reamintit.
+
+### Listări neterminate (obligatoriu, la fiecare final de sesiune)
+Actualizează tabelul `/home/gxg/.claude/projects/-home-gxg-2-aplicatie-emag/memory/listari-neterminate.md`, chiar dacă sesiunea s-a oprit la jumătatea pașilor:
+- **dacă a rămas ceva de făcut** (o platformă netrimisă sau în coadă, oferta HU/BG lipsă, preț respins, poze neaprobate, date de cerut, GPSR), adaugă sau actualizează rândul produsului:
+  - `id cod_produs`;
+  - ce mai e de făcut, concret: pasul și platforma, de exemplu „HU #76 → BG #77” sau „poze HU/BG neconstruite”;
+  - ce așteaptă (validare, răspunsul utilizatorului, preț);
+  - unde sunt fișierele, de regulă `.claude/tmp-listare/<cod>/`;
+  - data de azi;
+  - linkul `[[...]]` spre fișierul de memorie al produsului.
+- **dacă produsul e terminat** (RO, HU și BG validate, status 9 fără erori, nimic deschis), șterge rândul.
+- Tot ce trebuie pentru reluare (textele HU/BG, `build_lang.py`, `texte.json`, backup-ul, sheet-urile, json-ul de coadă) se copiază în `.claude/tmp-listare/<cod>/` **înainte** de curățenia scratchpad-ului, pentru că scratchpad-ul se șterge.
+- Spune-i utilizatorului în rezumat că produsul a rămas în lista de neterminate și de ce.
 
 ### Curățenie (obligatoriu, la sfârșitul listării)
 Pozele finale sunt deja în aplicație (`product_images` + stocare), deci tot ce e pe disk sunt copii sau candidați (~20–45 MB pe produs). Șterge-le când utilizatorul nu mai cere modificări la poze și `imagini_app.js list` arată 8 poze pe ro/hu/bg cu `byte_size` egal cu fișierele generate:
