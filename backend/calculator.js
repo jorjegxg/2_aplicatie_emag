@@ -36,6 +36,7 @@
     consumabile: 5.5, // C23 (lei, cu TVA)
     curierat_contract: 19.2, // C26 (lei, cu TVA)
     curierat_client: 15.9, // C29 (lei, cu TVA)
+    transport_trendyol: 2.3, // lei/colet, cu TVA (facturile Trendyol "SHIPPING INVOICE-RO")
     transport_cumparare: "tren", // care cost final devine "Pret cumparare": "tren" (P) sau "aer" (O)
   };
 
@@ -62,6 +63,16 @@
       out.transport_cumparare = src.transport_cumparare;
     }
     return out;
+  }
+
+  /**
+   * Parametrii pe canal. Pe Trendyol clientul nu plateste transport (comisionul se aplica doar
+   * pe pret), iar in locul curierului din contract se scade taxa de transport retinuta de Trendyol.
+   */
+  function paramsForChannel(params, channel) {
+    const p = normalizeParams(params);
+    if (channel !== "trendyol") return p;
+    return { ...p, curierat_client: 0, curierat_contract: p.transport_trendyol };
   }
 
   function isPlatitorTva(regim) {
@@ -238,6 +249,7 @@
     REGIMURI,
     DEFAULT_PARAMS,
     normalizeParams,
+    paramsForChannel,
     isPlatitorTva,
     greutateVolumetrica,
     greutateCalcul,

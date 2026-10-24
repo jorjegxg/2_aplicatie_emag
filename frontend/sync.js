@@ -634,7 +634,7 @@ function rowCalc(product) {
       pret_vanzare: rowSalePrice(product),
       comision_emag: rowPctEmag(product),
     },
-    Calc.normalizeParams(settings.calculator_params)
+    Calc.paramsForChannel(settings.calculator_params, currentChannel)
   );
 }
 
