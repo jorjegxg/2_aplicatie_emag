@@ -4755,3 +4755,39 @@ td .input-text-field {
   align-items: center;
   gap: 0.6rem;
 }
+
+td.col-procent-tren .procent-tren-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+td.col-procent-tren .input-procent-tren {
+  width: 4.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: inherit;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+td.col-procent-tren .input-procent-tren:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+
+td.col-procent-tren .input-procent-tren.is-invalid {
+  border-color: var(--danger);
+  outline-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+td.col-procent-tren .procent-tren-suffix {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}

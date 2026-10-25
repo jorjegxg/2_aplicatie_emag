@@ -870,7 +870,15 @@ function recalcRow(tr, params = getCalcParams()) {
     const v = out ? out[key] : null;
     const ok = v != null && Number.isFinite(v);
     td.dataset.value = ok ? String(kind === "pct" ? v * 100 : v) : "";
-    td.textContent = formatCalcValue(v, kind);
+    const editInput = td.querySelector("input.input-procent-tren");
+    if (editInput) {
+      // Nu suprascriu ce scrie utilizatorul; la blur se reafiseaza valoarea calculata.
+      if (document.activeElement !== editInput) {
+        editInput.value = ok ? String(Math.round(v * 10000) / 100) : "";
+      }
+    } else {
+      td.textContent = formatCalcValue(v, kind);
+    }
     if (PROFIT_KEYS.has(key)) {
       td.classList.toggle("is-calc-negative", ok && v < 0);
       td.classList.toggle("is-calc-positive", ok && v >= 0);
@@ -1015,6 +1023,7 @@ function rowHtml(product, index) {
         `<td data-col="${key}"${cellClass(key, "col-calc")} data-value="">—</td>`,
       ])
     ),
+    procent_profit_tren: `<td data-col="procent_profit_tren"${cellClass("procent_profit_tren", "col-calc col-procent-tren")} data-value=""><div class="procent-tren-wrap"><input type="number" class="input-procent-tren" step="0.01" title="Scrie procentul dorit: prețul eMAG se recalculează" aria-label="% profit Tren/Mare" /><span class="procent-tren-suffix">%</span></div></td>`,
   };
   return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr}${rowClasses ? ` class="${rowClasses}"` : ""} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columns.order.map((col) => cells[col] || "").join("")}
@@ -1438,6 +1447,15 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && orderHistoryModal && !orderHistoryModal.hidden) {
     closeOrderHistory();
   }
+});
+
+// La iesirea din % profit Tren/Mare se afiseaza procentul real (dupa rotunjirea pretului).
+tbody.addEventListener("focusout", (e) => {
+  const procentTrenInput = e.target.closest("input.input-procent-tren");
+  if (!procentTrenInput) return;
+  procentTrenInput.classList.remove("is-invalid");
+  const tr = procentTrenInput.closest("tr[data-offer-id]");
+  if (tr) recalcRow(tr);
 });
 
 tbody.addEventListener("change", (e) => {
@@ -1904,6 +1922,25 @@ tbody.addEventListener("input", (e) => {
     const saleInput = tr.querySelector("input.input-sale-price");
     applyRowPrices(tr, saleInput?.value ?? "");
     schedulePersistDescription(tr.dataset.offerId, descriptionInput.value);
+    return;
+  }
+
+  const procentTrenInput = e.target.closest("input.input-procent-tren");
+  if (procentTrenInput) {
+    const tr = procentTrenInput.closest("tr[data-offer-id]");
+    const saleInput = tr?.querySelector("input.input-sale-price");
+    if (!tr || !saleInput || procentTrenInput.value === "") return;
+    const pret = Calc.pretPentruProcentTren(
+      readRowCalcInput(tr),
+      getCalcParams(),
+      Number(procentTrenInput.value) / 100
+    );
+    procentTrenInput.classList.toggle("is-invalid", pret == null);
+    if (pret == null) return;
+    saleInput.value = String(Math.round(pret * 100) / 100);
+    applyRowPrices(tr, saleInput.value);
+    schedulePersistSalePrice(tr.dataset.offerId, saleInput.value);
+    schedulePersistDerived(tr);
     return;
   }
 

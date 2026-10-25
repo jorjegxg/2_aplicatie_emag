@@ -245,6 +245,27 @@
     return out;
   }
 
+  /**
+   * Pretul de vanzare (S) la care % profit Tren/Mare = procent (fractie, 0.2 = 20%).
+   * Profitul e liniar in S (a*S + b) si U = k*S, deci S = b / (procent*k - a).
+   * null daca lipsesc datele sau procentul nu se poate atinge (peste limita a/k).
+   */
+  function pretPentruProcentTren(input, params, procent) {
+    const target = num(procent);
+    if (target == null) return null;
+    const at = (s) => calcProduct({ ...input, pret_vanzare: s }, params);
+    const r1 = at(100);
+    const r2 = at(200);
+    if (!r1 || !r2 || r1.profit_tren == null || r2.profit_tren == null) return null;
+    const a = (r2.profit_tren - r1.profit_tren) / 100;
+    const b = r1.profit_tren - a * 100;
+    const k = r1.pret_vanzare_fara_tva / 100;
+    const denom = target * k - a;
+    if (Math.abs(denom) < 1e-12) return null;
+    const s = b / denom;
+    return Number.isFinite(s) && s > 0 ? s : null;
+  }
+
   return {
     REGIMURI,
     DEFAULT_PARAMS,
@@ -254,5 +275,6 @@
     greutateVolumetrica,
     greutateCalcul,
     calcProduct,
+    pretPentruProcentTren,
   };
 });
