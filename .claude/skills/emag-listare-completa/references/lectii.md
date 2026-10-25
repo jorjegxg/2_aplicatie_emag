@@ -15,6 +15,8 @@
 - Nu folosi pozele/afirmațiile care nu se pot dovedi: „safe for pregnant and infants”, „-60°C…100°C”, „premium quality”, ursuleți/figurine/covorașe care nu sunt în pachet.
 - Pe 2026-10-19 paginile de produs Alibaba (și `descIframe.html`) cereau CAPTCHA cu slider, chiar și prin curl, iar căutarea după imagine mergea. Originalul pozei principale se ia de pe CDN din cardul de rezultat: `kf/<id>.jpg` din `img.src`, fără sufixul `_300x300`, e 800–1000px. AliExpress (`/item/<id>.html`) prin curl are în HTML `imagePathList` cu galeria la 930px.
 - Uneori o poză „nouă” e aceeași fotografie pe care o ai deja (ex. AR2 = aliA/g05). Compară vizual înainte s-o numeri ca nouă.
+- Când toți furnizorii Alibaba au doar 800px, caută cu Google Lens („Exact matches”) pe poza principală din R2. Pe 2026-10-25, la 40 OGL-BEB, TVCMALL avea același model la 1000px, fără logo. Originalul e `https://img.tvc-mall.com/uploads/details/<SKU>-<n>.jpg`; `img.tvcmall.com/dynamic/...` dă doar 800px.
+- `.claude/tmp-imgsearch/` e comun mai multor sesiuni și poate dispărea în timpul lucrului. Folosește `.claude/tmp-imgsearch-p<id>/`. Și scratchpad-ul se pierde la repornirea sesiunii, așa că ține fișierele de lucru direct în `.claude/tmp-listare/<cod>/`.
 
 ## Poze (PIL)
 - Logo de vânzător pe un colț cu textură: NU-l acoperi cu un petic copiat (se vede dreptunghiul). Fă crop care îl scoate din cadru, apoi mărește la 2000.

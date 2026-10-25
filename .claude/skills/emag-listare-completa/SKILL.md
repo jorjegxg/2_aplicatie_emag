@@ -93,6 +93,11 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   - Fără diacritice în titlu și descriere, pentru consecvență cu catalogul.
   - Bullets cu „- ” la început de rând.
   - Variantele dintr-o familie au același text; diferă doar culoarea sau mărimea.
+- **Limbaj standard, nu regional** (titlu, descriere, caracteristici și textele de pe poze, în RO, HU și BG): folosește limba literară, înțeleasă la fel în toată țara, și termenul cu care se caută produsul pe eMAG.
+  - RO: fără regionalisme sau cuvinte de zonă (de ex. „pită”, „cucuruz”, „crumpene”, „șpais”, „ciubăr” în loc de „pâine”, „porumb”, „cartofi”, „cămară”, „cadă”), fără argou și fără termeni de atelier/jargon local; dacă un termen are o variantă regională și una standard, alege-o pe cea din DEX/folosită în titlurile concurenților.
+  - HU: maghiară standard (cea de pe emag.hu), nu regionalisme din Ardeal sau traduceri calchiate după română.
+  - BG: bulgară literară, nu dialectală; termenul folosit pe emag.bg.
+  - La dubiu, verifică termenul cu o căutare pe emag.ro/.hu/.bg: dacă dă puține rezultate față de sinonim, e probabil regional.
 - **Caracteristici:** propune valori DOAR din lista permisă a categoriei. Lista o iei doar citind, cu:
   `docker cp $SK/emag_categorie.js emag-back:/tmp/ && docker exec -w /app emag-back node /tmp/emag_categorie.js <category_id> && docker cp emag-back:/tmp/categorie_<category_id>.json <dir>/`
   - Capcană: în categoria 116 valoarea e „Geamuri auto”, nu „Geamuri”.
