@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coadă eMAG</title>
+    <link rel="stylesheet" href="styles.css?v=20261025-2" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <script src="theme.js"></script>
+    <script src="auth.js"></script>
+    <script src="logger.js"></script>
+    <script src="order-notifications.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="top-actions">
+        <a href="/settings.html" class="top-action-btn" title="Setări" aria-label="Setări">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </a>
+        <a href="/logs.html" class="top-action-btn" title="Logs" aria-label="Logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6M8 13h8M8 17h5" />
+          </svg>
+        </a>
+        <button
+          type="button"
+          id="btn-theme"
+          class="theme-toggle"
+          aria-pressed="false"
+          title="Comută tema"
+        >
+          <svg class="theme-toggle-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+          <svg class="theme-toggle-icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+          </svg>
+          <span class="theme-toggle-label">Light</span>
+        </button>
+      </div>
+      <header class="header">
+        <nav class="site-nav" aria-label="Navigare">
+          <a href="/">Produse</a>
+          <a href="/vanzari.html">Comenzi</a>
+          <a href="/statistici.html">Statistici</a>
+          <a href="/apeluri.html">Apeluri review</a>
+          <a href="/sync.html">Sincronizare</a>
+          <a href="/coada.html" aria-current="page">Coadă eMAG</a>
+          <a href="/logs.html">Logs</a>
+        </nav>
+        <h1>Coadă eMAG</h1>
+        <p class="subtitle">
+          Trimiteri amânate pe RO / HU / BG — pleacă singure când platforma anterioară a terminat validarea.
+        </p>
+      </header>
+
+      <p id="queue-worker" class="queue-worker" role="status">Se încarcă…</p>
+
+      <div class="toolbar">
+        <div class="logs-filters queue-filters">
+          <div id="queue-counts" class="queue-counts" role="group" aria-label="Filtru status"></div>
+          <label class="field field-search">
+            <span>Caută produs</span>
+            <input type="search" id="queue-q" placeholder="cod, nume sau #id" />
+          </label>
+          <label class="field">
+            <span>Platformă</span>
+            <select id="queue-platform">
+              <option value="">Toate</option>
+              <option value="ro">RO</option>
+              <option value="hu">HU</option>
+              <option value="bg">BG</option>
+            </select>
+          </label>
+          <label class="logs-auto">
+            <input type="checkbox" id="queue-all" />
+            <span>Tot istoricul</span>
+          </label>
+          <label class="logs-auto">
+            <input type="checkbox" id="queue-auto" checked />
+            <span>Auto 30s</span>
+          </label>
+          <button type="button" id="queue-refresh" class="btn btn-secondary">Reîmprospătează</button>
+          <button type="button" id="queue-add-toggle" class="btn">Adaugă în coadă</button>
+        </div>
+      </div>
+
+      <form id="queue-form" class="queue-form" hidden>
+        <div class="queue-form-grid">
+          <label class="field">
+            <span>Produs (id sau cod)</span>
+            <input type="text" name="product" required placeholder="ex. 45 sau REP-ANV" />
+          </label>
+          <label class="field">
+            <span>Platformă</span>
+            <select name="platform">
+              <option value="ro">RO</option>
+              <option value="hu">HU</option>
+              <option value="bg">BG</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>După intrarea #</span>
+            <input type="number" name="after_id" min="1" placeholder="opțional" />
+          </label>
+          <label class="field field-wide">
+            <span>Nu mai devreme de</span>
+            <input type="datetime-local" name="not_before" />
+          </label>
+        </div>
+        <div class="queue-form-checks">
+          <label><input type="checkbox" name="send_images" checked /> Trimite pozele din aplicație</label>
+          <label class="ro-only"><input type="checkbox" name="name_from_app" /> Titlul din aplicație</label>
+          <label class="ro-only"><input type="checkbox" name="description_from_app" /> Descrierea din aplicație</label>
+          <label title="Retrimite chiar dacă platforma lui e în validare (actualizare blocată)">
+            <input type="checkbox" name="replace_pending" /> Înlocuiește actualizarea blocată
+          </label>
+        </div>
+        <label class="field queue-field-full">
+          <span>Titlu (gol = nu se schimbă)</span>
+          <input type="text" name="name" />
+        </label>
+        <label class="field queue-field-full">
+          <span>Descriere, text simplu (gol = nu se schimbă)</span>
+          <textarea name="description" rows="5"></textarea>
+        </label>
+        <label class="field queue-field-full">
+          <span>Caracteristici JSON (opțional)</span>
+          <textarea name="characteristics" rows="2" placeholder='{"5401":"Negru","7235":["a","b"]}'></textarea>
+        </label>
+        <label class="field queue-field-full">
+          <span>Notă</span>
+          <input type="text" name="note" />
+        </label>
+        <div class="queue-form-actions">
+          <button type="submit" class="btn">Pune în coadă</button>
+          <button type="button" id="queue-form-cancel" class="btn btn-secondary">Renunță</button>
+          <span id="queue-form-status" class="status" role="status"></span>
+        </div>
+      </form>
+
+      <div class="table-wrap">
+        <table class="logs-table queue-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Produs</th>
+              <th>Pl.</th>
+              <th>Trimite</th>
+              <th>Status</th>
+              <th>Așteaptă</th>
+              <th>Înc.</th>
+              <th>Ultimul mesaj</th>
+              <th>Actualizat</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="pricing.js?v=20261005-1"></script>
+    <script src="coada.js?v=20261025-2"></script>
+  </body>
+</html>

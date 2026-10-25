@@ -138,7 +138,7 @@ async function addItem(item) {
 
 async function listItems({ all = false } = {}) {
   const { rows } = await query(
-    `SELECT q.*, c.cod_produs FROM emag_push_queue q JOIN catalog_products c ON c.id = q.product_id
+    `SELECT q.*, c.cod_produs, c.nume FROM emag_push_queue q JOIN catalog_products c ON c.id = q.product_id
      ${all ? "" : "WHERE q.status IN ('pending','sent') OR q.updated_at > now() - interval '1 day'"}
      ORDER BY q.id`
   );

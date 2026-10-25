@@ -82,6 +82,7 @@ const {
 } = require("./stock-movements");
 const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const { query } = require("./pg");
+const emagQueue = require("./emag-queue");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
 const { calcProduct } = require("./calculator");
@@ -643,6 +644,7 @@ function categoryForPath(urlPath) {
   if (p.startsWith("/api/settings")) return "settings";
   if (p.startsWith("/api/stats")) return "stats";
   if (p.startsWith("/api/credentials")) return "credentials";
+  if (p.startsWith("/api/queue")) return "queue";
   return "http";
 }
 
@@ -1914,6 +1916,77 @@ app.post("/api/products/export", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la generare Excel" });
+  }
+});
+
+/* ---------------- coada de trimiteri eMAG (pagina coada.html) ---------------- */
+
+app.get("/api/queue", async (req, res) => {
+  try {
+    const items = await emagQueue.listItems({ all: req.query.all === "1" });
+    const { rows } = await query(`SELECT max(last_check_at) AS last_check_at FROM emag_push_queue`);
+    return res.json({
+      items,
+      worker: {
+        send: process.env.QUEUE_SEND === "1",
+        interval_sec: Math.max(60, Number(process.env.QUEUE_INTERVAL_SEC || 300)),
+        last_check_at: rows[0]?.last_check_at || null,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la citirea cozii" });
+  }
+});
+
+app.post("/api/queue", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const ref = String(b.product ?? "").trim();
+    if (!ref) return res.status(400).json({ error: "Lipsește produsul (id sau cod produs)" });
+    const { rows } = await query(
+      `SELECT id FROM catalog_products WHERE cod_produs = $1 OR ($1 ~ '^[0-9]+$' AND id = $1::int) ORDER BY (cod_produs = $1) DESC LIMIT 1`,
+      [ref]
+    );
+    if (!rows.length) return res.status(404).json({ error: `Produsul „${ref}” nu există în catalog` });
+    let characteristics = b.characteristics || null;
+    if (typeof characteristics === "string") {
+      characteristics = characteristics.trim() ? JSON.parse(characteristics) : null;
+    }
+    const item = await emagQueue.addItem({
+      product_id: rows[0].id,
+      platform: b.platform,
+      send_images: b.send_images !== false,
+      name: b.name || null,
+      description: b.description || null,
+      name_from_app: Boolean(b.name_from_app),
+      description_from_app: Boolean(b.description_from_app),
+      characteristics,
+      not_before: b.not_before || null,
+      after_id: b.after_id || null,
+      replace_pending: Boolean(b.replace_pending),
+      note: b.note || null,
+    });
+    return res.json({ ok: true, item });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Eroare la adăugare în coadă" });
+  }
+});
+
+app.post("/api/queue/:id/cancel", async (req, res) => {
+  try {
+    await emagQueue.cancelItem(req.params.id);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la anulare" });
+  }
+});
+
+app.post("/api/queue/:id/retry", async (req, res) => {
+  try {
+    await emagQueue.retryItem(req.params.id);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Eroare la repunere în coadă" });
   }
 });
 
