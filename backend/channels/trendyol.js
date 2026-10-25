@@ -25,7 +25,7 @@ const {
   credentialsMissingError,
   getTrendyolCreds,
 } = require("../credentials-store");
-const { htmlToText } = require("../description-format");
+const { htmlToText, textToHtml } = require("../description-format");
 
 const id = "trendyol";
 const label = "Trendyol";
@@ -517,8 +517,9 @@ function buildPushPayload(
       content.title = title;
     }
     if (wantDescription && listing?.description != null) {
+      // In DB descrierea e text curat; Trendyol o afiseaza ca HTML (ca eMAG).
       const description = String(listing.description).trim();
-      if (description) content.description = description;
+      if (description) content.description = textToHtml(description);
     }
     if (wantImages) content.images = images;
     if (content.title != null || content.description != null || content.images != null) {
