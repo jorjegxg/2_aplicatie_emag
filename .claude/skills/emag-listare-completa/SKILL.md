@@ -5,7 +5,7 @@ description: >-
   (PNK, cod_produs, EAN, offer id sau id din DB): reamintiri din memorie, date doar din DB,
   research pe emag.ro, căutare după imagine pe Alibaba + pozele furnizorului la rezoluție maximă,
   titlu/descriere (RO, HU, BG)/caracteristici verificate, salvare DOAR locală, galerie de 8 poze 2000×2000
-  în stil Amazon (Playfair + Montserrat, discret), clare la 100%, pe RO/HU/BG, iar la final întrebarea dacă trimite titlurile, descrierile și pozele pe eMAG RO/HU/BG (fără răspuns, nu trimite nimic). Folosește-l când utilizatorul
+  în stil Amazon (Playfair + Montserrat, discret), clare la 100%, pe RO/HU/BG plus setul EN (doar în aplicație), iar la final întrebarea dacă trimite titlurile, descrierile și pozele pe eMAG RO/HU/BG (fără răspuns, nu trimite nimic). Folosește-l când utilizatorul
   scrie „Produs: <COD>”, „listarea perfectă pentru <COD>”, „fă listarea completă”,
   „/emag-listare-completa <COD>” sau dă un cod de produs și cere listare/relistare cu poze pe limbi.
 ---
@@ -124,7 +124,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
 - Butonul „Publică” din aplicație trimite doar preț/stoc/titlu/descriere, și doar pe RO. Caracteristicile și pozele NU pleacă prin el.
 - Aplicația nu are titlu și descriere pentru HU/BG, deci acolo nu ai ce salva local: textele aprobate rămân în `<dir>/texte_hu_bg.json` până la „trimite pe eMAG” (pasul 7).
 
-## 6. Poze pe limbi (RO, HU, BG): 8 poze de 2000×2000
+## 6. Poze pe limbi (RO, HU, BG + EN): 8 poze de 2000×2000
 - Pornește de la pozele furnizorului: cele deja încărcate (tabela `product_images`, fișierele în `/var/www/poze/_catalog/<stored_name>` sau în MinIO) plus cele noi de la pasul 3. Alege pentru fiecare rol poza cu cea mai mare rezoluție.
 - Galeria-tip, adaptată la produs:
   1. principala pe alb, fără text și fără obiecte care nu sunt în pachet (scoate-le cu PIL, pixel cu pixel, păstrând marginile produsului);
@@ -135,7 +135,7 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
   6. „X piese într-o cutie”, cu cifre centrate în cercuri: centrează după textbbox, nu după vârful textului, și folosește font mai mic pentru numerele de 2 cifre (`g_pieces`);
   7. pozele furnizorului cu etichetele traduse, sau „Cum funcționează”;
   8. „Unde îl folosești” / „Pentru cine este”.
-- Scoate pozele care promit ceva ce nu e în set și textele promoționale. Acoperă TOT textul în engleză și logo-urile vânzătorilor.
+- Scoate pozele care promit ceva ce nu e în set și textele promoționale. Acoperă TOT textul în engleză de pe pozele furnizorului și logo-urile vânzătorilor (textul englezesc al galeriei EN îl scrii tu, pe fundal curat).
 - **Conținutul pozelor** (din checklistul de poze, `.claude/skills/emag-listare-perfecta/references/checklist.md`, secțiunile C–G):
   - principala: alb pur (255, 255, 255), verificat pe pixelii din colțuri și de lângă produs; produsul întreg, centrat, ~85% din cadru; o singură vedere (nu față și spate împreună); doar varianta livrată și accesoriile din cutie;
   - fiecare poză răspunde la altă întrebare; nicio poză nu o repetă pe alta;
@@ -165,15 +165,17 @@ Merge și pentru AliExpress (`ae01.alicdn.com`).
 - **Tehnic:**
   - Python + PIL (nu există numpy/cv2). Helperii sunt în `$SK/galerie_common.py`. Exemplul complet, cu stilul aprobat (56 PARF-SOL-AURIU), e în `$SK/build_lang_exemplu.py` și `$SK/texte_exemplu.json`: copiază-l și adaptează-l.
   - Fonturile se iau automat din `.claude/skills/emag-listare-completa/fonts/`; nu le copia.
-  - Un singur script `build_lang.py <lang>` care citește textele din `texte.json` (`{ro, hu, bg}`). Unitatea „cm” devine „см” în BG.
+  - Un singur script `build_lang.py <lang>` care citește textele din `texte.json` (`{ro, hu, bg, en}`). Unitatea „cm” devine „см” în BG.
+  - **Galeria EN (obligatorie, cerută de utilizator pe 2026-10-25):** aceleași 8 poze ca RO, cu textele în engleză, construite cu același `build_lang.py en` (cheia `en` în `texte.json`). Se urcă în aplicație pe platforma `en` (`product_images.platform='en'`) și **nu se trimite pe eMAG**. În engleză zecimalele se scriu cu punct (6.7 cm, nu 6,7 cm), iar textul e engleză simplă, nu traducere cuvânt cu cuvânt. Ori de câte ori se schimbă galeria RO, refă și EN; altfel EN rămâne pe versiunea veche.
   - Mărimi: titlu 120–132px (implicit 132; dacă nu încape la 120, scurtează textul), text explicativ 76–88px, text secundar ≥60px, ≤20 de cuvinte pe imagine.
   - Verifică fiecare set de texte cu `verifica_listare.py infografic "titlu" "eticheta" ...`.
   - Uită-te la fiecare poză (contact sheet, `_1la1.jpg` și crop la ~700px pe zonele reparate) și repară: text care se suprapune, iese din cadru sau atinge produsul, linii de cotă șterse, resturi de text în engleză, zone moi sau pixelate, margini zimțate și halou alb în jurul decupajului.
   - Fă și cele două teste de lizibilitate: fiecare poză micșorată la 375px lățime (titlul se citește fără zoom) și la ~180px (mesajul se înțelege într-o secundă). Miniaturile din contact sheet au 500px, deci micșorează separat, în afara lui `out/` (care urcă în aplicație): `mkdir -p <dir>/test && python3 -c 'import sys,os;from PIL import Image;[Image.open(f).resize((s,s),Image.LANCZOS).save(f"{sys.argv[1]}/{s}_{os.path.basename(f)[:-4]}.png") for f in sys.argv[2:] for s in (375,180)]' <dir>/test <dir>/out/*.jpg`.
-  - Arată-i utilizatorului întâi contact sheet-ul RO și construiește HU/BG doar după ce îl aprobă.
+  - Arată-i utilizatorului întâi contact sheet-ul RO și construiește HU/BG/EN doar după ce îl aprobă.
   - Pe poze folosește diacritice corecte (ș, ț cu virgulă).
 - **Încărcare în aplicație** (doar local), cu `docker cp out emag-back:/tmp/p<id>`, apoi:
   - galerie nouă: `docker exec -w /app emag-back node /tmp/imagini_app.js add <id> <cod_produs> /tmp/p<id>`;
+  - setul EN: dacă `out/en/` există, `add` și `replace` îl înlocuiesc întreg (pozele en vechi pot avea alte nume, de ex. `MAMP1.jpg`); fără `out/en/` setul en rămâne neatins;
   - înlocuirea unor poze: `... imagini_app.js replace <id> <cod_produs> /tmp/p<id> 4,5,8` (face deleteImage, addImages și reorder);
   - verificare: `... imagini_app.js list <id> - -`.
 
@@ -202,7 +204,7 @@ Ordinea: întâi caracteristicile, apoi titlul și descrierea HU/BG, apoi pozele
 ## 8. La final
 
 ### Întrebarea de trimitere pe eMAG (obligatorie)
-După ce totul e salvat local, iar pozele sunt în aplicație pe RO, HU și BG, **întreabă-l pe utilizator cu AskUserQuestion** dacă să trimiți pe eMAG titlurile, descrierile și pozele. Întreabă și când pare evident, și nu trimite nimic înainte de răspuns.
+După ce totul e salvat local, iar pozele sunt în aplicație pe RO, HU, BG și EN, **întreabă-l pe utilizator cu AskUserQuestion** dacă să trimiți pe eMAG titlurile, descrierile și pozele. Întreabă și când pare evident, și nu trimite nimic înainte de răspuns.
 - În întrebare spune ce ar pleca, pe fiecare platformă (RO, HU, BG): titlul, descrierea, cele 8 poze și caracteristicile, dacă s-au schimbat.
 - Opțiuni (multiSelect: false):
   - „Da, pe RO, HU și BG (Recommended)”;
@@ -232,7 +234,7 @@ Actualizează tabelul `/home/gxg/.claude/projects/-home-gxg-2-aplicatie-emag/mem
 - Spune-i utilizatorului în rezumat că produsul a rămas în lista de neterminate și de ce.
 
 ### Curățenie (obligatoriu, la sfârșitul listării)
-Pozele finale sunt deja în aplicație (`product_images` + stocare), deci tot ce e pe disk sunt copii sau candidați (~20–45 MB pe produs). Șterge-le când utilizatorul nu mai cere modificări la poze și `imagini_app.js list` arată 8 poze pe ro/hu/bg cu `byte_size` egal cu fișierele generate:
+Pozele finale sunt deja în aplicație (`product_images` + stocare), deci tot ce e pe disk sunt copii sau candidați (~20–45 MB pe produs). Șterge-le când utilizatorul nu mai cere modificări la poze și `imagini_app.js list` arată 8 poze pe ro/hu/bg/en cu `byte_size` egal cu fișierele generate:
 - directorul produsului din scratchpad, cu tot ce conține (poze Alibaba, `desc/`, `img/`, `out/`, contact sheet-uri, ciorne, fonturi): `rm -rf <scratchpad>/<cod>`;
 - tot ce ai copiat în container pentru acest produs: `docker exec emag-back sh -c 'cd /tmp && rm -rf p<id> n<id> descriere<id>.txt schimbari.json texte_hu_bg.json categorie_*.json alibaba_*.js emag_*.js imagini_app.js trimite_*.js'`;
 - `.claude/tmp-imgsearch/`, dacă a rămas.

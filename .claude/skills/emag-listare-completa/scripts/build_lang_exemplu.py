@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """EXEMPLU REAL (56 PARF-SOL-AURIU, 2026-10-15, stil aprobat) — copiază-l în directorul de lucru al produsului și adaptează-l.
-Uz: build_lang.py <ro|hu|bg>   (citește texte.json {ro,hu,bg}; „cm” devine „см” în BG prin cheia "cm")
+Uz: build_lang.py <ro|hu|bg|en>   (citește texte.json {ro,hu,bg,en}; „cm” devine „см” în BG prin cheia "cm";
+    în EN zecimalele se scriu cu punct: 10.5 cm, nu 10,5 cm)
 
 Structura directorului de lucru (în scratchpad):
   src/ it34/ ...  pozele furnizorului (din aplicație și descărcate cu descarca_imagini.py)
@@ -20,6 +21,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance
 LANG = sys.argv[1]
 T = json.load(open(os.path.join(HERE, "texte.json"), encoding="utf-8"))[LANG]
 src = lambda *p: load(os.path.join(HERE, *p))
+num = lambda v: v if LANG == "en" else v.replace(".", ",")  # zecimale: 10.5 în EN, 10,5 în RO/HU/BG
 
 PROD = cutout(os.path.join(HERE, "src", "en_0.jpg"))  # 2000px, varianta aurie pe alb
 CLEAN = src("it34_clean.png")  # 1601px, fără inel/pipetă/insignă (curățat pixel cu pixel, nu watermark)
@@ -73,9 +75,9 @@ def dim_v(x, y0, y1, text):
 
 
 cm = T["cm"]
-dim_h(px, px + p.size[0], py - 40, f"10,5 {cm}")
-dim_h(bx0, bx1, py + p.size[1] + 70, f"7,5 {cm}")
-dim_v(px + p.size[0] + 110, py, py + p.size[1], f"5,3 {cm}")
+dim_h(px, px + p.size[0], py - 40, f"{num('10.5')} {cm}")
+dim_h(bx0, bx1, py + p.size[1] + 70, f"{num('7.5')} {cm}")
+dim_v(px + p.size[0] + 110, py, py + p.size[1], f"{num('5.3')} {cm}")
 cw, ch = int(8.56 * pxcm), int(5.4 * pxcm)
 cx0, cy0 = (N - cw) // 2, 1300
 aa_shape(c, [cx0, cy0, cx0 + cw, cy0 + ch], "rect", fill=(228, 222, 210), outline=(196, 188, 172), width=5, radius=44)

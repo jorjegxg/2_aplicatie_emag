@@ -3,13 +3,15 @@
 //   mod=list     -> doar citire: ce poze are produsul pe ro/hu/bg (cod_produs și dir pot fi „-”)
 //   mod=add      -> adaugă 01..08.jpg din <dir>/<ro|hu|bg>/ pe fiecare platformă (când platforma e goală)
 //   mod=replace  -> înlocuiește doar pozițiile date (ex. 4,5,8): deleteImage + addImages + reorder, păstrând ordinea
+//   EN (galeria cu text în engleză, nu se trimite pe eMAG): dacă există <dir>/en/, la add și replace setul en se
+//   înlocuiește ÎNTREG (pozele en vechi pot avea alte nume, de ex. MAMP1.jpg). Fără <dir>/en/, setul en rămâne neatins.
 // Exemplu: docker cp out emag-back:/tmp/p56 && docker exec -w /app emag-back node /tmp/imagini_app.js replace 56 PARF-SOL-AURIU /tmp/p56 4,5,7,8
 const fs = require("fs");
 const pi = require("/app/product-images.js");
 const { Pool } = require("/app/node_modules/pg");
 const [mode, idS, code, dir, posS] = process.argv.slice(2);
 const id = Number(idS);
-const LANGS = ["ro", "hu", "bg"];
+const LANGS = ["ro", "hu", "bg", "en"];
 (async () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const file = (L, n) => { const b = fs.readFileSync(`${dir}/${L}/${n}.jpg`); return { originalname: `${code}_${L}_${n}.jpg`, mimetype: "image/jpeg", buffer: b, size: b.length }; };
@@ -17,6 +19,12 @@ const LANGS = ["ro", "hu", "bg"];
     const cur = (await pool.query("select id, original_name from product_images where product_id=$1 and platform=$2 order by sort_order", [id, L])).rows;
     if (mode === "list") {
       // doar afișare
+    } else if (L === "en") {
+      if (!fs.existsSync(`${dir}/en`)) continue;
+      const n = fs.readdirSync(`${dir}/en`).filter(f => /^\d\d\.jpg$/.test(f)).sort();
+      const added = await pi.addImages(id, n.map(f => file("en", f.slice(0, 2))), "en");
+      for (const r of cur) await pi.deleteImage(id, r.id);
+      await pi.reorder(id, added.map(a => a.id), "en");
     } else if (mode === "add") {
       if (cur.length) throw new Error(`${id} ${L} are deja ${cur.length} poze — folosește replace`);
       const n = fs.readdirSync(`${dir}/${L}`).filter(f => /^\d\d\.jpg$/.test(f)).sort();

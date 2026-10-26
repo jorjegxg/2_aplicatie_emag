@@ -74,5 +74,31 @@
   "p8_s1": "Слагаш таблетката в основата",
   "p8_s2": "Поставяш го на таблото",
   "p8_s3": "Слънцето върти перката"
+ },
+ "en": {
+  "cm": "cm",
+  "p2_title": "Spins on its own in the sun",
+  "p2_sub": "No cables, no batteries",
+  "p3_title": "Small and discreet on the dash",
+  "p3_ref": "Bank card, 8.6 cm",
+  "p4_title": "Solar panels",
+  "p4_label": "Starts in direct light",
+  "p5_title": "Metal alloy body",
+  "p5_label": "Glossy finish, gold base",
+  "p6_title": "What's in the box",
+  "p6_l1": "Helicopter air freshener",
+  "p6_l2": "Scent tablet",
+  "p6_l2b": "Ø 4.7 cm",
+  "p7_title": "In the sun and in the shade",
+  "p7_sun": "In the sun",
+  "p7_shade": "In the shade",
+  "p8_title": "How to use it",
+  "p8_s1": "Put the tablet in the base",
+  "p8_s2": "Place it on the dash",
+  "p8_s3": "The sun starts the rotor",
+  "p7_sun2": "the rotor spins",
+  "p7_shade2": "still, but scented",
+  "p2_t1": "Spins on its own",
+  "p2_t2": "in the sun"
  }
 }
