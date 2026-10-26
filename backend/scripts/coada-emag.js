@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Coada de trimiteri eMAG amânate (serviciul `queue` le trimite când devin posibile).
+ * Coada de trimiteri amânate (serviciul `queue` le trimite în Base când devin posibile).
  * Rulează în container:  docker exec emag-queue node scripts/coada-emag.js <comanda> ...
  *
  *   list [--toate]                    intrările deschise (și cele din ultima zi)
@@ -9,13 +9,13 @@
  *       [--titlu "..."] [--titlu-app] titlu explicit / din aplicație (doar RO)
  *       [--descriere-fisier f.txt] [--descriere-app]   descriere text simplu / din aplicație (doar RO)
  *       [--caracteristici '{"5401":"Negru","7235":["a","b"]}']
- *       [--dupa 12]                   abia după ce intrarea #12 s-a validat pe eMAG
+ *       [--dupa 12]                   abia după ce intrarea #12 s-a terminat
  *       [--la "2026-10-24 09:00"]     nu mai devreme de (ora României) / [--in 2h] (m, h, d)
  *       [--inlocuieste-blocat]        retrimite chiar dacă platforma lui e în validare (actualizare blocată)
  *       [--nota "..."]
  *   add-json fisier.json              listă de intrări; câmpul "dupa_precedenta": true leagă de intrarea anterioară
  *   cancel <id> | retry <id>
- *   run-once [--trimite]              o trecere acum (implicit doar arată ce ar trimite)
+ *   run-once [--trimite]              o trecere acum (implicit doar arată ce ar trimite; trimite doar cu BASE_SEND=1)
  */
 const fs = require("fs");
 const path = require("path");

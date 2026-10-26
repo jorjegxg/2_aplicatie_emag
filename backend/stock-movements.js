@@ -74,6 +74,14 @@ async function findCatalogProduct(client, p) {
     );
     if (byPn.rows[0]) return byPn.rows[0].id;
   }
+  // Comenzile venite prin Base au SKU-ul din catalog (cod_produs).
+  if (p?.sku) {
+    const bySku = await client.query(
+      `SELECT id FROM catalog_products WHERE cod_produs = $1 LIMIT 1`,
+      [String(p.sku)]
+    );
+    if (bySku.rows[0]) return bySku.rows[0].id;
+  }
   return null;
 }
 

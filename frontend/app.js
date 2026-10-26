@@ -692,12 +692,9 @@ function imagesCellHtml(source, activePlatform = IMAGE_FALLBACK_PLATFORM) {
     return `<button type="button" class="btn-images-tab${key === active ? " is-active" : ""}${own ? "" : " is-empty"}" data-platform="${key}" title="${title}">${label}${own ? ` ${own}` : ""}</button>`;
   }).join("");
 
-  const pushLabel = active === IMAGE_FALLBACK_PLATFORM ? "↑ eMAG toate" : `↑ eMAG ${active.toUpperCase()}`;
+  const pushLabel = "↑ Base";
   const pushTarget = active === IMAGE_FALLBACK_PLATFORM ? "all" : active;
-  const pushTitle =
-    active === IMAGE_FALLBACK_PLATFORM
-      ? "Trimite pozele pe eMAG RO, BG și HU"
-      : `Trimite pozele pe eMAG ${active.toUpperCase()}`;
+  const pushTitle = "Verifică pozele pe toate limbile și trimite în Base";
 
   return `<div class="product-images-cell">
     <div class="product-images-tabs">${tabs}</div>
@@ -1654,42 +1651,14 @@ tbody.addEventListener("click", (e) => {
   }
 });
 
-/** Trimite pozele produsului pe eMAG: platforma tabului activ, sau toate trei din tabul EN. */
+/** Pozele nu mai pleacă direct pe eMAG: se verifică și se trimit din „Pregătire Base”. */
 async function handleProductImagesPush(btn) {
-  const tr = btn.closest("tr[data-offer-id]");
-  const productId = tr?.dataset.productId;
-  const platform = btn.dataset.platform || "all";
-  if (!tr || !productId) {
-    setStatus("Produs fără product_id — nu pot trimite pozele.", "error");
+  const productId = btn.closest("tr[data-offer-id]")?.dataset.productId;
+  if (!productId) {
+    setStatus("Produs fără product_id — nu pot deschide pregătirea pentru Base.", "error");
     return;
   }
-  const target = platform === "all" ? "eMAG RO, BG și HU" : `eMAG ${platform.toUpperCase()}`;
-  if (!window.confirm(`Trimiți pozele pe ${target}?`)) return;
-
-  btn.disabled = true;
-  setStatus(`Se trimit pozele pe ${target}…`, "loading");
-  try {
-    const res = await fetch(
-      `/api/catalog/product/${encodeURIComponent(productId)}/images/push?platform=${platform}`,
-      { method: "POST" }
-    );
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok && !data.results) throw new Error(data.error || `Eroare HTTP ${res.status}`);
-    const parts = (data.results || []).map((r) =>
-      r.ok
-        ? `${r.platform.toUpperCase()}: ${r.count} poze${r.source && r.source !== r.platform ? ` (set ${r.source.toUpperCase()})` : ""}`
-        : `${r.platform.toUpperCase()}: ${r.error}`
-    );
-    const allOk = (data.results || []).every((r) => r.ok);
-    setStatus(
-      `Poze trimise — eMAG procesează asincron. ${parts.join(" · ")}`,
-      allOk ? "ok" : "error"
-    );
-  } catch (err) {
-    setStatus(err.message || "Eroare la trimiterea pozelor", "error");
-  } finally {
-    btn.disabled = false;
-  }
+  await openInBase(productId);
 }
 
 async function handleProductImagesSelected(input) {
@@ -2306,91 +2275,30 @@ try {
 
 /* ---------- publicare pe toate canalele, pe un singur rand ---------- */
 
-/** productId -> { status: "sending"|"done"|"error", text } — supravietuieste re-randarii tabelului. */
-const rowPushAllState = new Map();
-
 function pushAllRowButtonHtml(product) {
   const productId = product.product_id != null && product.product_id !== "" ? String(product.product_id) : "";
-  const state = productId ? rowPushAllState.get(productId) : null;
-  let cls = "btn-push-row btn-push-all-row";
-  let label = "⬆";
-  let title = "Publică doar acest produs pe toate canalele configurate (eMAG, Trendyol)";
-  let disabled = !productId;
-  if (!productId) {
-    title = "Produsul nu e legat de catalog — nu are ce publica";
-  } else if (state?.status === "sending") {
-    cls += " is-sending";
-    label = "";
-    title = "Se publică pe toate canalele…";
-    disabled = true;
-  } else if (state?.status === "done") {
-    cls += " is-done";
-    label = "✓";
-    title = `${state.text} — click ca să publici din nou`;
-  } else if (state?.status === "error") {
-    cls += " is-error";
-    label = "!";
-    title = `${state.text} — click ca să reîncerci`;
+  const title = productId
+    ? "Deschide produsul în „Pregătire Base” (poze, texte, profit, trimitere)"
+    : "Produsul nu e legat de catalog — nu are ce trimite";
+  return `<button type="button" class="btn-push-row btn-push-all-row"${productId ? "" : " disabled"} title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">⬆</button>`;
+}
+
+/**
+ * Totul pleaca prin Base: deschide „Pregătire Base” pe produs (dupa ce salveaza editarile,
+ * fiindca acolo se vede ce e in DB).
+ */
+async function openInBase(productId) {
+  if (hasUnsavedChanges()) {
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și deschid pregătirea pentru Base?")) return;
+    if (!(await saveAll())) return;
   }
-  return `<button type="button" class="${cls}"${disabled ? " disabled" : ""} title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  window.location.href = `/base.html${productId ? `?id=${encodeURIComponent(productId)}` : ""}`;
 }
 
-function refreshPushAllRowButton(productId) {
-  tbody.querySelectorAll(`tr[data-product-id="${CSS.escape(String(productId))}"]`).forEach((tr) => {
-    const btn = tr.querySelector("button.btn-push-all-row");
-    if (btn) btn.outerHTML = pushAllRowButtonHtml({ product_id: productId });
-  });
-}
-
-/** Rezumatul pe canale al unui raspuns /api/sync/push-all. */
-function pushAllSummary(results, { perRow = false } = {}) {
-  return results
-    .map((r) => {
-      if (!r.ok) return `${r.label}: eroare — ${r.error}`;
-      if (perRow && r.unlinked) return `${r.label}: nelegat`;
-      const locked = priceLockedText(r.price_locked);
-      const suffix = locked ? `, ${locked}` : "";
-      if (r.count > 0) return `${r.label}: ${perRow ? "trimis" : `${r.count} trimise`}${suffix}`;
-      return `${r.label}: ${locked || "nimic de trimis"}`;
-    })
-    .join(" · ");
-}
-
-/** Publica pe toate canalele configurate doar produsul de pe randul respectiv. */
+/** Deschide produsul de pe rand in „Pregătire Base”. */
 async function pushRowAllChannels(tr) {
   const productId = tr?.dataset.productId;
-  if (!productId || rowPushAllState.get(productId)?.status === "sending") return;
-  const name = getRowName(tr) || `Produs ${tr.dataset.offerId}`;
-  /* Pe canale pleaca ce e in DB — editarile nesalvate trebuie salvate intai. */
-  if (hasUnsavedChanges()) {
-    if (!confirm(`Ai modificări nesalvate. Le salvez acum și apoi public „${name}” pe toate canalele?`)) return;
-    if (!(await saveAll())) return;
-  } else if (!confirm(`Public „${name}” pe toate canalele configurate?`)) {
-    return;
-  }
-  rowPushAllState.set(productId, { status: "sending" });
-  refreshPushAllRowButton(productId);
-  setStatus(`Se publică „${name}” pe canale…`, "loading");
-  try {
-    const res = await fetch("/api/sync/push-all", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ product_id: Number(productId) }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Eroare ${res.status}`);
-    const results = data.results || [];
-    if (results.length === 0) throw new Error("Niciun canal configurat");
-    const summary = pushAllSummary(results, { perRow: true });
-    rowPushAllState.set(productId, { status: data.ok ? "done" : "error", text: summary });
-    setStatus(`„${name}”: ${summary}`, data.ok ? "ok" : "error");
-  } catch (err) {
-    const text = err.message || "Eroare la publicare pe canale";
-    rowPushAllState.set(productId, { status: "error", text });
-    setStatus(`„${name}”: ${text}`, "error");
-  } finally {
-    refreshPushAllRowButton(productId);
-  }
+  if (productId) await openInBase(productId);
 }
 
 tbody.addEventListener("click", (event) => {
@@ -2400,32 +2308,9 @@ tbody.addEventListener("click", (event) => {
   void pushRowAllChannels(button.closest("tr"));
 });
 
-/** Publica toate modificarile pe toate canalele configurate (backend-ul preia oglinda daca lipseste). */
+/** „Pregătire Base” inlocuieste publicarea directa pe canale. */
 async function pushAllChannels() {
-  /* Pe canale pleaca ce e in DB — editarile nesalvate trebuie salvate intai. */
-  if (hasUnsavedChanges()) {
-    if (!confirm("Ai modificări nesalvate. Le salvez acum și apoi public pe canale?")) return;
-    if (!(await saveAll())) return;
-  } else if (!confirm("Trimit toate modificările pe toate canalele configurate?")) {
-    return;
-  }
-  btnPushAll.disabled = true;
-  setStatus("Se publică pe canale…", "loading");
-  try {
-    const res = await fetch("/api/sync/push-all", { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Eroare ${res.status}`);
-    const results = data.results || [];
-    if (results.length === 0) {
-      setStatus("Niciun canal configurat", "error");
-      return;
-    }
-    setStatus(pushAllSummary(results), data.ok ? "ok" : "error");
-  } catch (err) {
-    setStatus(err.message || "Eroare la publicare pe canale", "error");
-  } finally {
-    btnPushAll.disabled = false;
-  }
+  await openInBase(null);
 }
 
 btnPushAll?.addEventListener("click", pushAllChannels);

@@ -14,8 +14,9 @@ const pending = new Map();
 let timer = null;
 let running = false;
 
+// Din 2026-10-26 Base sincronizeaza stocul intre canale; aplicatia nu mai trimite direct.
 function enabled() {
-  return String(process.env.AUTO_STOCK_PUSH ?? "1").trim() !== "0";
+  return false;
 }
 
 /** Pune produsele in coada; flush-ul pleaca dupa FLUSH_DELAY_MS, ca liniile apropiate sa mearga intr-un lot. */

@@ -2,6 +2,7 @@ const fs = require("fs");
 const https = require("https");
 const path = require("path");
 const { log, truncate } = require("./logs-db");
+const { assertEmagReadOnly } = require("./direct-writes");
 
 const EMAG_API = "https://marketplace-api.emag.ro/api-3";
 // Platformele eMAG: acelasi cont, endpoint-uri diferite.
@@ -36,6 +37,11 @@ const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
 
 function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
+  try {
+    assertEmagReadOnly(url, method);
+  } catch (err) {
+    return Promise.reject(err);
+  }
   const startedAt = Date.now();
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);

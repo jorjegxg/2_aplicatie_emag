@@ -9,8 +9,8 @@
 
   var STATUSES = [
     { key: "pending", label: "În așteptare" },
-    { key: "sent", label: "În validare" },
-    { key: "done", label: "Validat" },
+    { key: "sent", label: "Trimis direct (vechi)" },
+    { key: "done", label: "Trimis în Base" },
     { key: "skipped", label: "Deja la zi" },
     { key: "failed", label: "Eșuat" },
     { key: "cancelled", label: "Anulat" },
@@ -198,7 +198,7 @@
   function renderWorker(worker) {
     els.worker.className = "queue-worker" + (worker.send ? " is-live" : " is-dry");
     els.worker.innerHTML =
-      "<b>" + (worker.send ? "Trimite pe eMAG" : "Doar verifică (QUEUE_SEND=0) — nu trimite nimic") + "</b>" +
+      "<b>" + (worker.send ? "Trimite în Base" : "Doar verifică (BASE_SEND=0) — nu trimite nimic") + "</b>" +
       " · verifică la " + Math.round(worker.interval_sec / 60) + " min" +
       " · ultima verificare " + escapeHtml(ago(worker.last_check_at)) +
       (worker.last_check_at ? " (" + escapeHtml(formatTime(worker.last_check_at)) + ")" : "");

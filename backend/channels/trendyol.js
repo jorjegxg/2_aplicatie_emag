@@ -26,6 +26,7 @@ const {
   getTrendyolCreds,
 } = require("../credentials-store");
 const { htmlToText, textToHtml } = require("../description-format");
+const { assertTrendyolReadOnly } = require("../direct-writes");
 
 const id = "trendyol";
 const label = "Trendyol";
@@ -70,6 +71,7 @@ function authHeaders(creds) {
 
 /** Cerere HTTP pe API-ul Trendyol; ridica eroare cu .status pastrat pentru sendChannelError. */
 async function trendyolRequest(creds, method, path, { params = {}, body } = {}) {
+  assertTrendyolReadOnly(method, path);
   const url = new URL(`${TRENDYOL_API}${path}`);
   for (const [k, v] of Object.entries(params)) {
     if (v != null && String(v) !== "") url.searchParams.set(k, String(v));

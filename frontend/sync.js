@@ -758,10 +758,9 @@ function pushButtonHtml(offerId) {
     label = "!";
     title = `Eroare: ${job.error} — click ca să reîncerci`;
   } else if (offer) {
-    title = `Publică pe canal doar acest rând: ${pushContentLabel(offer)}`;
+    title = `Diferă: ${pushContentLabel(offer)} — deschide în „Pregătire Base”`;
   } else {
-    title = "Nimic de publicat — rândul nu diferă față de ultima preluare";
-    disabled = true;
+    title = "Deschide în „Pregătire Base”";
   }
   return `<button type="button" class="${cls}" data-offer-id="${escapeHtml(offerId)}"${
     disabled ? " disabled" : ""
@@ -1145,7 +1144,7 @@ pricingBody.addEventListener("input", (e) => {
 pricingBody.addEventListener("click", (e) => {
   const pushBtn = e.target.closest("button.btn-push-row");
   if (pushBtn) {
-    enqueuePush(pushBtn.dataset.offerId);
+    openOfferInBase(pushBtn.dataset.offerId);
     return;
   }
 
@@ -1745,6 +1744,11 @@ function updateQueuedRows() {
   }
 }
 
+/** Nimic nu mai pleaca direct pe canal: oferta se verifica si se trimite din „Pregătire Base”. */
+function openOfferInBase(offerId) {
+  window.location.href = `/base.html?ext=${encodeURIComponent(offerId)}`;
+}
+
 function enqueuePush(offerId) {
   const id = String(offerId);
   const existing = pushJobs.get(id);
@@ -2149,7 +2153,7 @@ channelSelect.addEventListener("change", async () => {
   warnIfChannelUnconfigured();
 });
 btnPull.addEventListener("click", pullFromChannel);
-btnPush.addEventListener("click", pushToChannel);
+btnPush.addEventListener("click", () => (window.location.href = "/base.html"));
 
 summaryEl.addEventListener("click", (e) => {
   const btn = e.target.closest("button.sync-chip[data-filter]");

@@ -83,6 +83,11 @@ const {
 const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const { query } = require("./pg");
 const emagQueue = require("./emag-queue");
+const baseClient = require("./base-client");
+const basePush = require("./base-push");
+const baseOrders = require("./base-orders");
+const { BLOCKED_MESSAGE } = require("./direct-writes");
+const { PLATFORMS: IMAGE_PLATFORMS } = require("./product-images");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
 const { calcProduct } = require("./calculator");
@@ -1142,6 +1147,107 @@ app.patch("/api/catalog/product/:productId/images/order", async (req, res) => {
   }
 });
 
+/* ---------------- Base (BaseLinker): tot ce pleaca din aplicatie ---------------- */
+
+// Trimiterile directe spre eMAG/Trendyol sunt oprite; pagina „Pregătire Base” le inlocuieste.
+app.post(
+  ["/api/catalog/product/:productId/images/push", "/api/products/sync-prices", "/api/sync/push-all"],
+  (_req, res) =>
+    res.status(410).json({ error: `${BLOCKED_MESSAGE}. Folosește pagina „Pregătire Base”.` })
+);
+
+app.get("/api/base/status", async (_req, res) => {
+  if (!baseClient.isConfigured()) {
+    return res.json({ configured: false, send_enabled: baseClient.sendEnabled() });
+  }
+  try {
+    return res.json({ configured: true, ...(await baseClient.getStatus()), orders_enabled: baseOrders.enabled() });
+  } catch (err) {
+    return res.status(502).json({ configured: true, error: err.message });
+  }
+});
+
+/** Lista pentru pagina „Pregătire Base”: ce poze/texte are fiecare produs si starea in Base. */
+app.get("/api/base/products", async (_req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT c.id, c.cod_produs, c.nume, c.ean, c.emag_offer_id, c.sale_price, c.general_stock,
+              b.base_product_id, b.last_pushed_at, b.last_push_fingerprint,
+              COALESCE(json_object_agg(t.lang, (COALESCE(t.name, '') <> '' AND COALESCE(t.description, '') <> ''))
+                FILTER (WHERE t.lang IS NOT NULL), '{}') AS texts
+       FROM catalog_products c
+       LEFT JOIN base_products b ON b.product_id = c.id
+       LEFT JOIN product_texts t ON t.product_id = c.id
+       GROUP BY c.id, b.product_id
+       ORDER BY c.id`
+    );
+    const images = await listByPlatformForProductIds(rows.map((r) => r.id));
+    const products = rows.map((r) => {
+      const byPlatform = images.get(Number(r.id)) || {};
+      return {
+        ...r,
+        images: Object.fromEntries(IMAGE_PLATFORMS.map((p) => [p, (byPlatform[p] || []).length])),
+        thumb: (byPlatform.ro?.[0] || byPlatform.en?.[0])?.url || null,
+      };
+    });
+    return res.json({ products });
+  } catch (err) {
+    logCaught("base-products", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/** Tot ce trebuie verificat inainte de trimitere: produsul, textele, pozele pe limbi, payload-ul Base. */
+app.get("/api/base/product/:productId", async (req, res) => {
+  try {
+    const product = await getProduct(req.params.productId);
+    if (!product) return res.status(404).json({ error: "Produs inexistent" });
+    const [texts, images, preview] = await Promise.all([
+      basePush.getTexts(product.id),
+      listByPlatformForProductIds([product.id]),
+      basePush.buildPayload(product.id),
+    ]);
+    // Comisionul Trendyol vine din oglinda canalului (dupa „Preia” in Sincronizare), daca exista.
+    const tyRemote = product.ean ? getChannelRemotes("trendyol")?.byId?.get(String(product.ean)) : null;
+    return res.json({
+      product,
+      texts,
+      images: images.get(Number(product.id)) || {},
+      trendyol_commission_pct: tyRemote?.commission_rate ?? null,
+      preview,
+    });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-product", err);
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.put("/api/base/product/:productId/texts/:lang", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const texts = await basePush.saveTexts(req.params.productId, String(req.params.lang).toLowerCase(), {
+      name: b.name,
+      description: b.description,
+      characteristics: b.characteristics ?? null,
+    });
+    return res.json({ ok: true, texts });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-texts", err);
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+/** Trimite produsul in Base; fara BASE_SEND=1 raspunde doar cu payload-ul (dry_run). */
+app.post("/api/base/product/:productId/push", async (req, res) => {
+  try {
+    const result = await basePush.pushProductToBase(req.params.productId);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-push", err);
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 /** Platformele eMAG pe care putem publica poze (EN e doar setul implicit din aplicatie). */
 const IMAGE_PUSH_PLATFORMS = ["ro", "bg", "hu"];
 
@@ -1928,7 +2034,7 @@ app.get("/api/queue", async (req, res) => {
     return res.json({
       items,
       worker: {
-        send: process.env.QUEUE_SEND === "1",
+        send: baseClient.sendEnabled(),
         interval_sec: Math.max(60, Number(process.env.QUEUE_INTERVAL_SEC || 300)),
         last_check_at: rows[0]?.last_check_at || null,
       },
@@ -2105,8 +2211,13 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`Server pornit: http://localhost:${PORT}`);
   });
-  startEmagOrderPoller();
-  startTrendyolOrderPoller();
+  // Cu BASE_ORDERS=1 comenzile vin din Base; pana atunci se citesc direct (doar citire).
+  if (baseOrders.enabled()) {
+    baseOrders.startBaseOrderPoller();
+  } else {
+    startEmagOrderPoller();
+    startTrendyolOrderPoller();
+  }
 }
 
 // Plasa de siguranta pentru callback-uri eMAG pierdute (comenzi noi si anulari).

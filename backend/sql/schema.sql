@@ -161,6 +161,28 @@ CREATE INDEX IF NOT EXISTS idx_emag_push_queue_open
   ON emag_push_queue (status, not_before)
   WHERE status IN ('pending', 'sent');
 
+-- Titlul/descrierea pe limbă, verificate în „Pregătire Base” (vezi migrarea 027).
+CREATE TABLE IF NOT EXISTS product_texts (
+  product_id INTEGER NOT NULL REFERENCES catalog_products(id) ON DELETE CASCADE,
+  lang TEXT NOT NULL CHECK (lang IN ('ro', 'hu', 'bg', 'en')),
+  name TEXT,
+  description TEXT,
+  characteristics JSONB,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (product_id, lang)
+);
+
+-- Legătura cu produsul din catalogul Base și amprenta ultimei trimiteri.
+CREATE TABLE IF NOT EXISTS base_products (
+  product_id INTEGER PRIMARY KEY REFERENCES catalog_products(id) ON DELETE CASCADE,
+  base_product_id BIGINT,
+  sku TEXT,
+  last_pushed_at TIMESTAMPTZ,
+  last_push_fingerprint TEXT,
+  last_message TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Index doar daca coloana exista (DB vechi: migrarea 003 o adauga)
 DO $$
 BEGIN

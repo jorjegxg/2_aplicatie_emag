@@ -26,7 +26,8 @@ async function findCatalogProduct(client, line) {
   }
   if (line.merchantSku) {
     const { rows } = await client.query(
-      `SELECT id FROM catalog_products WHERE part_number = $1 LIMIT 1`,
+      `SELECT id FROM catalog_products WHERE part_number = $1 OR cod_produs = $1
+       ORDER BY (part_number = $1) DESC LIMIT 1`,
       [String(line.merchantSku)]
     );
     if (rows[0]) return rows[0].id;
