@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pregătire Base</title>
-    <link rel="stylesheet" href="styles.css?v=20261027-1" />
+    <link rel="stylesheet" href="styles.css?v=20261027-2" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -61,6 +61,13 @@
 
       <p id="base-status" class="base-status" role="status">Se încarcă starea Base…</p>
 
+      <div class="base-actions base-toolbar">
+        <button type="button" id="base-commissions" class="btn btn-secondary" title="Citește din comenzile din Base comisionul real eMAG RO și Trendyol, pentru fiecare produs vândut (doar citire)">
+          ↻ Comisioane din Base
+        </button>
+        <span id="base-commissions-status" class="status" role="status"></span>
+      </div>
+
       <div class="base-layout">
         <aside class="base-list-pane" aria-label="Produse">
           <label class="field field-search">
@@ -78,6 +85,6 @@
 
     <script src="pricing.js?v=20261005-1"></script>
     <script src="/api/calculator.js?v=20261026-1"></script>
-    <script src="base.js?v=20261027-3"></script>
+    <script src="base.js?v=20261027-6"></script>
   </body>
 </html>

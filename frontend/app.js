@@ -36,9 +36,8 @@ const tbody = document.getElementById("products-body");
 const table = document.getElementById("products-table");
 const productsWrap = document.getElementById("products-wrap");
 const pageEl = document.querySelector(".page");
-const inputMultPrp = document.getElementById("mult-prp");
-const inputMultMin = document.getElementById("mult-min");
-const inputMultMax = document.getElementById("mult-max");
+// Multiplicatorii PRP / minim / maxim se editeaza in Setari; aici doar se folosesc.
+let mults = { prp: null, min: null, max: null };
 const calcParamInputs = [...document.querySelectorAll("[data-calc-param]")];
 const calcRegimSelect = document.getElementById("calc-regim");
 const calcAerRon = document.getElementById("calc-aer-ron");
@@ -245,18 +244,12 @@ function fillSettings(settings) {
     el.value = v == null ? "" : String(v);
   });
   updateCalcParamsDerived();
-  inputMultPrp.value = settings.mult_prp != null ? settings.mult_prp : "";
-  inputMultMin.value = settings.mult_min != null ? settings.mult_min : "";
-  inputMultMax.value = settings.mult_max != null ? settings.mult_max : "";
+  mults = { prp: settings.mult_prp ?? null, min: settings.mult_min ?? null, max: settings.mult_max ?? null };
   snapshotSettings();
 }
 
 function readSettingsFromForm() {
-  const out = {
-    mult_prp: inputMultPrp.value,
-    mult_min: inputMultMin.value,
-    mult_max: inputMultMax.value,
-  };
+  const out = {};
   calcParamInputs.forEach((el) => {
     out[`calc.${el.dataset.calcParam}`] = el.value;
   });
@@ -274,9 +267,6 @@ function getCalcParams() {
 
 function settingsRequestBody() {
   return {
-    mult_prp: inputMultPrp.value,
-    mult_min: inputMultMin.value,
-    mult_max: inputMultMax.value,
     calculator_params: getCalcParams(),
   };
 }
@@ -395,20 +385,12 @@ async function saveAll() {
 
 
 
-function parseMult(inputEl) {
-  if (inputEl.value === "") return null;
-  const n = Number(inputEl.value);
-  return Number.isFinite(n) ? n : null;
-}
-
 function derivePrices(salePrice) {
   const sale = Number(salePrice);
   if (!Number.isFinite(sale)) {
     return { prp: null, min: null, max: null };
   }
-  const mPrp = parseMult(inputMultPrp);
-  const mMin = parseMult(inputMultMin);
-  const mMax = parseMult(inputMultMax);
+  const { prp: mPrp, min: mMin, max: mMax } = mults;
   return {
     prp: mPrp != null ? roundPrice(sale * mPrp) : null,
     min: mMin != null ? roundPrice(sale * mMin) : null,
@@ -2195,21 +2177,12 @@ function onCalcParamInput() {
   updateSaveDirtyState();
 }
 
-function onMultInput() {
-  updateDerivedCells();
-  persistAllDerived();
-  updateSaveDirtyState();
-}
-
 calcParamInputs.forEach((el) => el.addEventListener("input", onCalcParamInput));
 if (calcRegimSelect) {
   calcRegimSelect.innerHTML = Calc.REGIMURI.map(
     (r) => `<option value="${escapeHtml(r.value)}">${escapeHtml(r.label)}</option>`
   ).join("");
 }
-inputMultPrp.addEventListener("input", onMultInput);
-inputMultMin.addEventListener("input", onMultInput);
-inputMultMax.addEventListener("input", onMultInput);
 
 function setTableFullscreen(on) {
   if (!pageEl || !btnTableFullscreen) return;
@@ -2252,26 +2225,42 @@ try {
   /* ignore */
 }
 
-function setCompactProducts(on) {
+// 0 = normal, 1 = compact, 2 = compact cu o singură poză (principala)
+const COMPACT_PRODUCTS_LABELS = ["Compact", "O poză", "Normal"];
+const COMPACT_PRODUCTS_TITLES = [
+  "Rânduri pe o singură linie",
+  "Rânduri pe o linie și doar poza principală",
+  "Înapoi la tabelul normal",
+];
+
+function setCompactProducts(level) {
   if (!productsWrap || !btnCompactProducts) return;
-  productsWrap.classList.toggle("is-compact", on);
-  btnCompactProducts.setAttribute("aria-pressed", on ? "true" : "false");
-  btnCompactProducts.textContent = on ? "Normal" : "Compact";
+  productsWrap.classList.toggle("is-compact", level >= 1);
+  productsWrap.classList.toggle("is-mini", level === 2);
+  btnCompactProducts.setAttribute("aria-pressed", level >= 1 ? "true" : "false");
+  btnCompactProducts.textContent = COMPACT_PRODUCTS_LABELS[level];
+  btnCompactProducts.title = COMPACT_PRODUCTS_TITLES[level];
   try {
-    localStorage.setItem(COMPACT_PRODUCTS_KEY, on ? "1" : "0");
+    localStorage.setItem(COMPACT_PRODUCTS_KEY, String(level));
   } catch {
     /* ignore */
   }
 }
 
+function compactProductsLevel() {
+  if (productsWrap?.classList.contains("is-mini")) return 2;
+  return productsWrap?.classList.contains("is-compact") ? 1 : 0;
+}
+
 btnCompactProducts?.addEventListener("click", () => {
-  setCompactProducts(!productsWrap.classList.contains("is-compact"));
+  setCompactProducts((compactProductsLevel() + 1) % 3);
 });
 
 try {
-  setCompactProducts(localStorage.getItem(COMPACT_PRODUCTS_KEY) === "1");
+  const saved = Number(localStorage.getItem(COMPACT_PRODUCTS_KEY));
+  setCompactProducts(saved === 1 || saved === 2 ? saved : 0);
 } catch {
-  setCompactProducts(false);
+  setCompactProducts(0);
 }
 
 /* ---------- publicare pe toate canalele, pe un singur rand ---------- */
@@ -2316,42 +2305,27 @@ async function pushAllChannels() {
 
 btnPushAll?.addEventListener("click", pushAllChannels);
 
-/* ---------- comisionul eMAG (citit din eMAG, la pretul din tabel) ---------- */
+/* ---------- comisionul real eMAG / Trendyol (citit din comenzile din Base) ---------- */
 
 async function fetchCommissions() {
   if (hasUnsavedChanges()) {
-    if (!confirm("Ai modificări nesalvate. Le salvez acum și citesc comisionul?")) return;
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și citesc comisioanele?")) return;
     if (!(await saveAll())) return;
   }
-  const items = [...tbody.querySelectorAll("tr[data-offer-id]")]
-    .map((tr) => ({
-      id: tr.dataset.offerId,
-      sale_price: Number(tr.querySelector("input.input-sale-price")?.value),
-    }))
-    .filter((item) => item.id && Number.isFinite(item.sale_price) && item.sale_price > 0);
-  if (!items.length) {
-    setStatus("Niciun produs cu preț de vânzare — nu am pentru ce citi comisionul.", "error");
-    return;
-  }
   btnFetchCommission.disabled = true;
-  setStatus(`Citesc comisionul eMAG pentru ${items.length} produse…`, "loading");
+  setStatus("Citesc comisioanele din comenzile din Base…", "loading");
   try {
-    const res = await fetch("/api/products/fetch-commission?channel=emag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-    });
+    const res = await fetch("/api/base/commissions/refresh", { method: "POST" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     await loadProducts();
-    const failed = data.errors || [];
     setStatus(
-      `Comision actualizat la ${data.count} produse` +
-        (failed.length ? `; ${failed.length} cu eroare (ex. ${failed[0].id}: ${failed[0].error})` : "."),
-      failed.length ? "error" : "ok"
+      `Comision real din Base: eMAG la ${data.emag.length} produse, Trendyol la ${data.trendyol.length}.` +
+        " Produsele fără comenzi își păstrează procentul.",
+      "ok"
     );
   } catch (err) {
-    setStatus(`Comisionul nu s-a putut citi: ${err.message}`, "error");
+    setStatus(`Comisioanele nu s-au putut citi din Base: ${err.message}`, "error");
   } finally {
     btnFetchCommission.disabled = false;
   }

@@ -50,6 +50,7 @@ const { query } = require("./pg");
 const baseClient = require("./base-client");
 const basePush = require("./base-push");
 const { startBaseSync } = require("./base-sync");
+const baseCommission = require("./base-commission");
 const { PLATFORMS: IMAGE_PLATFORMS } = require("./product-images");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
@@ -630,11 +631,14 @@ app.post("/api/settings", async (req, res) => {
     };
 
     const before = await getSettings().catch(() => null);
+    // Fiecare pagina trimite doar ce editeaza (multiplicatorii vin din Setari, restul din Produse).
+    const body = req.body || {};
+    const pick = (key) => (Object.prototype.hasOwnProperty.call(body, key) ? toNum(body[key]) : before?.[key] ?? null);
     const saved = await saveSettings({
-      procentaj_alte_costuri: toNum(req.body?.procentaj_alte_costuri),
-      mult_prp: toNum(req.body?.mult_prp),
-      mult_min: toNum(req.body?.mult_min),
-      mult_max: toNum(req.body?.mult_max),
+      procentaj_alte_costuri: pick("procentaj_alte_costuri"),
+      mult_prp: pick("mult_prp"),
+      mult_min: pick("mult_min"),
+      mult_max: pick("mult_max"),
       calculator_params:
         req.body?.calculator_params && typeof req.body.calculator_params === "object"
           ? req.body.calculator_params
@@ -944,17 +948,18 @@ app.get("/api/base/product/:productId", async (req, res) => {
   try {
     const product = await getProduct(req.params.productId);
     if (!product) return res.status(404).json({ error: "Produs inexistent" });
-    const [texts, images, preview] = await Promise.all([
+    const [texts, images, preview, trendyolPct] = await Promise.all([
       basePush.getTexts(product.id),
       listByPlatformForProductIds([product.id]),
       basePush.buildPayload(product.id),
+      baseCommission.getTrendyolPct(product.id),
     ]);
     return res.json({
       product,
       texts,
       images: images.get(Number(product.id)) || {},
-      // Comisionul Trendyol venea din pagina Sincronizare (scoasa); se ia procentul implicit.
-      trendyol_commission_pct: null,
+      // Din comenzile Trendyol din Base („Comisioane din Base”); null = ca eMAG.
+      trendyol_commission_pct: trendyolPct,
       preview,
     });
   } catch (err) {
@@ -975,6 +980,17 @@ app.put("/api/base/product/:productId/texts/:lang", async (req, res) => {
   } catch (err) {
     if (!err?.expected) logCaught("base-texts", err);
     return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+/** Comisionul real eMAG RO si Trendyol, din comenzile din Base (doar citire). */
+app.post("/api/base/commissions/refresh", async (_req, res) => {
+  try {
+    const result = await baseCommission.refreshCommissions();
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-commission", err);
+    return res.status(err.status || 500).json({ error: err.message });
   }
 });
 

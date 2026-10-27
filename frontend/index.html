@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Produse</title>
-    <link rel="stylesheet" href="styles.css?v=20261025-1" />
+    <link rel="stylesheet" href="styles.css?v=20261027-2" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -55,41 +55,6 @@
       </header>
 
       <div class="toolbar">
-        <div class="toolbar-fields">
-          <label class="field">
-            <span title="Multiplicator preț recomandat (PRP)">Multiplicator preț recomandat (PRP)</span>
-            <input
-              type="number"
-              id="mult-prp"
-              name="mult-prp"
-              min="0"
-              step="0.01"
-              placeholder="1.15"
-            />
-          </label>
-          <label class="field">
-            <span title="Multiplicator preț minim">Multiplicator preț minim</span>
-            <input
-              type="number"
-              id="mult-min"
-              name="mult-min"
-              min="0"
-              step="0.01"
-              placeholder="0.85"
-            />
-          </label>
-          <label class="field">
-            <span title="Multiplicator preț maxim">Multiplicator preț maxim</span>
-            <input
-              type="number"
-              id="mult-max"
-              name="mult-max"
-              min="0"
-              step="0.01"
-              placeholder="1.30"
-            />
-          </label>
-        </div>
         <div class="toolbar-actions">
           <button type="button" id="btn-more" class="btn btn-secondary" hidden>
             Pagina următoare
@@ -168,8 +133,8 @@
             </svg>
             Pregătire Base
           </button>
-          <button type="button" id="btn-fetch-commission" class="btn btn-secondary" title="Citește din eMAG comisionul fiecărui produs, la prețul din tabel (doar citire)">
-            Comision eMAG
+          <button type="button" id="btn-fetch-commission" class="btn btn-secondary" title="Citește din Base comisionul real eMAG și Trendyol, din ultimele comenzi (doar citire)">
+            Comisioane din Base
           </button>
           <span id="status" class="status" aria-live="polite"></span>
           <button type="button" id="btn-compact-products" class="btn btn-secondary btn-compact" aria-pressed="false">
@@ -419,6 +384,6 @@
     <script src="/api/calculator.js?v=20261025-1"></script>
     <script src="pricing.js?v=20261005-1"></script>
     <script src="table-columns.js?v=20260922-3"></script>
-    <script src="app.js?v=20261027-1"></script>
+    <script src="app.js?v=20261027-2"></script>
   </body>
 </html>

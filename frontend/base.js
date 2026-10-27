@@ -32,10 +32,13 @@
     q: document.getElementById("base-q"),
     list: document.getElementById("base-list"),
     detail: document.getElementById("base-detail"),
+    commissions: document.getElementById("base-commissions"),
+    commissionsStatus: document.getElementById("base-commissions-status"),
   };
   let products = [];
   let baseStatus = null;
   let calcParams = null;
+  let mults = { min: null, max: null }; // din Setări; minimul și maximul urmează prețul de vânzare
   let current = null; // { product, texts, images, preview, trendyol_commission_pct }
   let currentLang = "ro";
 
@@ -158,7 +161,7 @@
       min: v("min_sale_price"),
       max: v("max_sale_price"),
       stock: v("general_stock"),
-      pret_fabrica: v("pret_cumparare_usd"),
+      pret_fabrica: num(current.product.pret_cumparare_usd),
       emag_pct: v("procentaj_emag") ?? Pricing.DEFAULT_PROcentaj_EMAG,
       ty_pct: v("trendyol_pct") ?? v("procentaj_emag") ?? Pricing.DEFAULT_PROcentaj_EMAG,
     };
@@ -197,6 +200,12 @@
     );
   }
 
+  /** Costul final pe bucată (lei), cu tot adăugat, pe ruta „transport cumpărare” din Setări. */
+  function totalCumparare() {
+    const out = calcFor("emag", { pret_fabrica: num(current.product.pret_cumparare_usd), sale: null });
+    return out ? Math.round(out.pret_cumparare * 100) / 100 : null;
+  }
+
   function renderPrices() {
     const p = current.product;
     const tyPct = current.trendyol_commission_pct;
@@ -207,13 +216,18 @@
       priceField("min_sale_price", "Preț minim", p.min_sale_price) +
       priceField("max_sale_price", "Preț maxim", p.max_sale_price) +
       priceField("general_stock", "Stoc (din Base)", p.general_stock, 'step="1" readonly title="Stocul îl ține Base; se actualizează la 10 minute"') +
-      priceField("pret_cumparare_usd", "Preț fabrică (" + escapeHtml(p.moneda_fabrica || "USD") + ")", p.pret_cumparare_usd) +
+      priceField(
+        "pret_total_cumparare",
+        "Preț total cumpărare (lei)",
+        totalCumparare(),
+        'readonly tabindex="-1" placeholder="—" title="Fabrică + agent + transport + taxe vamale + TVA import, pe ruta din Setări"'
+      ) +
       priceField("procentaj_emag", "Comision eMAG %", p.procentaj_emag, p.emag_offer_id ? "" : 'readonly title="Fără ofertă eMAG legată"') +
       priceField(
         "trendyol_pct",
         "Comision Trendyol %",
         tyPct,
-        'placeholder="gol = ca eMAG" title="Din ultima preluare Trendyol (Sincronizare → Preia); doar pentru calcul"'
+        'placeholder="gol = ca eMAG" title="Comisionul Trendyol al produsului (↻ Comisioane din Base); doar pentru calcul"'
       ) +
       priceField("target_pct", "Profit Tren dorit %", "", 'placeholder="ex. 25" title="Calculează prețul de vânzare"') +
       "</div>" +
@@ -342,7 +356,6 @@
       min_sale_price: v.min,
       max_sale_price: v.max,
       general_stock: v.stock,
-      pret_cumparare_usd: v.pret_fabrica,
     };
     setStatus("base-price-status", "Se salvează…");
     const jobs = [sendJson("PATCH", "/api/catalog/product/" + p.id, { fields })];
@@ -492,7 +505,41 @@
     else if (action === "push") push();
   });
 
+  /** Preț minim / maxim = preț vânzare × multiplicatorii din Setări (dacă sunt setați). */
+  function applyMults() {
+    const sale = num(els.detail.querySelector('[name="sale_price"]').value);
+    if (sale == null) return;
+    const round = (v) => String(Math.round(v * 100) / 100);
+    if (mults.min != null) els.detail.querySelector('[name="min_sale_price"]').value = round(sale * mults.min);
+    if (mults.max != null) els.detail.querySelector('[name="max_sale_price"]').value = round(sale * mults.max);
+  }
+
+  function refreshCommissions() {
+    const s = els.commissionsStatus;
+    els.commissions.disabled = true;
+    s.textContent = "Se citesc comenzile din Base…";
+    s.classList.remove("is-error");
+    request("/api/base/commissions/refresh", { method: "POST" })
+      .then((res) => {
+        const sample = (list) =>
+          list.length ? " (" + list.slice(0, 4).map((x) => x.sku + " " + x.pct + "%").join(", ") + (list.length > 4 ? "…" : "") + ")" : "";
+        s.textContent =
+          "eMAG RO: " + res.emag.length + " produse" + sample(res.emag) +
+          " · Trendyol: " + res.trendyol.length + " produse" + sample(res.trendyol) +
+          ". Produsele fără comenzi își păstrează procentul.";
+        if (current) return loadDetail(current.product.id);
+      })
+      .catch((err) => {
+        s.textContent = err.message;
+        s.classList.add("is-error");
+      })
+      .finally(() => (els.commissions.disabled = false));
+  }
+
+  els.commissions.addEventListener("click", refreshCommissions);
+
   els.detail.addEventListener("input", (e) => {
+    if (e.target.name === "sale_price") applyMults();
     if (e.target.name === "target_pct") {
       const target = num(e.target.value);
       if (target == null) return;
@@ -512,7 +559,10 @@
         target / 100
       );
       e.target.classList.toggle("is-invalid", price == null);
-      if (price != null) els.detail.querySelector('[name="sale_price"]').value = String(Math.round(price * 100) / 100);
+      if (price != null) {
+        els.detail.querySelector('[name="sale_price"]').value = String(Math.round(price * 100) / 100);
+        applyMults();
+      }
     }
     if (e.target.closest(".base-price-grid")) renderProfit();
   });
@@ -525,6 +575,7 @@
     .then(([status, settings, list]) => {
       baseStatus = status;
       calcParams = settings.calculator_params;
+      mults = { min: settings.mult_min ?? null, max: settings.mult_max ?? null };
       products = list.products;
       renderStatus();
       renderList();

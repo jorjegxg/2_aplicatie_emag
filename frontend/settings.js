@@ -11,6 +11,13 @@ const tyApiKey = document.getElementById("ty-api-key");
 const tyApiSecret = document.getElementById("ty-api-secret");
 const btnSaveEmag = document.getElementById("btn-save-emag");
 const btnSaveTrendyol = document.getElementById("btn-save-trendyol");
+const formMult = document.getElementById("form-mult");
+const btnSaveMult = document.getElementById("btn-save-mult");
+const multInputs = {
+  mult_prp: document.getElementById("mult-prp"),
+  mult_min: document.getElementById("mult-min"),
+  mult_max: document.getElementById("mult-max"),
+};
 
 function setStatus(message, kind = "") {
   statusEl.textContent = message || "";
@@ -122,12 +129,50 @@ async function saveTrendyol(e) {
   }
 }
 
+function fillMults(settings) {
+  for (const [key, el] of Object.entries(multInputs)) {
+    el.value = settings[key] != null ? String(settings[key]) : "";
+  }
+}
+
+async function loadMults() {
+  const res = await fetch("/api/settings");
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  fillMults(data);
+}
+
+async function saveMults(e) {
+  e.preventDefault();
+  if (btnSaveMult.disabled) return;
+  btnSaveMult.disabled = true;
+  setStatus("Se salvează multiplicatorii…", "loading");
+  try {
+    const body = Object.fromEntries(Object.entries(multInputs).map(([key, el]) => [key, el.value]));
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    fillMults(data);
+    setStatus("Multiplicatori salvați.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la salvare", "error");
+  } finally {
+    btnSaveMult.disabled = false;
+  }
+}
+
+formMult.addEventListener("submit", saveMults);
 formEmag.addEventListener("submit", saveEmag);
 formTrendyol.addEventListener("submit", saveTrendyol);
 
+loadMults().catch((err) => setStatus(err.message || "Eroare la citire", "error"));
 loadCredentials().then(() => {
   const hash = (location.hash || "").replace(/^#/, "");
-  if (hash === "emag" || hash === "trendyol") {
+  if (hash === "preturi" || hash === "emag" || hash === "trendyol") {
     const el = document.getElementById(hash);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });

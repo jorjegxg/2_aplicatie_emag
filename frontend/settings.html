@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Setări — Credentiale</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>Setări</title>
+    <link rel="stylesheet" href="styles.css?v=20261027-2" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -53,13 +53,37 @@
           <a href="/logs.html">Logs</a>
           <a href="/settings.html" aria-current="page">Setări</a>
         </nav>
-        <h1>Setări credentiale</h1>
+        <h1>Setări</h1>
         <p class="subtitle">
-          Credentialele marketplace se salvează local pe server. Parolele nu se reafișează după salvare.
+          Multiplicatorii de preț și credentialele marketplace se salvează local pe server. Parolele nu se reafișează după salvare.
         </p>
       </header>
 
       <p id="status" class="status" role="status"></p>
+
+      <section id="preturi" class="cred-section" aria-labelledby="preturi-title">
+        <div class="cred-section-head">
+          <h2 id="preturi-title">Multiplicatori preț</h2>
+        </div>
+        <p class="notif-hint">Se aplică pe prețul de vânzare, în „Produse” și în „Pregătire Base” (prețul minim și maxim se schimbă odată cu prețul).</p>
+        <form id="form-mult" class="cred-form">
+          <label class="field">
+            <span>Preț recomandat (PRP)</span>
+            <input type="number" id="mult-prp" min="0" step="0.01" placeholder="1.15" />
+          </label>
+          <label class="field">
+            <span>Preț minim</span>
+            <input type="number" id="mult-min" min="0" step="0.01" placeholder="0.85" />
+          </label>
+          <label class="field">
+            <span>Preț maxim</span>
+            <input type="number" id="mult-max" min="0" step="0.01" placeholder="1.30" />
+          </label>
+          <div class="cred-form-actions">
+            <button type="submit" class="btn" id="btn-save-mult">Salvează multiplicatorii</button>
+          </div>
+        </form>
+      </section>
 
       <section id="emag" class="cred-section" aria-labelledby="emag-title">
         <div class="cred-section-head">
@@ -133,6 +157,6 @@
         </form>
       </section>
     </div>
-    <script src="settings.js"></script>
+    <script src="settings.js?v=20261027-1"></script>
   </body>
 </html>

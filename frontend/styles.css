@@ -4893,6 +4893,7 @@ td.col-procent-tren .procent-tren-suffix {
 .base-profit td.is-neg { color: var(--danger); font-weight: 600; }
 .base-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .base-actions .status.is-error { color: var(--danger); }
+.base-toolbar { margin: 0 0 12px; }
 
 .base-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .base-tab {
@@ -4958,3 +4959,23 @@ td.col-procent-tren .procent-tren-suffix {
 }
 .image-lightbox-link { display: block; }
 .image-lightbox-counter[hidden], .image-lightbox-nav[hidden] { display: none; }
+
+/* Compact „O poză”: doar poza principală, fără taburi și butoane */
+.table-wrap.is-mini td.col-images,
+.table-wrap.is-mini td[data-col="images"] {
+  min-width: 0;
+  width: 3rem;
+}
+
+.table-wrap.is-mini .product-images-tabs,
+.table-wrap.is-mini .product-images-note,
+.table-wrap.is-mini .product-images-actions,
+.table-wrap.is-mini .product-image-thumb:not(:first-child),
+.table-wrap.is-mini .product-image-thumb .btn-set-primary,
+.table-wrap.is-mini .product-image-thumb .btn-delete-image {
+  display: none;
+}
+
+.table-wrap.is-mini .product-image-thumb.is-primary img {
+  box-shadow: none;
+}
