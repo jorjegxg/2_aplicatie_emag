@@ -677,7 +677,7 @@ function imagesCellHtml(source, activePlatform = IMAGE_FALLBACK_PLATFORM) {
 
   const pushLabel = "↑ Base";
   const pushTarget = active === IMAGE_FALLBACK_PLATFORM ? "all" : active;
-  const pushTitle = "Verifică pozele pe toate limbile și trimite în Base";
+  const pushTitle = "Trimite produsul în Base (poze pe toate limbile, texte, preț)";
 
   return `<div class="product-images-cell">
     <div class="product-images-tabs">${tabs}</div>
@@ -817,6 +817,14 @@ const PROFIT_KEYS = new Set([
   "procent_profit_tren",
 ]);
 
+// Coloanele de profit editabile: scrii tinta, se recalculeaza pretul eMAG (si restul din el).
+const PROFIT_EDIT_COLS = [
+  ["profit_aer", "Profit final Aer", "lei"],
+  ["procent_profit_aer", "% profit Aer", "%"],
+  ["profit_tren", "Profit final Tren/Mare", "lei"],
+  ["procent_profit_tren", "% profit Tren/Mare", "%"],
+];
+
 function formatCalcValue(value, kind) {
   if (value == null || !Number.isFinite(value)) return "—";
   if (kind === "pct") return formatPercent(value * 100);
@@ -850,11 +858,11 @@ function recalcRow(tr, params = getCalcParams()) {
     const v = out ? out[key] : null;
     const ok = v != null && Number.isFinite(v);
     td.dataset.value = ok ? String(kind === "pct" ? v * 100 : v) : "";
-    const editInput = td.querySelector("input.input-procent-tren");
+    const editInput = td.querySelector("input.input-profit-target");
     if (editInput) {
       // Nu suprascriu ce scrie utilizatorul; la blur se reafiseaza valoarea calculata.
       if (document.activeElement !== editInput) {
-        editInput.value = ok ? String(Math.round(v * 10000) / 100) : "";
+        editInput.value = ok ? String(Math.round((kind === "pct" ? v * 100 : v) * 100) / 100) : "";
       }
     } else {
       td.textContent = formatCalcValue(v, kind);
@@ -971,7 +979,7 @@ function rowHtml(product, index) {
     name: `<td data-col="name"${cellClass("name", "col-name")}><textarea class="input-name" rows="3">${escapeHtml(product.name || "")}</textarea></td>`,
     images: `<td data-col="images"${cellClass("images", "col-images")} data-count="${imagesCount}">${imagesCellHtml(imagesByPlatform)}</td>`,
     description: `<td data-col="description"${cellClass("description", "col-description")}><textarea class="input-description" rows="3">${escapeHtml(product.description || "")}</textarea></td>`,
-    part_number: `<td data-col="part_number"${cellClass("part_number")}>${escapeHtml(product.part_number) || "—"}</td>`,
+    part_number: `<td data-col="part_number"${cellClass("part_number")}>${product.part_number ? `<button type="button" class="btn-copy" data-copy="${escapeHtml(product.part_number)}" title="Copiază">${escapeHtml(product.part_number)}</button>` : "—"}</td>`,
     id_familie: `<td data-col="id_familie"${cellClass("id_familie")}>${escapeHtml(product.id_familie) || "—"}</td>`,
     familie: `<td data-col="familie"${cellClass("familie")}>${escapeHtml(product.familie) || "—"}</td>`,
     pret_cumparare: `<td data-col="pret_cumparare"${cellClass("pret_cumparare", "col-calc")} data-value="${escapeHtml(pretCumparare)}">${formatPrice(pretCumparare, currency)}</td>`,
@@ -1003,7 +1011,12 @@ function rowHtml(product, index) {
         `<td data-col="${key}"${cellClass(key, "col-calc")} data-value="">—</td>`,
       ])
     ),
-    procent_profit_tren: `<td data-col="procent_profit_tren"${cellClass("procent_profit_tren", "col-calc col-procent-tren")} data-value=""><div class="procent-tren-wrap"><input type="number" class="input-procent-tren" step="0.01" title="Scrie procentul dorit: prețul eMAG se recalculează" aria-label="% profit Tren/Mare" /><span class="procent-tren-suffix">%</span></div></td>`,
+    ...Object.fromEntries(
+      PROFIT_EDIT_COLS.map(([key, label, unit]) => [
+        key,
+        `<td data-col="${key}"${cellClass(key, "col-calc col-profit-edit")} data-value=""><div class="profit-edit-wrap"><input type="number" class="input-profit-target" data-profit-key="${key}" step="0.01" title="Scrie ${unit === "%" ? "procentul" : "profitul"} dorit: prețul eMAG și celelalte profituri se recalculează" aria-label="${label}" /><span class="profit-edit-suffix">${unit}</span></div></td>`,
+      ])
+    ),
   };
   return `<tr data-offer-id="${escapeHtml(product.id)}"${productIdAttr}${rowClasses ? ` class="${rowClasses}"` : ""} data-original-sale="${escapeHtml(salePrice)}" data-original-stock="${escapeHtml(stockVal)}" data-original-name="${escapeHtml(product.name || "")}" data-original-description="" data-pret-cumparare="${escapeHtml(pretCumparare)}" data-currency="${escapeHtml(currency)}" data-original-prp="${escapeHtml(product.recommended_price ?? "")}" data-original-min="${escapeHtml(product.min_sale_price ?? "")}" data-original-max="${escapeHtml(product.max_sale_price ?? "")}" data-vat-id="${escapeHtml(product.vat_id ?? "")}" data-stock="${stockJson}" data-handling-time="${handlingJson}"${hasMinOverrideFlag ? ` data-min-override="${escapeHtml(minInputVal)}"` : ""}>
     ${columns.order.map((col) => cells[col] || "").join("")}
@@ -1429,12 +1442,12 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// La iesirea din % profit Tren/Mare se afiseaza procentul real (dupa rotunjirea pretului).
+// La iesirea dintr-un profit editabil se afiseaza valoarea reala (dupa rotunjirea pretului).
 tbody.addEventListener("focusout", (e) => {
-  const procentTrenInput = e.target.closest("input.input-procent-tren");
-  if (!procentTrenInput) return;
-  procentTrenInput.classList.remove("is-invalid");
-  const tr = procentTrenInput.closest("tr[data-offer-id]");
+  const profitInput = e.target.closest("input.input-profit-target");
+  if (!profitInput) return;
+  profitInput.classList.remove("is-invalid");
+  const tr = profitInput.closest("tr[data-offer-id]");
   if (tr) recalcRow(tr);
 });
 
@@ -1634,14 +1647,9 @@ tbody.addEventListener("click", (e) => {
   }
 });
 
-/** Pozele nu mai pleacă direct pe eMAG: se verifică și se trimit din „Pregătire Base”. */
+/** Pozele nu mai pleacă direct pe eMAG: se trimite tot produsul în Base. */
 async function handleProductImagesPush(btn) {
-  const productId = btn.closest("tr[data-offer-id]")?.dataset.productId;
-  if (!productId) {
-    setStatus("Produs fără product_id — nu pot deschide pregătirea pentru Base.", "error");
-    return;
-  }
-  await openInBase(productId);
+  await pushRowToBase(btn.closest("tr[data-offer-id]"), btn);
 }
 
 async function handleProductImagesSelected(input) {
@@ -1877,17 +1885,20 @@ tbody.addEventListener("input", (e) => {
     return;
   }
 
-  const procentTrenInput = e.target.closest("input.input-procent-tren");
-  if (procentTrenInput) {
-    const tr = procentTrenInput.closest("tr[data-offer-id]");
+  const profitInput = e.target.closest("input.input-profit-target");
+  if (profitInput) {
+    const tr = profitInput.closest("tr[data-offer-id]");
     const saleInput = tr?.querySelector("input.input-sale-price");
-    if (!tr || !saleInput || procentTrenInput.value === "") return;
-    const pret = Calc.pretPentruProcentTren(
+    if (!tr || !saleInput || profitInput.value === "") return;
+    const key = profitInput.dataset.profitKey;
+    const tinta = Number(profitInput.value);
+    const pret = Calc.pretPentruProfit(
       readRowCalcInput(tr),
       getCalcParams(),
-      Number(procentTrenInput.value) / 100
+      key,
+      key.startsWith("procent_") ? tinta / 100 : tinta
     );
-    procentTrenInput.classList.toggle("is-invalid", pret == null);
+    profitInput.classList.toggle("is-invalid", pret == null);
     if (pret == null) return;
     saleInput.value = String(Math.round(pret * 100) / 100);
     applyRowPrices(tr, saleInput.value);
@@ -2268,7 +2279,7 @@ try {
 function pushAllRowButtonHtml(product) {
   const productId = product.product_id != null && product.product_id !== "" ? String(product.product_id) : "";
   const title = productId
-    ? "Deschide produsul în „Pregătire Base” (poze, texte, profit, trimitere)"
+    ? "Trimite produsul în Base (poze, texte, preț)"
     : "Produsul nu e legat de catalog — nu are ce trimite";
   return `<button type="button" class="btn-push-row btn-push-all-row"${productId ? "" : " disabled"} title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">⬆</button>`;
 }
@@ -2285,17 +2296,71 @@ async function openInBase(productId) {
   window.location.href = `/base.html${productId ? `?id=${encodeURIComponent(productId)}` : ""}`;
 }
 
-/** Deschide produsul de pe rand in „Pregătire Base”. */
-async function pushRowAllChannels(tr) {
+/** Trimite produsul de pe rand direct in Base (dupa ce salveaza editarile, fiindca pleaca ce e in DB). */
+async function pushRowToBase(tr, button) {
   const productId = tr?.dataset.productId;
-  if (productId) await openInBase(productId);
+  if (!productId) {
+    setStatus("Produs fără product_id — nu are ce trimite în Base.", "error");
+    return;
+  }
+  if (hasUnsavedChanges()) {
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și trimit produsul în Base?")) return;
+    if (!(await saveAll())) return;
+  }
+  if (button) button.disabled = true;
+  setStatus("Trimit produsul în Base…", "loading");
+  try {
+    const res = await fetch(`/api/base/product/${encodeURIComponent(productId)}/push`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (data.dry_run) {
+      setStatus("Nu s-a trimis nimic (BASE_SEND=0). Vezi în „Pregătire Base” ce ar pleca.", "error");
+      return;
+    }
+    const warnings = data.preview?.warnings || [];
+    setStatus(
+      `${data.created ? "Creat" : "Actualizat"} în Base (#${data.base_product_id}).` +
+        (warnings.length ? ` Atenție: ${warnings.join("; ")}` : ""),
+      warnings.length ? "error" : "ok"
+    );
+  } catch (err) {
+    setStatus(`Nu s-a putut trimite în Base: ${err.message}`, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
+
+tbody.addEventListener("click", async (event) => {
+  const button = event.target.closest("button.btn-copy");
+  if (!button) return;
+  event.stopPropagation();
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(button.dataset.copy);
+    } else {
+      // http (fara HTTPS): clipboard API indisponibil
+      const ta = document.createElement("textarea");
+      ta.value = button.dataset.copy;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (!ok) throw new Error("copy failed");
+    }
+    button.classList.add("is-copied");
+    setTimeout(() => button.classList.remove("is-copied"), 1200);
+  } catch {
+    button.title = "Nu s-a putut copia";
+  }
+});
 
 tbody.addEventListener("click", (event) => {
   const button = event.target.closest("button.btn-push-all-row");
   if (!button) return;
   event.stopPropagation();
-  void pushRowAllChannels(button.closest("tr"));
+  void pushRowToBase(button.closest("tr"), button);
 });
 
 /** „Pregătire Base” inlocuieste publicarea directa pe canale. */

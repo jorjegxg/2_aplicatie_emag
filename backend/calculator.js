@@ -246,24 +246,38 @@
   }
 
   /**
-   * Pretul de vanzare (S) la care % profit Tren/Mare = procent (fractie, 0.2 = 20%).
-   * Profitul e liniar in S (a*S + b) si U = k*S, deci S = b / (procent*k - a).
-   * null daca lipsesc datele sau procentul nu se poate atinge (peste limita a/k).
+   * Pretul de vanzare (S) la care o coloana de profit atinge tinta:
+   *   profit_aer / profit_tren (lei), procent_profit_aer / procent_profit_tren (fractie, 0.2 = 20%).
+   * Profitul e liniar in S (a*S + b): pentru lei S = (tinta - b) / a; pentru % tinta = profit / (m*S),
+   * cu m = 1 la Aer (raportat la S) si m = U/S la Tren/Mare (raportat la U), deci S = b / (tinta*m - a).
+   * null daca lipsesc datele sau tinta nu se poate atinge.
    */
-  function pretPentruProcentTren(input, params, procent) {
-    const target = num(procent);
+  function pretPentruProfit(input, params, key, tinta) {
+    const target = num(tinta);
     if (target == null) return null;
+    const ruta = key === "profit_aer" || key === "procent_profit_aer" ? "profit_aer" : "profit_tren";
     const at = (s) => calcProduct({ ...input, pret_vanzare: s }, params);
     const r1 = at(100);
     const r2 = at(200);
-    if (!r1 || !r2 || r1.profit_tren == null || r2.profit_tren == null) return null;
-    const a = (r2.profit_tren - r1.profit_tren) / 100;
-    const b = r1.profit_tren - a * 100;
-    const k = r1.pret_vanzare_fara_tva / 100;
-    const denom = target * k - a;
-    if (Math.abs(denom) < 1e-12) return null;
-    const s = b / denom;
+    if (!r1 || !r2 || r1[ruta] == null || r2[ruta] == null) return null;
+    const a = (r2[ruta] - r1[ruta]) / 100;
+    const b = r1[ruta] - a * 100;
+    let s;
+    if (key === "profit_aer" || key === "profit_tren") {
+      if (Math.abs(a) < 1e-12) return null;
+      s = (target - b) / a;
+    } else {
+      const m = key === "procent_profit_aer" ? 1 : r1.pret_vanzare_fara_tva / 100;
+      const denom = target * m - a;
+      if (Math.abs(denom) < 1e-12) return null;
+      s = b / denom;
+    }
     return Number.isFinite(s) && s > 0 ? s : null;
+  }
+
+  /** Pretul de vanzare (S) la care % profit Tren/Mare = procent (fractie, 0.2 = 20%). */
+  function pretPentruProcentTren(input, params, procent) {
+    return pretPentruProfit(input, params, "procent_profit_tren", procent);
   }
 
   return {
@@ -275,6 +289,7 @@
     greutateVolumetrica,
     greutateCalcul,
     calcProduct,
+    pretPentruProfit,
     pretPentruProcentTren,
   };
 });

@@ -4756,14 +4756,14 @@ td .input-text-field {
   gap: 0.6rem;
 }
 
-td.col-procent-tren .procent-tren-wrap {
+td.col-profit-edit .profit-edit-wrap {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 0.25rem;
 }
 
-td.col-procent-tren .input-procent-tren {
+td.col-profit-edit .input-profit-target {
   width: 4.5rem;
   font: inherit;
   font-size: 0.875rem;
@@ -4776,17 +4776,17 @@ td.col-procent-tren .input-procent-tren {
   background: var(--surface);
 }
 
-td.col-procent-tren .input-procent-tren:focus {
+td.col-profit-edit .input-profit-target:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-color: var(--accent);
 }
 
-td.col-procent-tren .input-procent-tren.is-invalid {
+td.col-profit-edit .input-profit-target.is-invalid {
   border-color: var(--danger);
   outline-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
-td.col-procent-tren .procent-tren-suffix {
+td.col-profit-edit .profit-edit-suffix {
   color: var(--muted);
   font-size: 0.875rem;
   font-weight: 600;
@@ -4978,4 +4978,30 @@ td.col-procent-tren .procent-tren-suffix {
 
 .table-wrap.is-mini .product-image-thumb.is-primary img {
   box-shadow: none;
+}
+
+.btn-copy {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  cursor: copy;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-copy:hover {
+  border-color: currentColor;
+}
+
+.btn-copy.is-copied {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+.btn-copy.is-copied::after {
+  content: " ✓";
 }
