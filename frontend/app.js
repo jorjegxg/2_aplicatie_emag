@@ -143,6 +143,7 @@ const BUILTIN_PRESETS = [
       "pret_achiz_china",
       "greutate",
       "greutate_volumetrica",
+      "greutate_calcul",
       "transport_aer",
       "transport_tren",
       "taxe_vamale_aer",
@@ -187,6 +188,7 @@ const BUILTIN_PRESETS = [
       ...PRESET_BASE,
       "greutate",
       "greutate_volumetrica",
+      "greutate_calcul",
       "inaltime",
       "lungime",
       "latime",
@@ -759,6 +761,13 @@ function applyWeightHighlight(tr) {
   volTd.dataset.value = vol == null ? "" : String(vol);
   volTd.textContent = formatGreutateVolumetrica(vol);
 
+  const calcTd = tr.querySelector('td[data-col="greutate_calcul"]');
+  if (calcTd) {
+    const calc = Calc.greutateCalcul(greutate, dimVal("latime"), dimVal("lungime"), dimVal("inaltime"));
+    calcTd.dataset.value = calc == null ? "" : String(calc);
+    calcTd.textContent = formatGreutateVolumetrica(calc);
+  }
+
   greutateTd.classList.remove("is-dim-blue", "is-dim-gray");
   volTd.classList.remove("is-dim-blue", "is-dim-gray");
 
@@ -946,6 +955,7 @@ function rowHtml(product, index) {
   const lungime = dimVal(product.lungime);
   const latime = dimVal(product.latime);
   const greutateVol = calcGreutateVolumetrica(latime, lungime, inaltime);
+  const greutateCalc = Calc.greutateCalcul(greutate, latime, lungime, inaltime);
   const greutateNum = greutate === "" ? null : Number(greutate);
   const greutateOk = greutateNum != null && Number.isFinite(greutateNum);
   const volOk = greutateVol != null && Number.isFinite(greutateVol);
@@ -992,6 +1002,7 @@ function rowHtml(product, index) {
     stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" readonly title="Stocul din Base (se actualizează la 10 minute); se schimbă în Base" /></td>`,
     greutate: `<td data-col="greutate"${cellClass("greutate", greutateExtra)}><input type="number" class="input-dim" data-dim-field="greutate" min="0" step="0.001" value="${escapeHtml(greutate)}" /></td>`,
     greutate_volumetrica: `<td data-col="greutate_volumetrica"${cellClass("greutate_volumetrica", volExtra)} data-value="${escapeHtml(greutateVol ?? "")}">${formatGreutateVolumetrica(greutateVol)}</td>`,
+    greutate_calcul: `<td data-col="greutate_calcul"${cellClass("greutate_calcul")} data-value="${escapeHtml(greutateCalc ?? "")}">${formatGreutateVolumetrica(greutateCalc)}</td>`,
     inaltime: `<td data-col="inaltime"${cellClass("inaltime", "col-dim")}><input type="number" class="input-dim" data-dim-field="inaltime" min="0" step="0.01" value="${escapeHtml(inaltime)}" /></td>`,
     lungime: `<td data-col="lungime"${cellClass("lungime", "col-dim")}><input type="number" class="input-dim" data-dim-field="lungime" min="0" step="0.01" value="${escapeHtml(lungime)}" /></td>`,
     latime: `<td data-col="latime"${cellClass("latime", "col-dim")}><input type="number" class="input-dim" data-dim-field="latime" min="0" step="0.01" value="${escapeHtml(latime)}" /></td>`,
@@ -1048,7 +1059,7 @@ function getCellSortValue(tr, col) {
     const input = td.querySelector("input");
     return parseSortNumber(input?.value);
   }
-  if (col === "prp" || col === "pret_maxim" || col === "greutate_volumetrica") {
+  if (col === "prp" || col === "pret_maxim" || col === "greutate_volumetrica" || col === "greutate_calcul") {
     return parseSortNumber(td.dataset.value);
   }
   if (col === "stoc") {
@@ -1157,7 +1168,7 @@ function getCellFilterText(tr, col) {
   ) {
     return String(td.querySelector("input")?.value ?? "").trim();
   }
-  if (col === "greutate_volumetrica") {
+  if (col === "greutate_volumetrica" || col === "greutate_calcul") {
     const raw = td.dataset.value;
     if (raw != null && raw !== "") return String(raw).trim();
     const text = (td.textContent || "").trim();
@@ -2025,6 +2036,7 @@ const EXPORT_NUMERIC_COLS = new Set([
   "stoc",
   "greutate",
   "greutate_volumetrica",
+  "greutate_calcul",
   "inaltime",
   "lungime",
   "latime",
@@ -2181,6 +2193,14 @@ table.querySelector("thead tr.filter-row")?.addEventListener("input", (e) => {
 table.querySelector("thead tr.filter-row")?.addEventListener("click", (e) => {
   e.stopPropagation();
 });
+
+// Rândul de filtre stă lipit sub antet; antetul își schimbă înălțimea (etichete pe 2-3 rânduri, coloane redimensionate).
+const theadLabelRow = table.querySelector("thead tr:not(.filter-row)");
+if (theadLabelRow) {
+  new ResizeObserver(() => {
+    table.style.setProperty("--thead-row-h", `${theadLabelRow.getBoundingClientRect().height}px`);
+  }).observe(theadLabelRow);
+}
 
 function onCalcParamInput() {
   updateCalcParamsDerived();

@@ -606,7 +606,8 @@ thead tr:not(.filter-row) th[data-src="listing"]:hover {
 }
 
 .filter-row th {
-  top: 2.45rem;
+  /* Înălțimea reală a rândului de antet, măsurată în app.js (antetele se pot rupe pe 2-3 rânduri). */
+  top: var(--thead-row-h, 2.45rem);
   z-index: 2;
   padding: 0.35rem 0.5rem;
   font-weight: 400;
@@ -837,6 +838,10 @@ td.col-dim .input-dim:focus {
 td.col-dim.is-dim-blue .input-dim,
 td[data-col="greutate_volumetrica"].is-dim-blue {
   color: var(--accent);
+  font-weight: 700;
+}
+
+td[data-col="greutate_calcul"] {
   font-weight: 700;
 }
 
