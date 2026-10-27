@@ -4973,3 +4973,5 @@ td.col-procent-tren .procent-tren-suffix {
   .base-list-pane { position: static; max-height: 320px; }
   .base-desc-row { grid-template-columns: minmax(0, 1fr); }
 }
+.image-lightbox-link { display: block; }
+.image-lightbox-counter[hidden], .image-lightbox-nav[hidden] { display: none; }

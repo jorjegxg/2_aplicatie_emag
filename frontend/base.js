@@ -242,7 +242,7 @@
       ? imgs.list
           .map(
             (img, i) =>
-              '<a class="base-photo" href="' + escapeHtml(img.url) + '" target="_blank" rel="noopener" title="Deschide la 100%">' +
+              '<a class="base-photo" href="' + escapeHtml(img.url) + '" target="_blank" rel="noopener" title="Mărește">' +
               '<img src="' + escapeHtml(img.url) + '" alt="Poza ' + (i + 1) + '" loading="lazy" /><span>' + (i + 1) + "</span></a>"
           )
           .join("")
@@ -422,6 +422,83 @@
       .catch((err) => setStatus("base-push-status", err.message, true));
   }
 
+  /* ---------------- poze la mărime mare (săgeți ‹ ›, tastatură, swipe) ---------------- */
+
+  const lightbox = document.createElement("div");
+  lightbox.className = "image-lightbox";
+  lightbox.hidden = true;
+  lightbox.innerHTML =
+    '<div class="image-lightbox-overlay" data-lightbox-close></div>' +
+    '<div class="image-lightbox-stage" role="dialog" aria-modal="true" aria-label="Poză produs">' +
+    '<button type="button" class="image-lightbox-close" data-lightbox-close aria-label="Închide">×</button>' +
+    '<button type="button" class="image-lightbox-nav image-lightbox-prev" data-lightbox-step="-1" aria-label="Anterioara">‹</button>' +
+    '<a class="image-lightbox-link" target="_blank" rel="noopener" title="Deschide la 100%"><img class="image-lightbox-img" alt="" /></a>' +
+    '<button type="button" class="image-lightbox-nav image-lightbox-next" data-lightbox-step="1" aria-label="Următoarea">›</button>' +
+    '<p class="image-lightbox-counter"></p>' +
+    "</div>";
+  document.body.appendChild(lightbox);
+  const lbImg = lightbox.querySelector(".image-lightbox-img");
+  const lbLink = lightbox.querySelector(".image-lightbox-link");
+  const lbCounter = lightbox.querySelector(".image-lightbox-counter");
+  let lbUrls = [];
+  let lbIndex = 0;
+
+  function showLightbox() {
+    const url = lbUrls[lbIndex];
+    lbImg.src = url;
+    lbLink.href = url;
+    const multi = lbUrls.length > 1;
+    lightbox.querySelectorAll(".image-lightbox-nav").forEach((b) => (b.hidden = !multi));
+    lbCounter.hidden = !multi;
+    lbCounter.textContent = lbIndex + 1 + " / " + lbUrls.length;
+    // Următoarea se încarcă din timp, ca săgeata să nu aștepte.
+    if (multi) new Image().src = lbUrls[(lbIndex + 1) % lbUrls.length];
+  }
+
+  function openLightbox(urls, index) {
+    lbUrls = urls;
+    lbIndex = index;
+    showLightbox();
+    lightbox.hidden = false;
+    document.body.classList.add("modal-open");
+  }
+
+  function closeLightbox() {
+    lightbox.hidden = true;
+    document.body.classList.remove("modal-open");
+    lbImg.removeAttribute("src");
+  }
+
+  function stepLightbox(delta) {
+    if (lbUrls.length < 2) return;
+    lbIndex = (lbIndex + delta + lbUrls.length) % lbUrls.length;
+    showLightbox();
+  }
+
+  lightbox.addEventListener("click", (e) => {
+    if (e.target.closest("[data-lightbox-close]")) closeLightbox();
+    const step = e.target.closest("[data-lightbox-step]");
+    if (step) stepLightbox(Number(step.dataset.lightboxStep));
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (lightbox.hidden) return;
+    if (e.key === "Escape") closeLightbox();
+    else if (e.key === "ArrowLeft") stepLightbox(-1);
+    else if (e.key === "ArrowRight") stepLightbox(1);
+    else return;
+    e.preventDefault();
+  });
+
+  let touchX = null;
+  lightbox.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
+  lightbox.addEventListener("touchend", (e) => {
+    if (touchX == null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 40) stepLightbox(dx < 0 ? 1 : -1);
+  });
+
   els.list.addEventListener("click", (e) => {
     const btn = e.target.closest("button.base-item");
     if (btn) loadDetail(Number(btn.dataset.id)).catch((err) => (els.detail.textContent = err.message));
@@ -430,6 +507,14 @@
   els.q.addEventListener("input", renderList);
 
   els.detail.addEventListener("click", (e) => {
+    const photo = e.target.closest("a.base-photo");
+    // Ctrl/Cmd/clic din mijloc deschid tot în tab nou, la 100%.
+    if (photo && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0)) {
+      e.preventDefault();
+      const all = [...els.detail.querySelectorAll("a.base-photo")];
+      openLightbox(all.map((a) => a.href), all.indexOf(photo));
+      return;
+    }
     const tab = e.target.closest("button.base-tab");
     if (tab) {
       currentLang = tab.dataset.lang;
