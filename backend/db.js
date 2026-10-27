@@ -1,34 +1,5 @@
-const { query, withTransaction, ensureSchema } = require("./pg");
+const { query, ensureSchema } = require("./pg");
 const { normalizeParams } = require("./calculator");
-
-async function lookupPretCumparare(partNumber, name) {
-  await ensureSchema();
-  const cod = String(partNumber ?? "").trim();
-  if (cod) {
-    const { rows } = await query(
-      `SELECT pret_cumparare FROM catalog_products
-       WHERE LOWER(cod_produs) = LOWER($1) LIMIT 1`,
-      [cod]
-    );
-    if (rows[0] && rows[0].pret_cumparare != null) {
-      return Number(rows[0].pret_cumparare);
-    }
-  }
-
-  const nume = String(name ?? "").trim();
-  if (nume) {
-    const { rows } = await query(
-      `SELECT pret_cumparare FROM catalog_products
-       WHERE LOWER(nume) = LOWER($1) LIMIT 1`,
-      [nume]
-    );
-    if (rows[0] && rows[0].pret_cumparare != null) {
-      return Number(rows[0].pret_cumparare);
-    }
-  }
-
-  return null;
-}
 
 async function getSettings() {
   await ensureSchema();
@@ -72,38 +43,6 @@ async function saveSettings({
     ]);
   }
   return getSettings();
-}
-
-const PRICE_EPSILON = 0.00005;
-
-async function recordPretEmagIfChanged(offerId, salePrice, currency, source, channel = "emag") {
-  await ensureSchema();
-  const id = Number(offerId);
-  const price = Number(salePrice);
-  if (!Number.isFinite(id) || !Number.isFinite(price)) return null;
-
-  const ch = String(channel || "emag").trim().toLowerCase() || "emag";
-
-  const { rows: lastRows } = await query(
-    `SELECT sale_price FROM product_pret_emag_history
-     WHERE offer_id = $1 AND channel = $2
-     ORDER BY recorded_at DESC, id DESC LIMIT 1`,
-    [id, ch]
-  );
-  const last = lastRows[0];
-
-  if (last != null && Math.abs(Number(last.sale_price) - price) <= PRICE_EPSILON) {
-    return null;
-  }
-
-  const recorded_at = new Date().toISOString();
-  await query(
-    `INSERT INTO product_pret_emag_history
-       (offer_id, sale_price, currency, recorded_at, source, channel)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, price, currency || null, recorded_at, source || null, ch]
-  );
-  return { offer_id: id, sale_price: price, recorded_at, source: source || null, channel: ch };
 }
 
 async function getPretEmagHistory(offerId, channel = "emag") {
@@ -171,61 +110,6 @@ async function getLastPriceChangeBulk(offerIds, channel = "emag") {
   }
 }
 
-async function upsertOrderLines(lines) {
-  await ensureSchema();
-  const list = Array.isArray(lines) ? lines : [];
-
-  const toNum = (v) => {
-    if (v == null || v === "") return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  try {
-    return await withTransaction(async (client) => {
-      let count = 0;
-      for (const r of list) {
-        const line_id = toNum(r?.line_id);
-        const order_id = toNum(r?.order_id);
-        if (line_id == null || order_id == null) continue;
-        await client.query(
-          `INSERT INTO order_line_history
-             (line_id, order_id, channel, product_id, part_number, name, quantity, sale_price, status, currency, order_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-           ON CONFLICT (line_id) DO UPDATE SET
-             order_id = EXCLUDED.order_id,
-             channel = EXCLUDED.channel,
-             product_id = EXCLUDED.product_id,
-             part_number = EXCLUDED.part_number,
-             name = EXCLUDED.name,
-             quantity = EXCLUDED.quantity,
-             sale_price = EXCLUDED.sale_price,
-             status = EXCLUDED.status,
-             currency = EXCLUDED.currency,
-             order_date = EXCLUDED.order_date`,
-          [
-            line_id,
-            order_id,
-            String(r?.channel || "emag").trim().toLowerCase() || "emag",
-            toNum(r?.product_id),
-            r?.part_number ?? null,
-            r?.name ?? null,
-            toNum(r?.quantity),
-            toNum(r?.sale_price),
-            toNum(r?.status),
-            r?.currency ?? null,
-            r?.order_date ?? null,
-          ]
-        );
-        count += 1;
-      }
-      return count;
-    });
-  } catch {
-    return 0;
-  }
-}
-
 async function getOrderLinesForProduct(offerId) {
   await ensureSchema();
   const id = Number(offerId);
@@ -256,11 +140,8 @@ async function getOrderLinesForProduct(offerId) {
 }
 
 module.exports = {
-  lookupPretCumparare,
-  recordPretEmagIfChanged,
   getPretEmagHistory,
   getLastPriceChangeBulk,
-  upsertOrderLines,
   getOrderLinesForProduct,
   getSettings,
   saveSettings,

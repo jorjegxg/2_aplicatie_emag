@@ -137,6 +137,23 @@ async function addInventoryProduct(product) {
   return Number(data.product_id);
 }
 
+/** Id-ul producătorului din Base după nume; îl creează dacă lipsește (doar cu BASE_SEND=1). */
+const manufacturerIds = new Map();
+async function ensureManufacturer(name) {
+  const key = String(name || "").trim();
+  if (!key) return 0;
+  if (manufacturerIds.has(key.toLowerCase())) return manufacturerIds.get(key.toLowerCase());
+  const data = await call("getInventoryManufacturers");
+  for (const m of data.manufacturers || []) {
+    manufacturerIds.set(String(m.name).trim().toLowerCase(), Number(m.manufacturer_id));
+  }
+  if (!manufacturerIds.has(key.toLowerCase()) && sendEnabled()) {
+    const added = await call("addInventoryManufacturer", { name: key });
+    manufacturerIds.set(key.toLowerCase(), Number(added.manufacturer_id));
+  }
+  return manufacturerIds.get(key.toLowerCase()) || 0;
+}
+
 /** items: [{ base_product_id, price }] — lista de prețuri BASE_PRICE_GROUP_ID. */
 async function updatePrices(items) {
   const { inventoryId, priceGroupId } = config();
@@ -198,6 +215,7 @@ module.exports = {
   findProducts,
   getProductsData,
   addInventoryProduct,
+  ensureManufacturer,
   updatePrices,
   updateStock,
   getStatus,

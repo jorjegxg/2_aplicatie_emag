@@ -29,6 +29,7 @@ const exportMenu = document.getElementById("export-menu");
 const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const btnCompactProducts = document.getElementById("btn-compact-products");
 const btnPushAll = document.getElementById("btn-sync");
+const btnFetchCommission = document.getElementById("btn-fetch-commission");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
 const tbody = document.getElementById("products-body");
@@ -998,7 +999,7 @@ function rowHtml(product, index) {
     prp: `<td data-col="prp"${cellClass("prp", prpExtra)} data-value="${escapeHtml(product.recommended_price ?? "")}">${formatPrice(product.recommended_price, currency)}</td>`,
     pret_minim: `<td data-col="pret_minim"${cellClass("pret_minim", hasMinOverrideFlag ? "col-pret-minim is-min-override" : "col-pret-minim")} data-value="${escapeHtml(minInputVal)}"><div class="pret-minim-wrap"><input type="number" class="input-pret-minim" min="0" step="0.01" value="${escapeHtml(minInputVal)}" /><button type="button" class="btn-reset-min"${hasMinOverrideFlag ? "" : " hidden"} aria-label="Revine la multiplicator">×</button></div></td>`,
     pret_maxim: `<td data-col="pret_maxim"${cellClass("pret_maxim")} data-value="${escapeHtml(product.max_sale_price ?? "")}">${formatPrice(product.max_sale_price, currency)}</td>`,
-    stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" /></td>`,
+    stoc: `<td data-col="stoc"${cellClass("stoc", "col-stoc")}><input type="number" class="input-stock" min="0" step="1" value="${escapeHtml(stockVal)}" readonly title="Stocul din Base (se actualizează la 10 minute); se schimbă în Base" /></td>`,
     greutate: `<td data-col="greutate"${cellClass("greutate", greutateExtra)}><input type="number" class="input-dim" data-dim-field="greutate" min="0" step="0.001" value="${escapeHtml(greutate)}" /></td>`,
     greutate_volumetrica: `<td data-col="greutate_volumetrica"${cellClass("greutate_volumetrica", volExtra)} data-value="${escapeHtml(greutateVol ?? "")}">${formatGreutateVolumetrica(greutateVol)}</td>`,
     inaltime: `<td data-col="inaltime"${cellClass("inaltime", "col-dim")}><input type="number" class="input-dim" data-dim-field="inaltime" min="0" step="0.01" value="${escapeHtml(inaltime)}" /></td>`,
@@ -2314,6 +2315,49 @@ async function pushAllChannels() {
 }
 
 btnPushAll?.addEventListener("click", pushAllChannels);
+
+/* ---------- comisionul eMAG (citit din eMAG, la pretul din tabel) ---------- */
+
+async function fetchCommissions() {
+  if (hasUnsavedChanges()) {
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și citesc comisionul?")) return;
+    if (!(await saveAll())) return;
+  }
+  const items = [...tbody.querySelectorAll("tr[data-offer-id]")]
+    .map((tr) => ({
+      id: tr.dataset.offerId,
+      sale_price: Number(tr.querySelector("input.input-sale-price")?.value),
+    }))
+    .filter((item) => item.id && Number.isFinite(item.sale_price) && item.sale_price > 0);
+  if (!items.length) {
+    setStatus("Niciun produs cu preț de vânzare — nu am pentru ce citi comisionul.", "error");
+    return;
+  }
+  btnFetchCommission.disabled = true;
+  setStatus(`Citesc comisionul eMAG pentru ${items.length} produse…`, "loading");
+  try {
+    const res = await fetch("/api/products/fetch-commission?channel=emag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    await loadProducts();
+    const failed = data.errors || [];
+    setStatus(
+      `Comision actualizat la ${data.count} produse` +
+        (failed.length ? `; ${failed.length} cu eroare (ex. ${failed[0].id}: ${failed[0].error})` : "."),
+      failed.length ? "error" : "ok"
+    );
+  } catch (err) {
+    setStatus(`Comisionul nu s-a putut citi: ${err.message}`, "error");
+  } finally {
+    btnFetchCommission.disabled = false;
+  }
+}
+
+btnFetchCommission?.addEventListener("click", fetchCommissions);
 
 document.addEventListener("click", () => {
   if (exportMenu && !exportMenu.hidden) setExportMenuOpen(false);

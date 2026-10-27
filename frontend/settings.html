@@ -48,11 +48,8 @@
         <nav class="site-nav" aria-label="Navigare">
           <a href="/">Produse</a>
           <a href="/base.html">Pregătire Base</a>
-          <a href="/vanzari.html">Comenzi</a>
           <a href="/statistici.html">Statistici</a>
           <a href="/apeluri.html">Apeluri review</a>
-          <a href="/sync.html">Sincronizare</a>
-          <a href="/coada.html">Coadă</a>
           <a href="/logs.html">Logs</a>
           <a href="/settings.html" aria-current="page">Setări</a>
         </nav>
@@ -135,28 +132,7 @@
           </div>
         </form>
       </section>
-
-      <section id="notificari" class="cred-section" aria-labelledby="notif-title">
-        <div class="cred-section-head">
-          <h2 id="notif-title">Notificări</h2>
-          <span id="notif-badge" class="cred-badge">—</span>
-        </div>
-        <p class="notif-hint">
-          Alerte doar în <strong>bara de notificări</strong> pe telefon, inclusiv când
-          aplicația e închisă (Web Push). Necesită HTTPS. Pe iPhone: iOS 16.4+ și
-          „Adaugă pe ecranul principal”, apoi activează aici.
-        </p>
-        <label class="field field-checkbox notif-toggle">
-          <input type="checkbox" id="notif-orders-browser" />
-          <span>Notificări pe telefon pentru comenzi noi</span>
-        </label>
-        <div class="notif-actions">
-          <button type="button" class="btn btn-secondary" id="btn-notif-test">Testează notificarea</button>
-        </div>
-        <p id="notif-status" class="notif-status" role="status"></p>
-      </section>
     </div>
-    <script src="order-notifications.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

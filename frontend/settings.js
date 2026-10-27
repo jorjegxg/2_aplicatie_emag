@@ -11,10 +11,6 @@ const tyApiKey = document.getElementById("ty-api-key");
 const tyApiSecret = document.getElementById("ty-api-secret");
 const btnSaveEmag = document.getElementById("btn-save-emag");
 const btnSaveTrendyol = document.getElementById("btn-save-trendyol");
-const notifCheckbox = document.getElementById("notif-orders-browser");
-const notifBadge = document.getElementById("notif-badge");
-const notifStatus = document.getElementById("notif-status");
-const btnNotifTest = document.getElementById("btn-notif-test");
 
 function setStatus(message, kind = "") {
   statusEl.textContent = message || "";
@@ -126,77 +122,12 @@ async function saveTrendyol(e) {
   }
 }
 
-function syncNotifUi(message) {
-  const ON = window.OrderNotifications;
-  if (!ON || !notifCheckbox) return;
-  const enabled = ON.isEnabled();
-  notifCheckbox.checked = enabled;
-  const label = ON.permissionLabel();
-  if (notifBadge) {
-    const pushOk = enabled && typeof ON.isPushSubscribed === "function" && ON.isPushSubscribed();
-    notifBadge.textContent = pushOk ? "Push activ" : enabled && label === "Activ" ? "Activ" : label;
-    notifBadge.classList.toggle("is-ok", enabled && (pushOk || label === "Activ" || label === "Push activ"));
-    notifBadge.classList.toggle(
-      "is-missing",
-      !enabled || label === "Blocat" || label === "Nepermis" || label === "indisponibil"
-    );
-  }
-  if (notifStatus) {
-    notifStatus.textContent = message || "";
-  }
-}
-
-async function onNotifToggle() {
-  const ON = window.OrderNotifications;
-  if (!ON || !notifCheckbox) return;
-  if (notifCheckbox.checked) {
-    notifStatus.textContent = "Se cere permisiunea…";
-    const result = await ON.enable();
-    if (!result.ok) {
-      notifCheckbox.checked = false;
-      syncNotifUi(result.message || "Nu s-a putut activa.");
-      return;
-    }
-    syncNotifUi(result.message || "Notificările pentru comenzi noi sunt active.");
-    return;
-  }
-  await ON.disable();
-  syncNotifUi("Notificările sunt dezactivate.");
-}
-
-if (notifCheckbox) {
-  notifCheckbox.addEventListener("change", onNotifToggle);
-  if (window.OrderNotifications && typeof window.OrderNotifications.refreshPushState === "function") {
-    window.OrderNotifications.refreshPushState().finally(() => syncNotifUi(""));
-  } else {
-    syncNotifUi("");
-  }
-}
-
-if (btnNotifTest) {
-  btnNotifTest.addEventListener("click", async () => {
-    const ON = window.OrderNotifications;
-    if (!ON) return;
-    if (!ON.isEnabled() || typeof Notification === "undefined" || Notification.permission !== "granted") {
-      const result = await ON.enable();
-      if (!result.ok) {
-        notifCheckbox.checked = false;
-        syncNotifUi(result.message || "Nu s-a putut activa.");
-        return;
-      }
-      syncNotifUi("");
-    }
-    const test = await ON.sendTestNotification();
-    syncNotifUi(test.message || (test.ok ? "OK" : "Eșuat"));
-  });
-}
-
 formEmag.addEventListener("submit", saveEmag);
 formTrendyol.addEventListener("submit", saveTrendyol);
 
 loadCredentials().then(() => {
   const hash = (location.hash || "").replace(/^#/, "");
-  if (hash === "emag" || hash === "trendyol" || hash === "notificari") {
+  if (hash === "emag" || hash === "trendyol") {
     const el = document.getElementById(hash);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });

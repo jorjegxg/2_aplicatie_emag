@@ -3,33 +3,16 @@ const express = require("express");
 const path = require("path");
 const multer = require("multer");
 const XLSX = require("xlsx");
-const {
-  getSettings,
-  saveSettings,
-  recordPretEmagIfChanged,
-  getPretEmagHistory,
-  upsertOrderLines,
-  getOrderLinesForProduct,
-} = require("./db");
+const { getSettings, saveSettings, getPretEmagHistory, getOrderLinesForProduct } = require("./db");
 const {
   normalizeChannel,
-  setChannelRemotes,
-  upsertChannelRemote,
   clearChannelCache,
   getCatalogRows,
   updateListing,
   getListing,
-  getChannelRemotes,
-  getChannelViewRows,
-  replaceChannelPromotions,
-  upsertChannelPromotion,
   updateProduct,
   getProduct,
-  getProductOfferId,
-  getChannelDiff,
   getChannelStats,
-  getListingCosts,
-  lookupCatalogForOrderLine,
   recalcPretCumparare,
   touchesPretCumparareInputs,
   ensureSchema,
@@ -42,23 +25,14 @@ const {
   addImages,
   deleteImage,
   reorder: reorderImages,
-  listForProduct,
   listAllForProduct,
-  effectiveImages,
-  imagesStamp,
-  markImagesPushed,
-  getPushedFingerprints,
   listByPlatformForProductIds,
-  pickEffective,
-  IMAGES_PUBLIC,
   normalizePlatform,
   absoluteUrl,
   verifyImageSignature,
   getObjectStream,
-  S3_FOLDERS,
 } = require("./product-images");
 const { getChannel, listChannels } = require("./channels");
-const { httpError, pushOffersForChannel } = require("./channel-push");
 const {
   log,
   queryLogs,
@@ -66,38 +40,19 @@ const {
   clearLogs,
   pruneLogs,
 } = require("./logs-db");
-const { ITEMS_PER_PAGE, loadCredentials, authCandidates, authHeader, logAuthAttempt, logAuthResult, savePreferredAuthLabel, emagOrderRead } = require("./emag-client");
 const {
   publicCredentialsStatus,
   saveCredentialsPatch,
   getEmagCreds,
   getTrendyolCreds,
 } = require("./credentials-store");
-const {
-  processEmagOrderId,
-  pollRecentEmagOrders,
-  listLocalOrders,
-  listNewLocalOrders,
-  listStockMovements,
-} = require("./stock-movements");
-const { applyTrendyolPackage, pollRecentTrendyolOrders } = require("./trendyol-orders");
 const { query } = require("./pg");
-const emagQueue = require("./emag-queue");
 const baseClient = require("./base-client");
 const basePush = require("./base-push");
-const baseOrders = require("./base-orders");
-const { BLOCKED_MESSAGE } = require("./direct-writes");
+const { startBaseSync } = require("./base-sync");
 const { PLATFORMS: IMAGE_PLATFORMS } = require("./product-images");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
-const { calcProduct } = require("./calculator");
-const {
-  initPush,
-  getPublicKey,
-  saveSubscription,
-  removeSubscription,
-  sendTestPush,
-} = require("./push-notifications");
 const {
   isAuthEnabled,
   requireAppAuth,
@@ -108,8 +63,6 @@ const {
 
 const PORT = process.env.PORT || 3000;
 const COMMISSION_FETCH_CONCURRENCY = 5;
-const MAX_PULL_PAGES = 50;
-const activePulls = new Set();
 
 const app = express();
 // Exportul trimite tot tabelul intr-un singur POST - limita implicita de 100kb e prea mica.
@@ -122,115 +75,6 @@ app.get("/api/auth/status", authStatusHandler);
 app.post("/api/auth/login", authLoginHandler);
 app.post("/api/auth/logout", authLogoutHandler);
 
-// Callback-uri eMAG (setate in contul eMAG > Setari): GET/POST ...?token=SECRET&order_id=123.
-// Publice (eMAG nu are cookie), protejate prin EMAG_WEBHOOK_TOKEN.
-function webhookTokenOk(provided, envName = "EMAG_WEBHOOK_TOKEN") {
-  const expected = String(process.env[envName] || "").trim();
-  if (!expected) return false;
-  const a = crypto.createHash("sha256").update(String(provided || "")).digest();
-  const b = crypto.createHash("sha256").update(expected).digest();
-  return crypto.timingSafeEqual(a, b);
-}
-
-function callbackParam(req, ...keys) {
-  for (const key of keys) {
-    const v = req.query[key] ?? req.body?.[key];
-    if (v != null && String(v).trim() !== "") return String(v).trim();
-  }
-  return null;
-}
-
-/** Recitim comanda: eMAG da statusul curent (anulata / returnata), stocul se ajusteaza idempotent. */
-async function refreshEmagOrder(req, kind) {
-  const orderId = callbackParam(req, "order_id");
-  if (!orderId || !/^\d+$/.test(orderId)) {
-    if (kind === "order" || kind === "order-cancel") throw new Error("order_id lipsa");
-    return;
-  }
-  // Pe eMAG HU/BG callback-ul se configureaza cu &platform=hu / &platform=bg.
-  const platform = callbackParam(req, "platform") || "ro";
-  await processEmagOrderId(orderId, { via: `webhook:${kind}`, platform });
-}
-
-/** Produs nou / documentatie aprobata: reimprospatam oferta in oglinda (doar daca oglinda e incarcata). */
-async function refreshEmagOffer(req) {
-  const offerId = callbackParam(req, "id", "product_id", "offer_id");
-  if (!offerId || !getChannelRemotes("emag")) return;
-  const result = await getChannel("emag").fetchListings({ filters: { id: offerId } });
-  const remote = (result.listings || []).find((o) => String(o.id) === offerId);
-  if (!remote) return;
-  upsertChannelRemote("emag", remote);
-  await upsertChannelPromotion("emag", remote);
-}
-
-const EMAG_CALLBACKS = {
-  order: refreshEmagOrder,
-  "order-cancel": refreshEmagOrder,
-  awb: refreshEmagOrder,
-  return: refreshEmagOrder,
-  product: refreshEmagOffer,
-  documentation: refreshEmagOffer,
-  courier: null,
-};
-
-function emagCallback(kind, action) {
-  return (req, res) => {
-    if (!webhookTokenOk(req.query.token)) {
-      return res.status(403).json({ error: "Token invalid" });
-    }
-    const { token: _token, ...queryParams } = req.query;
-    res.json({ ok: true });
-    // Payload-ul complet in logs: pentru unele callback-uri eMAG nu documenteaza parametrii.
-    void log({
-      level: "info",
-      source: "server",
-      category: "webhook-emag",
-      message: `Callback eMAG ${kind}`,
-      detail: { kind, method: req.method, query: queryParams, body: req.body ?? null },
-    });
-    if (!action) return;
-    action(req, kind).catch((err) => {
-      console.error(`[webhook:emag:${kind}]`, err.message);
-      void log({
-        level: "error",
-        source: "server",
-        category: "webhook-emag",
-        message: `Callback eMAG ${kind} esuat: ${err.message}`,
-        detail: { kind, query: queryParams, stack: err.stack },
-      });
-    });
-  };
-}
-
-for (const [kind, action] of Object.entries(EMAG_CALLBACKS)) {
-  const handler = emagCallback(kind, action);
-  app.get(`/api/webhooks/emag/${kind}`, handler);
-  app.post(`/api/webhooks/emag/${kind}`, express.urlencoded({ extended: false }), handler);
-}
-
-// Webhook Trendyol: POST cu pachetul complet in body, header x-api-key = TRENDYOL_WEBHOOK_TOKEN.
-// Inregistrare: node scripts/register-trendyol-webhook.js https://<domeniu>/api/webhooks/ty/order
-app.post("/api/webhooks/ty/order", (req, res) => {
-  if (!webhookTokenOk(req.get("x-api-key"), "TRENDYOL_WEBHOOK_TOKEN")) {
-    return res.status(403).json({ error: "Token invalid" });
-  }
-  const pkg = req.body;
-  if (!pkg || !pkg.orderNumber) {
-    return res.status(400).json({ error: "orderNumber lipsa" });
-  }
-  res.json({ ok: true });
-  applyTrendyolPackage(pkg, { via: "webhook" }).catch((err) => {
-    console.error(`[webhook:trendyol] comanda ${pkg.orderNumber}:`, err.message);
-    void log({
-      level: "error",
-      source: "server",
-      category: "webhook-trendyol",
-      message: `Webhook comanda Trendyol ${pkg.orderNumber} esuat: ${err.message}`,
-      detail: { orderNumber: pkg.orderNumber, packageId: pkg.id, stack: err.stack },
-    });
-  });
-});
-
 /**
  * Poza cu link semnat — singura ruta de poze dinaintea login-ului, fiindca eMAG
  * descarca de aici pozele pe care i le trimitem. Fara `sig` corect, 404.
@@ -239,15 +83,10 @@ app.post("/api/webhooks/ty/order", (req, res) => {
 app.get("/public/product-image/:storedName", async (req, res) => {
   try {
     const storedName = path.basename(String(req.params.storedName || ""));
-    const folder = String(req.query.folder || "products");
-    if (
-      !storedName ||
-      !S3_FOLDERS.includes(folder) ||
-      !verifyImageSignature(storedName, req.query.sig, folder)
-    ) {
+    if (!storedName || !verifyImageSignature(storedName, req.query.sig)) {
       return res.status(404).end();
     }
-    const obj = await getObjectStream(storedName, folder);
+    const obj = await getObjectStream(storedName);
     res.setHeader("Content-Type", obj.contentType);
     if (obj.contentLength != null) {
       res.setHeader("Content-Length", String(obj.contentLength));
@@ -634,22 +473,16 @@ const uploadImages = multer({
 /** Categoria de log derivata din calea API, pentru filtrarea din /logs.html. */
 function categoryForPath(urlPath) {
   const p = urlPath.split("?")[0];
-  if (p.startsWith("/api/sync/pull")) return "sync-pull";
-  if (p.startsWith("/api/sync/diff")) return "sync-diff";
-  if (p.startsWith("/api/products/sync-prices")) return "sync-prices";
   if (p.startsWith("/api/products/fetch-commission")) return "commission";
   if (p.startsWith("/api/products/export")) return "export";
   if (p.includes("/history")) return "history";
   if (p.startsWith("/api/catalog/product") && p.includes("/images")) return "product-images";
   if (p.startsWith("/api/catalog/listing")) return "listing-patch";
   if (p.startsWith("/api/catalog/product")) return "product-patch";
-  if (p.startsWith("/api/webhooks/emag")) return "webhook-emag";
-  if (p.startsWith("/api/webhooks/ty")) return "webhook-trendyol";
-  if (p.startsWith("/api/orders") || p.startsWith("/api/stock-movements")) return "orders";
   if (p.startsWith("/api/settings")) return "settings";
   if (p.startsWith("/api/stats")) return "stats";
+  if (p.startsWith("/api/base")) return "base";
   if (p.startsWith("/api/credentials")) return "credentials";
-  if (p.startsWith("/api/queue")) return "queue";
   return "http";
 }
 
@@ -768,90 +601,6 @@ async function mapPool(items, limit, fn) {
     results.push(...chunkResults);
   }
   return results;
-}
-
-/* ---------------- comenzi (mapare) ---------------- */
-
-/**
- * Profitul pe bucata ca in calculator (Profit Tren/Mare si Profit Aer), cu pretul real din
- * comanda (cu TVA, cat a platit clientul) si comisionul ofertei.
- */
-function orderLineCalc(catalog, product, pct, settings) {
-  if (!catalog || product.sale_price == null) return null;
-  const sale = Number(product.sale_price) * (1 + (Number(product.vat) || 0));
-  return calcProduct(
-    {
-      pret_fabrica: catalog.pret_cumparare_usd,
-      moneda: catalog.moneda_fabrica || "USD",
-      greutate: catalog.greutate,
-      latime: catalog.latime,
-      lungime: catalog.lungime,
-      inaltime: catalog.inaltime,
-      pret_vanzare: sale,
-      comision_emag: pct,
-    },
-    settings.calculator_params
-  );
-}
-
-async function mapOrderProduct(product, settings) {
-  const name = product.name || product.product_name || "";
-  const part_number = product.part_number || "";
-  const product_id = product.product_id ?? null;
-  const [costs, catalog] = await Promise.all([
-    product_id != null ? getListingCosts("emag", product_id) : null,
-    lookupCatalogForOrderLine(part_number, name),
-  ]);
-  const procentaj_emag = costs?.procentaj_emag ?? null;
-  const pct = procentaj_emag != null ? Number(procentaj_emag) : settings.procentaj_emag ?? 25;
-  const calc = orderLineCalc(catalog, product, pct, settings);
-  return {
-    id: product.id ?? null,
-    product_id,
-    name,
-    part_number,
-    quantity: product.quantity ?? null,
-    sale_price: product.sale_price ?? null,
-    vat: product.vat ?? null,
-    status: product.status ?? null,
-    currency: product.currency || "RON",
-    pret_cumparare: catalog?.pret_cumparare ?? null,
-    transport_override: costs?.transport_override ?? null,
-    procentaj_emag,
-    commission_value: costs?.commission_value ?? null,
-    commission_fetched_at: costs?.commission_fetched_at ?? null,
-    profit_tren: calc?.profit_tren ?? null,
-    profit_aer: calc?.profit_aer ?? null,
-  };
-}
-
-/** Profitul comenzii = profitul pe bucata din calculator × cantitate, pe liniile neanulate. */
-function orderProfit(products) {
-  const lines = products.filter((p) => Number(p.status) !== 0);
-  if (lines.length === 0 || lines.some((p) => p.profit_tren == null)) return null;
-  const qty = (p) => (Number(p.quantity) > 0 ? Number(p.quantity) : 1);
-  return {
-    tren: lines.reduce((s, p) => s + p.profit_tren * qty(p), 0),
-    aer: lines.reduce((s, p) => s + p.profit_aer * qty(p), 0),
-  };
-}
-
-async function mapOrder(order, settings) {
-  const customerRaw = Array.isArray(order.customer)
-    ? order.customer[0]
-    : order.customer;
-  const products = Array.isArray(order.products)
-    ? await Promise.all(order.products.map((p) => mapOrderProduct(p, settings)))
-    : [];
-  return {
-    id: order.id,
-    status: order.status,
-    date: order.date || order.created || null,
-    payment_mode_id: order.payment_mode_id ?? null,
-    customer_name: customerRaw?.name || customerRaw?.billing_name || "",
-    products,
-    profit: orderProfit(products),
-  };
 }
 
 /* ---------------- setari ---------------- */
@@ -1149,19 +898,12 @@ app.patch("/api/catalog/product/:productId/images/order", async (req, res) => {
 
 /* ---------------- Base (BaseLinker): tot ce pleaca din aplicatie ---------------- */
 
-// Trimiterile directe spre eMAG/Trendyol sunt oprite; pagina „Pregătire Base” le inlocuieste.
-app.post(
-  ["/api/catalog/product/:productId/images/push", "/api/products/sync-prices", "/api/sync/push-all"],
-  (_req, res) =>
-    res.status(410).json({ error: `${BLOCKED_MESSAGE}. Folosește pagina „Pregătire Base”.` })
-);
-
 app.get("/api/base/status", async (_req, res) => {
   if (!baseClient.isConfigured()) {
     return res.json({ configured: false, send_enabled: baseClient.sendEnabled() });
   }
   try {
-    return res.json({ configured: true, ...(await baseClient.getStatus()), orders_enabled: baseOrders.enabled() });
+    return res.json({ configured: true, ...(await baseClient.getStatus()) });
   } catch (err) {
     return res.status(502).json({ configured: true, error: err.message });
   }
@@ -1207,13 +949,12 @@ app.get("/api/base/product/:productId", async (req, res) => {
       listByPlatformForProductIds([product.id]),
       basePush.buildPayload(product.id),
     ]);
-    // Comisionul Trendyol vine din oglinda canalului (dupa „Preia” in Sincronizare), daca exista.
-    const tyRemote = product.ean ? getChannelRemotes("trendyol")?.byId?.get(String(product.ean)) : null;
     return res.json({
       product,
       texts,
       images: images.get(Number(product.id)) || {},
-      trendyol_commission_pct: tyRemote?.commission_rate ?? null,
+      // Comisionul Trendyol venea din pagina Sincronizare (scoasa); se ia procentul implicit.
+      trendyol_commission_pct: null,
       preview,
     });
   } catch (err) {
@@ -1245,393 +986,6 @@ app.post("/api/base/product/:productId/push", async (req, res) => {
   } catch (err) {
     if (!err?.expected) logCaught("base-push", err);
     return res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-/** Platformele eMAG pe care putem publica poze (EN e doar setul implicit din aplicatie). */
-const IMAGE_PUSH_PLATFORMS = ["ro", "bg", "hu"];
-
-/**
- * Trimite pozele unui produs pe eMAG. `platform=ro|bg|hu`, sau `all` pentru toate trei.
- * Fiecare platforma primeste setul ei de poze sau, daca nu are, setul EN.
- */
-app.post("/api/catalog/product/:productId/images/push", async (req, res) => {
-  const wanted = String(req.query.platform ?? req.body?.platform ?? "all").toLowerCase();
-  try {
-    const targets =
-      wanted === "all" ? IMAGE_PUSH_PLATFORMS : [normalizePlatform(wanted)];
-    if (targets.includes("en")) {
-      return res.status(400).json({
-        error: "EN nu e o platformă eMAG — alege ro, bg, hu sau all",
-      });
-    }
-
-    const offerId = await getProductOfferId(req.params.productId);
-    if (!offerId) {
-      return res.status(400).json({
-        error: "Produsul nu are emag_offer_id — leagă întâi oferta eMAG",
-      });
-    }
-
-    const emag = getChannel("emag");
-    const results = [];
-    for (const platform of targets) {
-      const effective = await effectiveImages(req.params.productId, platform);
-      if (!effective.images.length) {
-        results.push({ platform, ok: false, error: "Nicio poză de trimis" });
-        continue;
-      }
-      try {
-        const pushed = await emag.pushImages(platform, [
-          {
-            offerId,
-            images: effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) })),
-          },
-        ]);
-        await markImagesPushed(req.params.productId, platform, imagesStamp(effective));
-        results.push({
-          platform,
-          ok: true,
-          source: effective.source,
-          count: effective.images.length,
-          messages: pushed.messages || [],
-        });
-      } catch (err) {
-        if (!err?.expected) logCaught("product-images", err);
-        results.push({ platform, ok: false, error: err.message });
-      }
-    }
-
-    const anyOk = results.some((r) => r.ok);
-    return res.status(anyOk ? 200 : 502).json({ ok: anyOk, pending: anyOk, results });
-  } catch (err) {
-    console.error("[product:images:push]", err.message);
-    if (!err?.expected) logCaught("product-images", err);
-    const status = Number(err.status) || 400;
-    return res.status(status).json({ error: err.message || "Eroare la trimiterea pozelor" });
-  }
-});
-
-/* ---------------- sincronizare cu canalul ---------------- */
-
-app.get("/api/sync/diff", async (req, res) => {
-  try {
-    const channel = normalizeChannel(req.query.channel);
-    return res.json(await getChannelDiff(channel));
-  } catch (err) {
-    console.error("[diff]", err.message);
-    logCaught("sync-diff", err);
-    return res.status(500).json({ error: err.message || "Eroare la comparare" });
-  }
-});
-
-/** Ce e pe canal (din oglinda remote in memorie) + partea locala pentru costuri/marja. */
-app.get("/api/sync/channel-view", async (req, res) => {
-  try {
-    const channel = normalizeChannel(req.query.channel);
-    const data = await getChannelViewRows(channel);
-    res.set("Cache-Control", "no-store");
-    return res.json(data);
-  } catch (err) {
-    console.error("[channel-view]", err.message);
-    logCaught("sync-channel-view", err);
-    return res.status(500).json({ error: err.message || "Eroare la citirea ofertelor de pe canal" });
-  }
-});
-
-function sendSyncError(res, err, fallback) {
-  if (err?.expected) return res.status(err.status).json({ error: err.message });
-  return sendChannelError(res, err, fallback);
-}
-
-/** Preia toate ofertele canalului in oglinda remote (catalogul local ramane neatins). */
-async function pullChannel(channelName) {
-  if (activePulls.has(channelName)) {
-    throw httpError(
-      409,
-      `Sincronizarea pentru ${channelName} este deja în curs. Așteaptă finalizarea ei.`
-    );
-  }
-  activePulls.add(channelName);
-  try {
-    const channel = getChannel(channelName);
-
-    let page = 1;
-    let total = 0;
-    let authUsed = null;
-    const remotes = [];
-
-    while (page <= MAX_PULL_PAGES) {
-      const result = await channel.fetchListings({ page });
-      const listings = result.listings || [];
-      authUsed = result.authUsed || authUsed;
-
-      for (const remote of listings) {
-        remotes.push(remote);
-        try {
-          await recordPretEmagIfChanged(remote.id, remote.sale_price, remote.currency, "sync-pull");
-        } catch (histErr) {
-          console.warn("[sync-pull] istoric pret:", histErr.message);
-        }
-      }
-
-      total += listings.length;
-      if (!result.hasMore || listings.length === 0) break;
-      page += 1;
-    }
-
-    setChannelRemotes(channelName, remotes);
-    try {
-      await replaceChannelPromotions(channelName, remotes);
-    } catch (promoErr) {
-      console.warn("[sync-pull] promotii:", promoErr.message);
-    }
-
-    const stats = await getChannelStats(channelName);
-    console.log(
-      `[sync-pull] ${channelName}: ${total} oferte în cache (fără scriere catalog)`
-    );
-    return { count: total, pages: page, authUsed, last_sync: stats.last_sync };
-  } finally {
-    activePulls.delete(channelName);
-  }
-}
-
-/** Trage oferte: oglinda remote merge in cache; catalogul local ramane neatins. */
-app.post("/api/sync/pull", async (req, res) => {
-  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
-  try {
-    const result = await pullChannel(channelName);
-    return res.json({ ok: true, channel: channelName, cache_only: true, ...result });
-  } catch (err) {
-    console.error("[sync-pull]", err.message);
-    if (!err?.expected) logCaught("sync-pull", err);
-    return sendSyncError(res, err, "Eroare la preluare de la canal");
-  }
-});
-
-/** Preia o singura oferta de pe canal si o actualizeaza in oglinda remote. */
-app.post("/api/sync/pull-offer", async (req, res) => {
-  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
-  const offerId = String(req.body?.id ?? "").trim();
-  if (!offerId) {
-    return res.status(400).json({ error: "Lipseste id-ul ofertei" });
-  }
-  try {
-    const channel = getChannel(channelName);
-    const result = await channel.fetchListings({ filters: { id: offerId } });
-    const remote = (result.listings || []).find(
-      (o) => String(o.id) === offerId
-    );
-    if (!remote) {
-      return res
-        .status(404)
-        .json({ error: `Oferta ${offerId} nu a fost gasita pe canal` });
-    }
-
-    try {
-      await recordPretEmagIfChanged(
-        remote.id,
-        remote.sale_price,
-        remote.currency,
-        "sync-pull-offer"
-      );
-    } catch (histErr) {
-      console.warn("[sync-pull-offer] istoric pret:", histErr.message);
-    }
-
-    upsertChannelRemote(channelName, remote);
-    try {
-      await upsertChannelPromotion(channelName, remote);
-    } catch (promoErr) {
-      console.warn("[sync-pull-offer] promotii:", promoErr.message);
-    }
-    console.log(`[sync-pull-offer] ${channelName}: oferta ${offerId} actualizata in cache`);
-    return res.json({
-      ok: true,
-      channel: channelName,
-      id: remote.id,
-      cache_only: true,
-      authUsed: result.authUsed || null,
-    });
-  } catch (err) {
-    console.error("[sync-pull-offer]", err.message);
-    logCaught("sync-pull-offer", err);
-    return sendChannelError(res, err, "Eroare la preluarea ofertei de la canal");
-  }
-});
-
-app.post("/api/products/sync-prices", async (req, res) => {
-  const channelName = normalizeChannel(req.query.channel ?? req.body?.channel);
-  try {
-    const rawOffers = Array.isArray(req.body?.offers) ? req.body.offers : [];
-    const result = await pushOffersForChannel(channelName, rawOffers, {
-      includeContentAll: req.body?.includeContent === true,
-    });
-    return res.json({ ok: true, channel: channelName, pending: true, ...result });
-  } catch (err) {
-    console.error("[sync-prices]", err.message);
-    if (!err?.expected) logCaught("sync-prices", err);
-    return sendSyncError(res, err, "Eroare la sync prețuri");
-  }
-});
-
-/** Flag-uri de publicare pentru un rand din diff (doar campurile care difera), sau null. */
-function pushFlagsFromDiffRow(row) {
-  const changed = new Set((row.fields || []).filter((f) => f.differs).map((f) => f.key));
-  if (changed.size === 0) return null;
-  return {
-    id: row.external_id,
-    includeName: changed.has("name"),
-    includeDescription: changed.has("description"),
-    includeSalePrice: changed.has("sale_price"),
-    includeRecommendedPrice: changed.has("recommended_price"),
-    includeMinSalePrice: changed.has("min_sale_price"),
-    includeMaxSalePrice: changed.has("max_sale_price"),
-    includeStock: changed.has("general_stock"),
-    includeImages: changed.has("images"),
-    product_id: row.product_id,
-  };
-}
-
-/**
- * Pozele pe BG si HU: le trimitem separat de canalul eMAG RO, pentru produsele
- * la care setul efectiv difera de ce am trimis ultima data pe platforma aceea.
- * Doar pozele incarcate special pentru BG/HU — fallback-ul EN nu pleaca niciodata
- * automat, ca publicarea sa nu schimbe galeriile de pe BG/HU.
- * -> cate un rezultat { platform, count, ok, error? } pe platforma.
- */
-async function pushImagesToSecondaryPlatforms(diffRows) {
-  const emag = getChannel("emag");
-  const rows = (diffRows || []).filter((r) => r.product_id && r.external_id);
-  const out = [];
-  // Fara URL public eMAG nu poate descarca pozele — sarim peste, fara sa raportam erori.
-  if (!rows.length || !IMAGES_PUBLIC) return out;
-
-  const productIds = rows.map((r) => r.product_id);
-  const imagesByProduct = await listByPlatformForProductIds(productIds);
-  const pushed = await getPushedFingerprints(productIds);
-
-  for (const platform of ["bg", "hu"]) {
-    const entry = { platform, count: 0, ok: true };
-    try {
-      const items = [];
-      const stamps = [];
-      for (const row of rows) {
-        const effective = pickEffective(imagesByProduct.get(Number(row.product_id)), platform);
-        if (effective.source !== platform || !effective.images.length) continue;
-        const stamp = imagesStamp(effective);
-        if (stamp === pushed.get(`${Number(row.product_id)}:${platform}`)) continue;
-        items.push({
-          offerId: row.external_id,
-          images: effective.images.map((img) => ({ url: absoluteUrl(img.stored_name) })),
-        });
-        stamps.push({ productId: row.product_id, stamp });
-      }
-      if (items.length > 0) {
-        const result = await emag.pushImages(platform, items);
-        entry.count = result.count;
-        entry.messages = result.messages || [];
-        if (result.skipped?.length) entry.skipped = result.skipped;
-        for (const s of stamps) {
-          await markImagesPushed(s.productId, platform, s.stamp);
-        }
-      }
-    } catch (err) {
-      if (!err?.expected) logCaught("push-all", err);
-      entry.ok = false;
-      entry.error = err.message || `Eroare la trimiterea pozelor pe eMAG ${platform.toUpperCase()}`;
-    }
-    out.push(entry);
-  }
-  return out;
-}
-
-let pushAllRunning = false;
-/** Publicarile (toate produsele sau un rand) ruleaza pe rand, ca sa nu se suprapuna pe canale. */
-let pushAllTail = Promise.resolve();
-
-function runPushExclusive(fn) {
-  const run = pushAllTail.then(fn, fn);
-  pushAllTail = run.catch(() => {});
-  return run;
-}
-
-/**
- * Publica modificarile pe toate canalele configurate (preia oglinda daca lipseste).
- * Cu `product_id` publica doar produsul acela (randul din tabel), pe fiecare canal unde e legat.
- */
-app.post("/api/sync/push-all", async (req, res) => {
-  const rawProductId = req.body?.product_id ?? req.query.product_id;
-  const productId =
-    rawProductId == null || rawProductId === "" ? null : Number(rawProductId);
-  if (productId != null && !Number.isInteger(productId)) {
-    return res.status(400).json({ error: "product_id invalid" });
-  }
-  // Publicarea globala nu se pune la coada de doua ori (dublu click); randurile da.
-  if (productId == null) {
-    if (pushAllRunning) {
-      return res.status(409).json({ error: "Publicarea pe toate canalele este deja în curs." });
-    }
-    pushAllRunning = true;
-  }
-  const tag = productId == null ? "[push-all]" : `[push-all #${productId}]`;
-  try {
-    const results = await runPushExclusive(async () => {
-      const channels = (await listChannels()).filter((c) => c.configured);
-      const out = [];
-      for (const ch of channels) {
-        const entry = { channel: ch.id, label: ch.label, pulled: false, count: 0, ok: true };
-        try {
-          if (!getChannelRemotes(ch.id)) {
-            await pullChannel(ch.id);
-            entry.pulled = true;
-          }
-          const diff = await getChannelDiff(ch.id);
-          const rows = (diff.matched || []).filter(
-            (r) => productId == null || Number(r.product_id) === productId
-          );
-          if (productId != null && rows.length === 0) entry.unlinked = true;
-          const offers = rows.map(pushFlagsFromDiffRow).filter(Boolean);
-          if (offers.length > 0) {
-            const result = await pushOffersForChannel(ch.id, offers);
-            entry.count = result?.count ?? offers.length;
-            entry.messages = result?.messages || [];
-            entry.price_locked = result?.price_locked || [];
-          }
-          console.log(`${tag} ${ch.id}: ${entry.count} oferte trimise${entry.pulled ? " (după preluare)" : ""}`);
-          if (ch.id === "emag") {
-            // Pozele pe celelalte platforme eMAG (BG, HU) — doar setul incarcat pentru ele.
-            const imagePushes = await pushImagesToSecondaryPlatforms(rows);
-            for (const img of imagePushes.filter((r) => r.count > 0 || !r.ok)) {
-              out.push({
-                channel: `emag_${img.platform}`,
-                label: `eMAG ${img.platform.toUpperCase()} (poze)`,
-                pulled: false,
-                count: img.count,
-                ok: img.ok,
-                ...(img.error ? { error: img.error } : {}),
-                ...(img.messages ? { messages: img.messages } : {}),
-              });
-            }
-          }
-        } catch (err) {
-          console.error(`${tag} ${ch.id}:`, err.message);
-          if (!err?.expected) logCaught("push-all", err);
-          entry.ok = false;
-          entry.error = err.message || "Eroare la publicare";
-        }
-        out.push(entry);
-      }
-      return out;
-    });
-    return res.json({ ok: results.every((r) => r.ok), product_id: productId, results });
-  } catch (err) {
-    console.error(tag, err.message);
-    logCaught("push-all", err);
-    return res.status(500).json({ error: err.message || "Eroare la publicare pe canale" });
-  } finally {
-    if (productId == null) pushAllRunning = false;
   }
 });
 
@@ -1695,195 +1049,6 @@ app.post("/api/products/fetch-commission", async (req, res) => {
   }
 });
 
-/* ---------------- comenzi ---------------- */
-
-app.get("/api/orders", async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const createdAfter =
-      typeof req.query.createdAfter === "string" && req.query.createdAfter.trim()
-        ? req.query.createdAfter.trim()
-        : null;
-    const createdBefore =
-      typeof req.query.createdBefore === "string" && req.query.createdBefore.trim()
-        ? req.query.createdBefore.trim()
-        : null;
-
-    let status = null;
-    if (req.query.status != null && req.query.status !== "") {
-      const raw = Array.isArray(req.query.status)
-        ? req.query.status
-        : String(req.query.status).split(",");
-      status = raw
-        .map((s) => parseInt(String(s).trim(), 10))
-        .filter((n) => Number.isFinite(n) && n >= 0 && n <= 5);
-      if (status.length === 0) status = null;
-    }
-
-    if (createdAfter && createdBefore) {
-      const after = Date.parse(createdAfter.replace(" ", "T"));
-      const before = Date.parse(createdBefore.replace(" ", "T"));
-      if (Number.isFinite(after) && Number.isFinite(before)) {
-        const maxMs = 31 * 24 * 60 * 60 * 1000;
-        if (before < after) {
-          return res.status(400).json({
-            error: "createdBefore trebuie să fie după createdAfter",
-          });
-        }
-        if (before - after > maxMs) {
-          return res.status(400).json({
-            error: "Intervalul de dată eMAG e max 1 lună",
-          });
-        }
-      }
-    }
-
-    const creds = await loadCredentials();
-    const candidates = authCandidates(creds);
-    console.log(
-      `[auth:orders] ordine încercări:`,
-      candidates.map((c) => c.label).join(" → ")
-    );
-
-    let lastStatus = null;
-    let lastJson = null;
-    let lastText = "";
-
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      logAuthAttempt("orders", candidate, i, candidates.length);
-      const auth = authHeader(candidate.user, candidate.pass);
-      const { response, json, text } = await emagOrderRead(auth, {
-        page,
-        status,
-        createdAfter,
-        createdBefore,
-      });
-      lastStatus = response.status;
-      lastJson = json;
-      lastText = text;
-
-      if (response.status === 401 || response.status === 403) {
-        logAuthResult("orders", candidate, response.status, false);
-        continue;
-      }
-
-      logAuthResult("orders", candidate, response.status, true);
-      savePreferredAuthLabel(candidate.label);
-
-      if (!json) {
-        return res.status(502).json({
-          error: "Răspuns invalid de la eMAG",
-          status: response.status,
-          detail: text.slice(0, 500),
-        });
-      }
-
-      if (json.isError) {
-        return res.status(502).json({
-          error: "eMAG a returnat eroare",
-          messages: json.messages || [],
-        });
-      }
-
-      const results = Array.isArray(json.results) ? json.results : [];
-      const settings = await getSettings();
-      const orders = await Promise.all(results.map((o) => mapOrder(o, settings)));
-
-      // Acumuleaza liniile de comanda local (istoric vanzari per produs).
-      try {
-        const lines = [];
-        for (const order of orders) {
-          for (const p of order.products || []) {
-            lines.push({
-              line_id: p.id,
-              order_id: order.id,
-              channel: order.channel || "emag",
-              product_id: p.product_id,
-              part_number: p.part_number,
-              name: p.name,
-              quantity: p.quantity,
-              sale_price: p.sale_price,
-              status: p.status,
-              currency: p.currency,
-              order_date: order.date,
-            });
-          }
-        }
-        await upsertOrderLines(lines);
-      } catch (histErr) {
-        console.warn("[orders] istoric comenzi:", histErr.message);
-      }
-
-      console.log(
-        `[auth:orders] OK page=${page} count=${orders.length} auth=${candidate.label}`
-      );
-      return res.json({
-        page,
-        itemsPerPage: ITEMS_PER_PAGE,
-        count: orders.length,
-        hasMore: orders.length >= ITEMS_PER_PAGE,
-        authUsed: candidate.label,
-        orders,
-      });
-    }
-
-    console.error("[auth:orders] autentificare eMAG eșuată (401/403) — toate combo-urile");
-    return res.status(lastStatus || 401).json({
-      error: "Autentificare eMAG eșuată (401/403). Verifică credentials și IP whitelist.",
-      messages: lastJson?.messages || [],
-      detail: lastText.slice(0, 300),
-    });
-  } catch (err) {
-    console.error(err.message);
-    if (err?.code === "CREDENTIALS_MISSING") {
-      return res.status(err.status || 400).json({
-        error: err.message,
-        code: err.code,
-        settingsPath: err.settingsPath || "/settings.html#emag",
-      });
-    }
-    return res.status(500).json({ error: err.message || "Eroare server" });
-  }
-});
-
-// Comenzile salvate local (webhook / poller), cu liniile si preturile lor.
-app.get("/api/orders/local", async (req, res) => {
-  try {
-    const orders = await listLocalOrders({
-      from: req.query.from,
-      to: req.query.to,
-      page: req.query.page,
-      limit: req.query.limit,
-    });
-    return res.json({ count: orders.length, orders });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare server" });
-  }
-});
-
-// Comenzi noi dupa watermark (polling notificari browser) — fara linii.
-app.get("/api/orders/local/new", async (req, res) => {
-  try {
-    const after = req.query.after_created_at;
-    const result = await listNewLocalOrders({
-      afterCreatedAt: after || null,
-      limit: req.query.limit,
-    });
-    const serverTime =
-      result.serverTime instanceof Date
-        ? result.serverTime.toISOString()
-        : result.serverTime;
-    return res.json({
-      server_time: serverTime,
-      count: result.orders.length,
-      orders: result.orders,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare server" });
-  }
-});
-
 // Statistici (doar citire): vanzari, profit estimat, stoc, retururi, efectul preturilor.
 app.get("/api/stats", async (req, res) => {
   try {
@@ -1893,70 +1058,6 @@ app.get("/api/stats", async (req, res) => {
   } catch (err) {
     console.error("[stats]", err.message);
     return res.status(500).json({ error: err.message || "Eroare la statistici" });
-  }
-});
-
-/* ---------------- Web Push (bara notificări telefon) ---------------- */
-
-app.get("/api/push/vapid-public-key", async (_req, res) => {
-  try {
-    await initPush();
-    return res.json({ publicKey: getPublicKey() });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare VAPID" });
-  }
-});
-
-app.post("/api/push/subscribe", async (req, res) => {
-  try {
-    await saveSubscription(req.body, req.get("user-agent"));
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(err.status || 500).json({ error: err.message || "Eroare subscribe" });
-  }
-});
-
-app.post("/api/push/unsubscribe", async (req, res) => {
-  try {
-    await removeSubscription(req.body?.endpoint);
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(err.status || 500).json({ error: err.message || "Eroare unsubscribe" });
-  }
-});
-
-app.post("/api/push/test", async (_req, res) => {
-  try {
-    const result = await sendTestPush();
-    if (result.total === 0) {
-      return res.status(400).json({
-        ok: false,
-        error:
-          "Niciun dispozitiv abonat. Activează notificările pe telefon (Setări → Notificări).",
-      });
-    }
-    if (result.sent === 0) {
-      return res.status(502).json({
-        ok: false,
-        ...result,
-        error:
-          "Push-ul nu a fost livrat către niciun dispozitiv. Verifică logurile backend și permisiunea notificărilor în Brave.",
-      });
-    }
-    return res.json({ ok: true, ...result });
-  } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      error: err.message || "Eroare test push",
-    });
-  }
-});
-
-app.get("/api/stock-movements", async (req, res) => {
-  try {
-    return res.json({ movements: await listStockMovements({ limit: req.query.limit }) });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare server" });
   }
 });
 
@@ -2022,77 +1123,6 @@ app.post("/api/products/export", (req, res) => {
   } catch (err) {
     console.error(err.message);
     return res.status(500).json({ error: err.message || "Eroare la generare Excel" });
-  }
-});
-
-/* ---------------- coada de trimiteri eMAG (pagina coada.html) ---------------- */
-
-app.get("/api/queue", async (req, res) => {
-  try {
-    const items = await emagQueue.listItems({ all: req.query.all === "1" });
-    const { rows } = await query(`SELECT max(last_check_at) AS last_check_at FROM emag_push_queue`);
-    return res.json({
-      items,
-      worker: {
-        send: baseClient.sendEnabled(),
-        interval_sec: Math.max(60, Number(process.env.QUEUE_INTERVAL_SEC || 300)),
-        last_check_at: rows[0]?.last_check_at || null,
-      },
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare la citirea cozii" });
-  }
-});
-
-app.post("/api/queue", async (req, res) => {
-  try {
-    const b = req.body || {};
-    const ref = String(b.product ?? "").trim();
-    if (!ref) return res.status(400).json({ error: "Lipsește produsul (id sau cod produs)" });
-    const { rows } = await query(
-      `SELECT id FROM catalog_products WHERE cod_produs = $1 OR ($1 ~ '^[0-9]+$' AND id = $1::int) ORDER BY (cod_produs = $1) DESC LIMIT 1`,
-      [ref]
-    );
-    if (!rows.length) return res.status(404).json({ error: `Produsul „${ref}” nu există în catalog` });
-    let characteristics = b.characteristics || null;
-    if (typeof characteristics === "string") {
-      characteristics = characteristics.trim() ? JSON.parse(characteristics) : null;
-    }
-    const item = await emagQueue.addItem({
-      product_id: rows[0].id,
-      platform: b.platform,
-      send_images: b.send_images !== false,
-      name: b.name || null,
-      description: b.description || null,
-      name_from_app: Boolean(b.name_from_app),
-      description_from_app: Boolean(b.description_from_app),
-      characteristics,
-      not_before: b.not_before || null,
-      after_id: b.after_id || null,
-      replace_pending: Boolean(b.replace_pending),
-      note: b.note || null,
-    });
-    return res.json({ ok: true, item });
-  } catch (err) {
-    return res.status(400).json({ error: err.message || "Eroare la adăugare în coadă" });
-  }
-});
-
-app.post("/api/queue/:id/cancel", async (req, res) => {
-  try {
-    await emagQueue.cancelItem(req.params.id);
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare la anulare" });
-  }
-});
-
-app.post("/api/queue/:id/retry", async (req, res) => {
-  try {
-    await emagQueue.retryItem(req.params.id);
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Eroare la repunere în coadă" });
   }
 });
 
@@ -2195,12 +1225,6 @@ async function start() {
   await ensureSchema();
   await ensureBucket();
   await pruneLogs(14);
-  try {
-    await initPush();
-    console.log("[push] Web Push activ (VAPID OK)");
-  } catch (err) {
-    console.warn("[push] init eșuat:", err.message);
-  }
   if (isAuthEnabled()) {
     console.log("[auth] APP_PASSWORD setat — accesul necesită autentificare");
   } else {
@@ -2211,80 +1235,8 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`Server pornit: http://localhost:${PORT}`);
   });
-  // Cu BASE_ORDERS=1 comenzile vin din Base; pana atunci se citesc direct (doar citire).
-  if (baseOrders.enabled()) {
-    baseOrders.startBaseOrderPoller();
-  } else {
-    startEmagOrderPoller();
-    startTrendyolOrderPoller();
-  }
-}
-
-// Plasa de siguranta pentru callback-uri eMAG pierdute (comenzi noi si anulari).
-function startEmagOrderPoller() {
-  const minutes = Number(process.env.EMAG_ORDER_POLL_MINUTES ?? 5);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    console.log("[order-poll] dezactivat (EMAG_ORDER_POLL_MINUTES=0)");
-    return;
-  }
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await pollRecentEmagOrders({ lookbackMinutes: Math.max(30, minutes * 3) });
-    } catch (err) {
-      if (err?.code !== "CREDENTIALS_MISSING") {
-        console.error("[order-poll]", err.message);
-        void log({
-          level: "error",
-          source: "server",
-          category: "webhook-emag",
-          message: `Poll comenzi esuat: ${err.message}`,
-          detail: { stack: err.stack },
-        });
-      }
-    } finally {
-      running = false;
-    }
-  };
-  setInterval(tick, minutes * 60 * 1000);
-  setTimeout(tick, 15 * 1000);
-  console.log(`[order-poll] pornit la fiecare ${minutes} min`);
-}
-
-// Plasa de siguranta pentru Trendyol: merge si fara webhook; acopera si anularile din ultimele zile.
-function startTrendyolOrderPoller() {
-  const minutes = Number(process.env.TRENDYOL_ORDER_POLL_MINUTES ?? 5);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    console.log("[trendyol-order-poll] dezactivat (TRENDYOL_ORDER_POLL_MINUTES=0)");
-    return;
-  }
-  const lookbackHours = Number(process.env.TRENDYOL_ORDER_LOOKBACK_HOURS ?? 72);
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await pollRecentTrendyolOrders({ lookbackMinutes: Math.max(60, lookbackHours * 60) });
-    } catch (err) {
-      if (err?.code !== "CREDENTIALS_MISSING") {
-        console.error("[trendyol-order-poll]", err.message);
-        void log({
-          level: "error",
-          source: "server",
-          category: "webhook-trendyol",
-          message: `Poll comenzi Trendyol esuat: ${err.message}`,
-          detail: { stack: err.stack },
-        });
-      }
-    } finally {
-      running = false;
-    }
-  };
-  setInterval(tick, minutes * 60 * 1000);
-  setTimeout(tick, 20 * 1000);
-  console.log(`[trendyol-order-poll] pornit la fiecare ${minutes} min`);
+  // Base tine comenzile si stocul; aplicatia doar le citeste, pentru profit si coloana Stoc.
+  startBaseSync();
 }
 
 start().catch((err) => {

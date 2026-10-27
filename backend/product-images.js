@@ -40,17 +40,12 @@ const S3_REGION = process.env.S3_REGION || "us-east-1";
 const S3_BUCKET = process.env.S3_BUCKET || "emag-products";
 const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || "minioadmin";
 const S3_SECRET_KEY = process.env.S3_SECRET_KEY || "minioadmin";
+const S3_KEY_PREFIX = "products/";
 const S3_FORCE_PATH_STYLE =
   String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() !== "false";
-const S3_KEY_PREFIX = "products/";
-/** Folderele din bucket: pozele din galerie in products/, variantele Trendyol in trendyol/. */
-const S3_FOLDERS = ["products", "trendyol"];
-const DEFAULT_FOLDER = "products";
 
 /** Seturi de poze: 'en' e setul implicit, folosit cand platforma nu are poze proprii. */
 const PLATFORMS = ["en", "ro", "bg", "hu"];
-/** Canale (in afara de eMAG) a caror stare de push pe poze o tinem separat. */
-const PUSH_STATE_CHANNELS = ["trendyol"];
 const FALLBACK_PLATFORM = "en";
 // URL-ul public al aplicatiei — eMAG descarca pozele de aici, deci trebuie absolut.
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -95,19 +90,14 @@ const s3 = new S3Client({
 let bucketReady = false;
 let bucketPromise = null;
 
-function objectKey(storedName, folder = DEFAULT_FOLDER) {
+function objectKey(storedName) {
   const name = String(storedName || "").replace(/^.*[\\/]/, "");
   if (!name || name === "." || name === "..") {
     const err = new Error("stored_name invalid");
     err.status = 400;
     throw err;
   }
-  if (!S3_FOLDERS.includes(folder)) {
-    const err = new Error(`Folder necunoscut: ${folder}`);
-    err.status = 400;
-    throw err;
-  }
-  return `${folder}/${name}`;
+  return `${S3_KEY_PREFIX}${name}`;
 }
 
 function publicUrl(storedName) {
@@ -151,22 +141,18 @@ function signingSecret() {
   return imageSignSecret;
 }
 
-/**
- * Semnatura unei poze: doar pozele pe care le trimitem la eMAG devin descarcabile.
- * Pentru products/ se semneaza doar numele, ca link-urile deja trimise sa ramana valide.
- */
-function imageSignature(storedName, folder = DEFAULT_FOLDER) {
-  const subject = folder === DEFAULT_FOLDER ? String(storedName) : `${folder}/${storedName}`;
+/** Semnatura unei poze: doar pozele pe care le trimitem la eMAG devin descarcabile. */
+function imageSignature(storedName) {
   return crypto
     .createHmac("sha256", signingSecret())
-    .update(subject)
+    .update(String(storedName))
     .digest("hex")
     .slice(0, 32);
 }
 
 /** @returns {boolean} true doar pentru semnatura corecta a pozei cerute. */
-function verifyImageSignature(storedName, signature, folder = DEFAULT_FOLDER) {
-  const expected = Buffer.from(imageSignature(storedName, folder));
+function verifyImageSignature(storedName, signature) {
+  const expected = Buffer.from(imageSignature(storedName));
   const got = Buffer.from(String(signature || ""));
   if (expected.length !== got.length) return false;
   return crypto.timingSafeEqual(expected, got);
@@ -177,10 +163,10 @@ function verifyImageSignature(storedName, signature, folder = DEFAULT_FOLDER) {
  * Cu PUBLIC_IMAGE_BASE_URL, link direct in bucket; altfel prin aplicatie, semnat.
  * Arunca daca lipsesc amandoua.
  */
-function absoluteUrl(storedName, folder = DEFAULT_FOLDER) {
+function absoluteUrl(storedName) {
   if (PUBLIC_IMAGE_BASE_URL) {
-    const name = objectKey(storedName, folder).slice(folder.length + 1);
-    return `${PUBLIC_IMAGE_BASE_URL}/${folder}/${encodeURIComponent(name)}`;
+    const name = objectKey(storedName).slice(S3_KEY_PREFIX.length);
+    return `${PUBLIC_IMAGE_BASE_URL}/${S3_KEY_PREFIX}${encodeURIComponent(name)}`;
   }
   if (!PUBLIC_BASE_URL) {
     const err = new Error(
@@ -190,9 +176,7 @@ function absoluteUrl(storedName, folder = DEFAULT_FOLDER) {
     throw err;
   }
   const name = encodeURIComponent(storedName);
-  const sig = imageSignature(storedName, folder);
-  const extra = folder === DEFAULT_FOLDER ? "" : `&folder=${folder}`;
-  return `${PUBLIC_BASE_URL}/public/product-image/${name}?sig=${sig}${extra}`;
+  return `${PUBLIC_BASE_URL}/public/product-image/${name}?sig=${imageSignature(storedName)}`;
 }
 
 function mapRow(r) {
@@ -379,12 +363,6 @@ async function getPushedFingerprints(productIds) {
   return map;
 }
 
-/** Cheia din product_images_push_state: platforma eMAG sau un canal cu galerie proprie. */
-function pushStateKey(platform) {
-  const p = String(platform ?? "").trim().toLowerCase();
-  return PUSH_STATE_CHANNELS.includes(p) ? p : normalizePlatform(p);
-}
-
 /** Retine ce set de poze a fost trimis, ca sa nu-l retrimitem la fiecare push. */
 async function markImagesPushed(productId, platform, fingerprint) {
   await ensureSchema();
@@ -395,7 +373,7 @@ async function markImagesPushed(productId, platform, fingerprint) {
      VALUES ($1, $2, $3, now())
      ON CONFLICT (product_id, platform)
      DO UPDATE SET fingerprint = EXCLUDED.fingerprint, pushed_at = now()`,
-    [pid, pushStateKey(platform), String(fingerprint || "")]
+    [pid, normalizePlatform(platform), String(fingerprint || "")]
   );
 }
 
@@ -419,12 +397,12 @@ function makeStoredName(mime) {
   return `${crypto.randomUUID()}${ext}`;
 }
 
-async function putObject(storedName, buffer, mime, folder = DEFAULT_FOLDER) {
+async function putObject(storedName, buffer, mime) {
   await ensureBucket();
   await s3.send(
     new PutObjectCommand({
       Bucket: S3_BUCKET,
-      Key: objectKey(storedName, folder),
+      Key: objectKey(storedName),
       Body: buffer,
       ContentType: mime,
       ContentLength: buffer.length,
@@ -456,12 +434,12 @@ async function removeObject(storedName) {
  * Stream obiect S3 pentru proxy HTTP.
  * @returns {Promise<{ body: import("stream").Readable, contentType: string, contentLength: number|null }>}
  */
-async function getObjectStream(storedName, folder = DEFAULT_FOLDER) {
+async function getObjectStream(storedName) {
   await ensureBucket();
   const out = await s3.send(
     new GetObjectCommand({
       Bucket: S3_BUCKET,
-      Key: objectKey(storedName, folder),
+      Key: objectKey(storedName),
     })
   );
   return {
@@ -476,8 +454,8 @@ async function getObjectStream(storedName, folder = DEFAULT_FOLDER) {
  * @param {string} storedName
  * @returns {Promise<Buffer>}
  */
-async function getObjectBuffer(storedName, folder = DEFAULT_FOLDER) {
-  const { body } = await getObjectStream(storedName, folder);
+async function getObjectBuffer(storedName) {
+  const { body } = await getObjectStream(storedName);
   const chunks = [];
   for await (const chunk of body) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -525,13 +503,13 @@ async function preferWhiteBackgroundPrimary(productId) {
   return listForProduct(pid, FALLBACK_PLATFORM);
 }
 
-async function objectExists(storedName, folder = DEFAULT_FOLDER) {
+async function objectExists(storedName) {
   await ensureBucket();
   try {
     await s3.send(
       new HeadObjectCommand({
         Bucket: S3_BUCKET,
-        Key: objectKey(storedName, folder),
+        Key: objectKey(storedName),
       })
     );
     return true;
@@ -794,127 +772,6 @@ function downloadImage(url, redirectsLeft = MAX_REDIRECTS) {
   });
 }
 
-/**
- * Sterge pozele provenite din sursa externa (source_url NOT NULL) si le descarca
- * din nou de la URL-urile date. Uploadurile manuale (source_url NULL) raman intacte.
- * Dupa import, reordoneaza tot setul astfel încât packshot-ul (fundal alb) sa fie primul.
- * @param {number|string} productId
- * @param {string[]} urls
- * @returns {Promise<{ deleted: number, added: object[], failed: {url: string, error: string}[] }>}
- */
-async function replaceRemoteImages(productId, urls) {
-  await ensureSchema();
-  await ensureBucket();
-  const pid = Number(productId);
-  if (!Number.isFinite(pid) || pid <= 0) {
-    const err = new Error("product_id invalid");
-    err.status = 400;
-    throw err;
-  }
-
-  const list = [
-    ...new Set(
-      (Array.isArray(urls) ? urls : [])
-        .map((u) => String(u || "").trim())
-        .filter(Boolean)
-    ),
-  ];
-
-  // 1. sterge pozele externe existente (S3 intai, apoi DB — ca in deleteImage)
-  const { rows: old } = await query(
-    `SELECT id, stored_name FROM product_images
-     WHERE product_id = $1 AND platform = $2 AND source_url IS NOT NULL`,
-    [pid, FALLBACK_PLATFORM]
-  );
-  for (const row of old) {
-    await removeObject(row.stored_name);
-    await query(`DELETE FROM product_images WHERE id = $1`, [row.id]);
-  }
-
-  // 2. descarca toate URL-urile, sorteaza dupa scor fundal alb, apoi urca
-  const { rows: maxRows } = await query(
-    `SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM product_images
-     WHERE product_id = $1 AND platform = $2`,
-    [pid, FALLBACK_PLATFORM]
-  );
-  let nextOrder = Number(maxRows[0]?.max_ord) + 1;
-  if (!Number.isFinite(nextOrder) || nextOrder < 0) nextOrder = 0;
-
-  const downloaded = [];
-  const failed = [];
-
-  for (const url of list) {
-    try {
-      const { buffer, mime } = await downloadImage(url);
-      downloaded.push({ url, buffer, mime });
-    } catch (err) {
-      failed.push({ url, error: err.message });
-    }
-  }
-
-  const sorted = await sortByWhiteBackground(
-    downloaded,
-    (item) => item.buffer
-  );
-
-  const added = [];
-  for (const item of sorted) {
-    let storedName = null;
-    try {
-      storedName = makeStoredName(item.mime);
-      await putObject(storedName, item.buffer, item.mime);
-      let originalName = null;
-      try {
-        originalName =
-          decodeURIComponent(
-            new URL(item.url).pathname.split("/").pop() || ""
-          ) || null;
-      } catch {
-        originalName = null;
-      }
-      const { rows } = await query(
-        `INSERT INTO product_images
-           (product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, product_id, platform, stored_name, original_name, mime_type, byte_size, sort_order, source_url, created_at`,
-        [
-          pid,
-          FALLBACK_PLATFORM,
-          storedName,
-          originalName,
-          item.mime,
-          item.buffer.length,
-          nextOrder,
-          item.url,
-        ]
-      );
-      added.push(mapRow(rows[0]));
-      nextOrder += 1;
-    } catch (err) {
-      if (storedName) {
-        try {
-          await removeObject(storedName);
-        } catch {
-          /* ignore */
-        }
-      }
-      failed.push({ url: item.url, error: err.message });
-    }
-  }
-
-  // 3. reordoneaza tot setul (manual + remote) dupa scor packshot
-  try {
-    await preferWhiteBackgroundPrimary(pid);
-  } catch (err) {
-    console.error(
-      "[product-images] preferWhiteBackgroundPrimary failed:",
-      err.message
-    );
-  }
-
-  return { deleted: old.length, added, failed };
-}
-
 module.exports = {
   MAX_BYTES,
   ALLOWED_MIME,
@@ -935,7 +792,6 @@ module.exports = {
   getPushedFingerprints,
   markImagesPushed,
   S3_BUCKET,
-  S3_FOLDERS,
   S3_ENDPOINT,
   ensureBucket,
   listByProductIds,
@@ -950,7 +806,6 @@ module.exports = {
   objectExists,
   objectKey,
   downloadImage,
-  replaceRemoteImages,
   preferWhiteBackgroundPrimary,
   MAX_REMOTE_BYTES,
 };

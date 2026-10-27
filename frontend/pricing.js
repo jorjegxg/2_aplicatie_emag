@@ -1,6 +1,6 @@
 /*
  * Calcule si formatari folosite de ambele tabele: produsele (index.html)
- * si preturile/marja per canal (sync.html). Fara dependente de DOM-ul unei pagini.
+ * si preturile/marja per canal. Fara dependente de DOM-ul unei pagini.
  */
 (function (global) {
   const DEFAULT_ALTE_COSTURI = 0;

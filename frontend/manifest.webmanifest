@@ -2,7 +2,7 @@
   "name": "eMAG Comenzi",
   "short_name": "eMAG",
   "description": "Comenzi și stoc marketplace",
-  "start_url": "/vanzari.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

@@ -11,7 +11,6 @@
     <script src="theme.js"></script>
     <script src="auth.js"></script>
     <script src="logger.js"></script>
-    <script src="order-notifications.js"></script>
   </head>
   <body>
     <div class="page">
@@ -49,11 +48,8 @@
         <nav class="site-nav" aria-label="Navigare">
           <a href="/" aria-current="page">Produse</a>
           <a href="/base.html">Pregătire Base</a>
-          <a href="/vanzari.html">Comenzi</a>
           <a href="/statistici.html">Statistici</a>
           <a href="/apeluri.html">Apeluri review</a>
-          <a href="/sync.html">Sincronizare</a>
-          <a href="/coada.html">Coadă</a>
           <a href="/logs.html">Logs</a>
         </nav>
       </header>
@@ -172,6 +168,9 @@
             </svg>
             Pregătire Base
           </button>
+          <button type="button" id="btn-fetch-commission" class="btn btn-secondary" title="Citește din eMAG comisionul fiecărui produs, la prețul din tabel (doar citire)">
+            Comision eMAG
+          </button>
           <span id="status" class="status" aria-live="polite"></span>
           <button type="button" id="btn-compact-products" class="btn btn-secondary btn-compact" aria-pressed="false">
             Compact
@@ -276,7 +275,7 @@
               <th data-col="index" data-src="calc">#</th>
               <th data-col="id" data-src="channel">ID</th>
               <th data-col="order_history" data-src="db">Istoric comenzi</th>
-              <th data-col="push_all" data-src="calc" title="Publică doar acest produs pe toate canalele configurate">Publică</th>
+              <th data-col="push_all" data-src="calc" title="Deschide produsul în „Pregătire Base”">Base</th>
               <th data-col="name" data-src="channel">Nume</th>
               <th data-col="images" data-src="db">Poze</th>
               <th data-col="description" data-src="channel">Descriere</th>
@@ -323,7 +322,7 @@
               <th data-col="prp" data-src="channel">PRP</th>
               <th data-col="pret_minim" data-src="channel">Pret minim</th>
               <th data-col="pret_maxim" data-src="channel">Pret maxim</th>
-              <th data-col="stoc" data-src="channel">Stoc</th>
+              <th data-col="stoc" data-src="channel" title="Din Base, doar citire">Stoc</th>
               <th data-col="link_emag" data-src="calc">Link eMAG</th>
               <th data-col="link_cumparare" data-src="db">Link 1688</th>
               <th data-col="link_ali" data-src="db">Link ALI</th>
@@ -420,6 +419,6 @@
     <script src="/api/calculator.js?v=20261025-1"></script>
     <script src="pricing.js?v=20261005-1"></script>
     <script src="table-columns.js?v=20260922-3"></script>
-    <script src="app.js?v=20261025-1"></script>
+    <script src="app.js?v=20261027-1"></script>
   </body>
 </html>

@@ -4,14 +4,28 @@
   const Pricing = window.Pricing;
   const Calc = window.Calculator;
   const escapeHtml = Pricing.escapeHtml;
+
+  /** „RO 8 (RO) · HU 8 (HU) · BG 8 (RO (IMPLICITĂ))” — câte poze vede fiecare canal eMAG și de unde vin. */
+  function imagesSummary(pv) {
+    const keys = Object.entries(pv.payload.images || {}).filter(([, v]) => v);
+    const count = (channel) => keys.filter(([k]) => (channel ? k.endsWith("|" + channel) : !k.includes("|"))).length;
+    const options = pv.payload.media_options || {};
+    const src = pv.image_sources || { ro: pv.image_source };
+    return ["ro", "hu", "bg"]
+      .filter((l) => src[l])
+      .map((l) => {
+        const channel = Object.keys(options).find((c) => c.startsWith("emag" + l + "_"));
+        const own = channel && options[channel] === 1;
+        return l.toUpperCase() + " " + count(own ? channel : null) + " (" + String(src[l]).toUpperCase() + ")";
+      })
+      .join(" · ");
+  }
   const LANGS = [
     { key: "ro", label: "RO" },
     { key: "hu", label: "HU" },
     { key: "bg", label: "BG" },
     { key: "en", label: "EN" },
   ];
-  // Pe mobil, eMAG arată cam primele 50 de caractere din titlu.
-  const MOBILE_TITLE_CHARS = 50;
 
   const els = {
     status: document.getElementById("base-status"),
@@ -51,18 +65,6 @@
   const lei = (v) => (v == null || !Number.isFinite(v) ? "—" : Pricing.formatPrice(v, "RON"));
   const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : Pricing.formatPercent(v * 100));
   const signClass = (v) => (v == null || !Number.isFinite(v) ? "" : v < 0 ? "is-neg" : "is-pos");
-
-  /** Aceeasi transformare ca textToHtml din backend: paragrafe la rand gol, <br> la rand nou. */
-  function textToHtml(text) {
-    const normalized = String(text || "").replace(/\r\n?/g, "\n").trim();
-    if (!normalized) return "";
-    return normalized
-      .split(/\n{2,}/)
-      .map((b) => b.trim())
-      .filter(Boolean)
-      .map((b) => "<p>" + escapeHtml(b).split("\n").join("<br>") + "</p>")
-      .join(" ");
-  }
 
   /* ---------------- stare Base ---------------- */
 
@@ -108,9 +110,8 @@
         const st = productState(p);
         const langs = LANGS.map((l) => {
           const img = p.images[l.key] || 0;
-          const txt = p.texts[l.key] === true;
-          const cls = img && txt ? "ok" : img || txt ? "half" : "none";
-          const title = l.label + ": " + img + " poze, " + (txt ? "are text" : "fără text");
+          const cls = img ? "ok" : "none";
+          const title = l.label + ": " + img + " poze";
           return '<span class="base-lang base-lang--' + cls + '" title="' + escapeHtml(title) + '">' + l.label + "</span>";
         }).join("");
         return (
@@ -201,7 +202,7 @@
       priceField("sale_price", "Preț vânzare (lei)", p.sale_price) +
       priceField("min_sale_price", "Preț minim", p.min_sale_price) +
       priceField("max_sale_price", "Preț maxim", p.max_sale_price) +
-      priceField("general_stock", "Stoc", p.general_stock, 'step="1"') +
+      priceField("general_stock", "Stoc (din Base)", p.general_stock, 'step="1" readonly title="Stocul îl ține Base; se actualizează la 10 minute"') +
       priceField("pret_cumparare_usd", "Preț fabrică (" + escapeHtml(p.moneda_fabrica || "USD") + ")", p.pret_cumparare_usd) +
       priceField("procentaj_emag", "Comision eMAG %", p.procentaj_emag, p.emag_offer_id ? "" : 'readonly title="Fără ofertă eMAG legată"') +
       priceField(
@@ -228,7 +229,6 @@
 
   function renderLangTab() {
     const lang = currentLang;
-    const t = current.texts[lang] || {};
     const imgs = effectiveImages(lang);
     const fallbackNote =
       imgs.source !== lang && lang !== "en"
@@ -247,36 +247,12 @@
           )
           .join("")
       : '<p class="muted">Nicio poză.</p>';
-    const inBase = (baseStatus?.inventory?.languages || ["ro"]).includes(lang);
     return (
       '<div class="base-tab-body">' +
       fallbackNote + baseNote +
       '<div class="base-gallery">' + gallery + "</div>" +
-      '<div class="base-texts">' +
-      '<label class="field base-field-full"><span>Titlu <em id="base-title-count"></em></span>' +
-      '<input type="text" name="text_name" value="' + escapeHtml(t.name || "") + '" /></label>' +
-      '<p class="base-mobile-title" title="Ce se vede pe mobil"><span id="base-title-mobile"></span><span class="base-title-rest" id="base-title-rest"></span></p>' +
-      '<div class="base-desc-row">' +
-      '<label class="field base-field-full"><span>Descriere (text simplu; rând gol = paragraf nou)</span>' +
-      '<textarea name="text_description" rows="16">' + escapeHtml(t.description || "") + "</textarea></label>" +
-      '<div class="base-desc-preview"><span class="muted">Cum arată</span><div id="base-desc-html"></div></div>' +
-      "</div>" +
-      (inBase ? "" : '<p class="base-note">Limba ' + lang.toUpperCase() + " nu e în catalogul Base: textele se salvează aici, dar nu pleacă.</p>") +
-      '<div class="base-actions"><button type="button" class="btn" data-action="save-texts">Salvează textele ' + lang.toUpperCase() + "</button>" +
-      '<span class="status" id="base-text-status" role="status"></span></div>' +
-      "</div></div>"
+      "</div>"
     );
-  }
-
-  function updateTextPreview() {
-    const name = els.detail.querySelector('[name="text_name"]');
-    const desc = els.detail.querySelector('[name="text_description"]');
-    if (!name || !desc) return;
-    const v = name.value;
-    els.detail.querySelector("#base-title-count").textContent = "(" + v.length + " caractere)";
-    els.detail.querySelector("#base-title-mobile").textContent = v.slice(0, MOBILE_TITLE_CHARS);
-    els.detail.querySelector("#base-title-rest").textContent = v.length > MOBILE_TITLE_CHARS ? v.slice(MOBILE_TITLE_CHARS) : "";
-    els.detail.querySelector("#base-desc-html").innerHTML = textToHtml(desc.value) || '<span class="muted">—</span>';
   }
 
   function renderPreview() {
@@ -292,7 +268,7 @@
       '<section class="base-card"><h2>Ce pleacă în Base</h2>' +
       "<p>" + escapeHtml(link) + "</p>" +
       '<p class="muted">' + (pv.changed ? "S-a schimbat față de ultima trimitere." : "La fel ca la ultima trimitere.") +
-      " Texte: " + escapeHtml(fields) + " · " + Object.keys(pv.payload.images).length + " poze (" + escapeHtml(String(pv.image_source).toUpperCase()) + ")</p>" +
+      " Texte: " + escapeHtml(fields) + " · Poze: " + escapeHtml(imagesSummary(pv)) + "</p>" +
       warnings +
       '<details><summary>Payload</summary><pre class="base-payload">' + escapeHtml(JSON.stringify(pv.payload, null, 2)) + "</pre></details>" +
       '<div class="base-actions"><button type="button" class="btn btn-push" data-action="push">' +
@@ -322,7 +298,6 @@
       '<div id="base-tab">' + renderLangTab() + "</div></section>" +
       '<div id="base-preview">' + renderPreview() + "</div>";
     renderProfit();
-    updateTextPreview();
   }
 
   function loadDetail(id) {
@@ -381,28 +356,6 @@
       .catch((err) => setStatus("base-price-status", err.message, true));
   }
 
-  function saveTexts() {
-    const lang = currentLang;
-    const body = {
-      name: els.detail.querySelector('[name="text_name"]').value,
-      description: els.detail.querySelector('[name="text_description"]').value,
-      characteristics: current.texts[lang]?.characteristics ?? null,
-    };
-    setStatus("base-text-status", "Se salvează…");
-    sendJson("PUT", "/api/base/product/" + current.product.id + "/texts/" + lang, body)
-      .then((res) => {
-        current.texts = res.texts;
-        const item = products.find((x) => x.id === current.product.id);
-        if (item) {
-          item.texts[lang] = Boolean(body.name.trim() && body.description.trim());
-          if (lang === "ro") item.nume = body.name;
-        }
-        renderList();
-        setStatus("base-text-status", "Salvat.");
-        return refreshPreview();
-      })
-      .catch((err) => setStatus("base-text-status", err.message, true));
-  }
 
   function push() {
     setStatus("base-push-status", "Se pregătește…");
@@ -523,20 +476,14 @@
         b.setAttribute("aria-selected", String(b === tab));
       });
       els.detail.querySelector("#base-tab").innerHTML = renderLangTab();
-      updateTextPreview();
-      return;
+        return;
     }
     const action = e.target.closest("[data-action]")?.dataset.action;
     if (action === "save-prices") savePrices();
-    else if (action === "save-texts") saveTexts();
     else if (action === "push") push();
   });
 
   els.detail.addEventListener("input", (e) => {
-    if (e.target.name === "text_name" || e.target.name === "text_description") {
-      updateTextPreview();
-      return;
-    }
     if (e.target.name === "target_pct") {
       const target = num(e.target.value);
       if (target == null) return;

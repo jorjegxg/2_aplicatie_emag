@@ -3,8 +3,9 @@
  * eMAG / Trendyol prin integrările lui; aplicația nu mai scrie direct pe marketplace-uri.
  *
  * Ce pleacă: SKU (cod_produs), EAN, greutate/dimensiuni, prețul de vânzare în lista de prețuri
- * Base, stocul în depozitul Base, titlul/descrierea pe fiecare limbă a catalogului
- * (`name`, `name|hu`, ...) și galeria RO (Base ține o singură galerie per produs).
+ * Base, titlul/descrierea pe fiecare limbă a catalogului
+ * (`name`, `name|hu`, ...), galeria RO ca galerie implicită și galerii separate pe canalele
+ * eMAG HU/BG (`"0|emaghu_206"` + `media_options` = 1), când produsul are poze proprii pe limba lor.
  * Fără BASE_SEND=1 doar se construiește și se arată payload-ul.
  */
 const crypto = require("crypto");
@@ -15,10 +16,12 @@ const base = require("./base-client");
 
 const LANGS = ["ro", "hu", "bg", "en"];
 const MAX_IMAGES = 16;
+/** Canalele Base cu galerie proprie (integrare_cont din getInventoryIntegrations). RO = galeria implicită. */
+const IMAGE_CHANNELS = { hu: "emaghu_206", bg: "emagbg_207" };
 
 async function loadProduct(productId) {
   const { rows } = await query(
-    `SELECT id, cod_produs, ean, nume, descriere, sale_price, general_stock,
+    `SELECT id, cod_produs, ean, brand, nume, descriere, sale_price,
             greutate, inaltime, lungime, latime
      FROM catalog_products WHERE id = $1`,
     [Number(productId)]
@@ -106,10 +109,13 @@ async function inventoryLangs() {
 /**
  * Ce ar pleca în Base pentru produs. `langs` = limbile catalogului Base; textele altor limbi
  * nu pot pleca până nu adaugi limba în catalog (Base respinge câmpurile `name|xx` necunoscute).
+ * Din 2026-10-27 titlul și descrierea se editează doar în Base: pleacă numai la crearea produsului.
  */
 async function buildPayload(productId, { langs } = {}) {
   const product = await loadProduct(productId);
   const texts = await getTexts(productId);
+  const link = await getLink(productId);
+  const sendNameDesc = !link?.base_product_id;
   const catalogLangs = langs || (await inventoryLangs());
   const defaultLang = catalogLangs[0] || "ro";
   const cfg = base.config();
@@ -118,34 +124,53 @@ async function buildPayload(productId, { langs } = {}) {
   const text_fields = {};
   for (const lang of LANGS) {
     const t = texts[lang];
-    if (catalogLangs.includes(lang) && (!t?.name || !t?.description)) {
+    if (sendNameDesc && catalogLangs.includes(lang) && (!t?.name || !t?.description)) {
       warnings.push(`lipsește ${!t?.name && !t?.description ? "textul" : !t?.name ? "titlul" : "descrierea"} ${lang.toUpperCase()}`);
     }
-    if (!t?.name && !t?.description) continue;
+    if (!t?.name && !t?.description && !t?.characteristics) continue;
     if (!catalogLangs.includes(lang)) {
       warnings.push(`textele ${lang.toUpperCase()} nu pleacă: limba nu e în catalogul Base`);
       continue;
     }
     const suffix = lang === defaultLang ? "" : `|${lang}`;
-    if (t.name) text_fields[`name${suffix}`] = t.name;
-    if (t.description) text_fields[`description${suffix}`] = textToHtml(t.description);
+    if (sendNameDesc && t.name) text_fields[`name${suffix}`] = t.name;
+    if (sendNameDesc && t.description) text_fields[`description${suffix}`] = textToHtml(t.description);
     if (t.characteristics && typeof t.characteristics === "object") {
       text_fields[`features${suffix}`] = t.characteristics;
     }
   }
 
-  const effective = await pi.effectiveImages(product.id, "ro");
+  const byPlatform = await pi.listAllForProduct(product.id);
+  const effective = pi.pickEffective(byPlatform, "ro");
   const gallery = effective.images.slice(0, MAX_IMAGES);
   if (effective.images.length > MAX_IMAGES) warnings.push(`Base primește doar ${MAX_IMAGES} poze`);
   if (!gallery.length) warnings.push("produsul nu are poze");
   let images = {};
+  const media_options = {};
+  const image_sources = { ro: effective.source };
   if (pi.IMAGES_PUBLIC) {
     images = Object.fromEntries(gallery.map((img, i) => [String(i), `url:${pi.absoluteUrl(img.stored_name)}`]));
+    for (const [lang, channel] of Object.entries(IMAGE_CHANNELS)) {
+      const own = (byPlatform[lang] || []).slice(0, MAX_IMAGES);
+      if (!own.length) {
+        // Fără poze proprii canalul folosește galeria implicită (și uită galeria lui veche).
+        media_options[channel] = 0;
+        image_sources[lang] = `${effective.source} (implicită)`;
+        continue;
+      }
+      media_options[channel] = 1;
+      image_sources[lang] = lang;
+      // "" la pozițiile rămase: dacă galeria canalului avea mai multe poze, cele în plus dispar.
+      for (let i = 0; i < MAX_IMAGES; i++) {
+        images[`${i}|${channel}`] = own[i] ? `url:${pi.absoluteUrl(own[i].stored_name)}` : "";
+      }
+    }
   } else if (gallery.length) {
     warnings.push("pozele nu au link public (PUBLIC_IMAGE_BASE_URL) — nu pleacă");
   }
 
   if (!product.cod_produs) warnings.push("lipsește codul produsului (SKU)");
+  if (!product.brand) warnings.push("lipsește producătorul (brand)");
   if (product.sale_price == null) warnings.push("lipsește prețul de vânzare");
 
   const payload = {
@@ -156,19 +181,22 @@ async function buildPayload(productId, { langs } = {}) {
     length: product.lungime != null ? Number(product.lungime) : 0,
     width: product.latime != null ? Number(product.latime) : 0,
     prices: product.sale_price != null ? { [cfg.priceGroupId]: Number(product.sale_price) } : {},
-    stock: { [cfg.warehouse]: Math.max(0, Math.floor(Number(product.general_stock) || 0)) },
+    // Fără stoc: din 2026-10-27 stocul îl ține doar Base (scade singur din comenzi).
     text_fields,
     images,
+    media_options,
   };
-  const link = await getLink(productId);
-  const fp = fingerprint(payload);
+  const manufacturer = product.brand ? String(product.brand).trim() : null;
+  const fp = fingerprint({ ...payload, manufacturer });
   return {
     product_id: product.id,
     payload,
+    manufacturer,
     fingerprint: fp,
     changed: !link || link.last_push_fingerprint !== fp,
     link,
     image_source: effective.source,
+    image_sources,
     warnings,
     langs: catalogLangs,
   };
@@ -221,7 +249,14 @@ async function pushProductToBase(productId) {
 
   const product = await loadProduct(productId);
   const existing = await resolveBaseId(product, preview.link);
-  const body = existing ? { product_id: String(existing), ...preview.payload } : preview.payload;
+  const body = existing ? { product_id: String(existing), ...preview.payload } : { ...preview.payload };
+  if (existing) {
+    // Găsit după SKU/EAN fără legătură salvată: textele din Base rămân cum le-ai editat acolo.
+    body.text_fields = Object.fromEntries(
+      Object.entries(body.text_fields).filter(([k]) => !/^(name|description)(\||$)/.test(k))
+    );
+  }
+  if (preview.manufacturer) body.manufacturer_id = await base.ensureManufacturer(preview.manufacturer);
   const baseId = await base.addInventoryProduct(body);
   await saveLink(productId, {
     base_product_id: baseId,
@@ -234,8 +269,8 @@ async function pushProductToBase(productId) {
 }
 
 /**
- * Doar preț și/sau stoc, pentru produsele deja legate în Base.
- * items: [{ product_id, price?, stock? }] → { sent, skipped: [product_id fără legătură] }
+ * Doar prețul, pentru produsele deja legate în Base (stocul îl ține Base).
+ * items: [{ product_id, price? }] → { sent, skipped: [product_id fără legătură] }
  */
 async function pushPriceStock(items) {
   const ids = items.map((i) => Number(i.product_id));
@@ -249,12 +284,8 @@ async function pushPriceStock(items) {
   const prices = linked
     .filter((i) => i.price != null)
     .map((i) => ({ base_product_id: byId.get(Number(i.product_id)), price: i.price }));
-  const stocks = linked
-    .filter((i) => i.stock != null)
-    .map((i) => ({ base_product_id: byId.get(Number(i.product_id)), stock: i.stock }));
-  if (!base.sendEnabled()) return { dry_run: true, prices, stocks, skipped };
+  if (!base.sendEnabled()) return { dry_run: true, prices, skipped };
   if (prices.length) await base.updatePrices(prices);
-  if (stocks.length) await base.updateStock(stocks);
   return { dry_run: false, sent: linked.length, skipped };
 }
 
