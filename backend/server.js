@@ -913,7 +913,7 @@ app.get("/api/base/status", async (_req, res) => {
 app.get("/api/base/products", async (_req, res) => {
   try {
     const { rows } = await query(
-      `SELECT c.id, c.cod_produs, c.nume, c.ean, c.emag_offer_id, c.sale_price, c.general_stock,
+      `SELECT c.id, c.cod_produs, c.nume, c.ean, c.part_number_key, c.emag_offer_id, c.sale_price, c.general_stock,
               b.base_product_id, b.last_pushed_at, b.last_push_fingerprint,
               COALESCE(json_object_agg(t.lang, (COALESCE(t.name, '') <> '' AND COALESCE(t.description, '') <> ''))
                 FILTER (WHERE t.lang IS NOT NULL), '{}') AS texts

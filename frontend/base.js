@@ -103,7 +103,11 @@
   function renderList() {
     const q = els.q.value.trim().toLowerCase();
     const shown = products.filter(
-      (p) => !q || String(p.cod_produs || "").toLowerCase().includes(q) || String(p.nume || "").toLowerCase().includes(q)
+      (p) =>
+        !q ||
+        String(p.cod_produs || "").toLowerCase().includes(q) ||
+        String(p.nume || "").toLowerCase().includes(q) ||
+        String(p.part_number_key || "").toLowerCase().includes(q)
     );
     els.list.innerHTML = shown
       .map((p) => {
@@ -291,7 +295,12 @@
     }).join("");
     els.detail.innerHTML =
       '<header class="base-detail-head"><h2>' + escapeHtml(p.cod_produs || "#" + p.id) + "</h2>" +
-      '<p class="muted">' + escapeHtml(p.nume || "") + (p.ean ? " · EAN " + escapeHtml(p.ean) : "") + "</p></header>" +
+      '<p class="muted">' + escapeHtml(p.nume || "") + (p.ean ? " · EAN " + escapeHtml(p.ean) : "") +
+      (p.part_number_key
+        ? ' · PNK <a href="https://www.emag.ro/-/pd/' + encodeURIComponent(p.part_number_key) +
+          '/" target="_blank" rel="noopener">' + escapeHtml(p.part_number_key) + "</a>"
+        : "") +
+      "</p></header>" +
       renderPrices() +
       '<section class="base-card"><h2>Poze și texte pe limbi</h2>' +
       '<div class="base-tabs" role="tablist">' + tabs + "</div>" +
