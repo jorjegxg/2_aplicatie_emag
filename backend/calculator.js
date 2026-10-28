@@ -36,7 +36,7 @@
     consumabile: 5.5, // C23 (lei, cu TVA)
     curierat_contract: 19.2, // C26 (lei, cu TVA)
     curierat_client: 15.9, // C29 (lei, cu TVA)
-    transport_trendyol: 2.3, // lei/colet, cu TVA (facturile Trendyol "SHIPPING INVOICE-RO")
+    transport_trendyol: 26, // lei/colet, cu TVA: tariful pe greutate Trendyol (peste 125 lei sau 10 kg)
     transport_cumparare: "tren", // care cost final devine "Pret cumparare": "tren" (P) sau "aer" (O)
   };
 
@@ -66,13 +66,43 @@
   }
 
   /**
-   * Parametrii pe canal. Pe Trendyol clientul nu plateste transport (comisionul se aplica doar
-   * pe pret), iar in locul curierului din contract se scade taxa de transport retinuta de Trendyol.
+   * Trendyol Pays RO→RO: sub 125 lei si pana la 10 kg/desi taxa de transport e fixa dupa pret
+   * (lei fara TVA; pragul e exclusiv). Verificat pe facturile "SHIPPING INVOICE-RO": 3/3/4/5 lei + TVA.
    */
-  function paramsForChannel(params, channel) {
+  const TRENDYOL_BENZI = [
+    [40, 3],
+    [50, 4],
+    [75, 5],
+    [125, 8],
+  ];
+
+  /**
+   * Taxa de transport Trendyol pe colet (lei, cu TVA) la un pret de vanzare si o greutate de calcul.
+   * Peste 125 lei, peste 10 kg sau fara pret: tariful pe greutate din parametri (transport_trendyol).
+   * @returns {{ valoare: number, banda: number|null }} banda = taxa fara TVA cand se aplica o banda
+   */
+  function transportTrendyol(pretVanzare, greutate, params) {
+    const p = normalizeParams(params);
+    const pret = num(pretVanzare);
+    const kg = num(greutate);
+    const banda =
+      pret != null && pret > 0 && (kg == null || kg <= 10)
+        ? TRENDYOL_BENZI.find(([prag]) => pret < prag)
+        : null;
+    if (!banda) return { valoare: p.transport_trendyol, banda: null };
+    return { valoare: Math.round(banda[1] * (1 + p.tva / 100) * 100) / 100, banda: banda[1] };
+  }
+
+  /**
+   * Parametrii pe canal. Pe Trendyol clientul nu plateste transport (comisionul se aplica doar
+   * pe pret), iar in locul curierului din contract se scade taxa de transport retinuta de Trendyol,
+   * pe banda pretului de vanzare (fara pret: tariful pe greutate).
+   */
+  function paramsForChannel(params, channel, pretVanzare, greutate) {
     const p = normalizeParams(params);
     if (channel !== "trendyol") return p;
-    return { ...p, curierat_client: 0, curierat_contract: p.transport_trendyol };
+    const transport = transportTrendyol(pretVanzare, greutate, p).valoare;
+    return { ...p, curierat_client: 0, curierat_contract: transport };
   }
 
   function isPlatitorTva(regim) {
@@ -285,6 +315,7 @@
     DEFAULT_PARAMS,
     normalizeParams,
     paramsForChannel,
+    transportTrendyol,
     isPlatitorTva,
     greutateVolumetrica,
     greutateCalcul,

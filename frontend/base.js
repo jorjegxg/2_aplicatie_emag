@@ -137,6 +137,12 @@
 
   /* ---------------- detaliu ---------------- */
 
+  /** Greutatea de calcul (max fizica / volumetrica), ca in calculator. */
+  function greutate() {
+    const p = current.product;
+    return Calc.greutateCalcul(p.greutate, p.latime, p.lungime, p.inaltime);
+  }
+
   function calcFor(channel, prices) {
     const p = current.product;
     return Calc.calcProduct(
@@ -150,8 +156,24 @@
         pret_vanzare: prices.sale,
         comision_emag: channel === "trendyol" ? prices.ty_pct : prices.emag_pct,
       },
-      Calc.paramsForChannel(calcParams, channel)
+      Calc.paramsForChannel(calcParams, channel, prices.sale, greutate())
     );
+  }
+
+  /** Câmpurile de transport (needitabile): eMAG din Setări, Trendyol pe banda prețului de vânzare. */
+  function renderTransport(prices) {
+    const params = Calc.normalizeParams(calcParams);
+    const ty = Calc.transportTrendyol(prices.sale, greutate(), params);
+    const emagInput = els.detail.querySelector('[name="transport_emag"]');
+    const tyInput = els.detail.querySelector('[name="transport_trendyol"]');
+    emagInput.value = String(params.curierat_contract);
+    emagInput.title =
+      "Curierul din contract (Setări). Clientul plătește " + lei(params.curierat_client) + ", care intră la venit în profit";
+    tyInput.value = String(ty.valoare);
+    tyInput.title =
+      ty.banda != null
+        ? "Trendyol Pays: " + ty.banda + " lei + TVA pentru prețul de vânzare (sub 125 lei, până la 10 kg); se scade din plăți"
+        : "Peste 125 lei sau 10 kg: tariful pe greutate din Setări; se scade din plăți";
   }
 
   function readPriceInputs() {
@@ -169,6 +191,7 @@
 
   function renderProfit() {
     const prices = readPriceInputs();
+    renderTransport(prices);
     const rows = [
       ["eMAG", calcFor("emag", prices)],
       ["Trendyol", calcFor("trendyol", prices)],
@@ -222,6 +245,8 @@
         totalCumparare(),
         'readonly tabindex="-1" placeholder="—" title="Fabrică + agent + transport + taxe vamale + TVA import, pe ruta din Setări"'
       ) +
+      priceField("transport_emag", "Transport eMAG (lei)", null, 'readonly tabindex="-1" placeholder="—"') +
+      priceField("transport_trendyol", "Transport Trendyol (lei)", null, 'readonly tabindex="-1" placeholder="—"') +
       priceField("procentaj_emag", "Comision eMAG %", p.procentaj_emag, p.emag_offer_id ? "" : 'readonly title="Fără ofertă eMAG legată"') +
       priceField(
         "trendyol_pct",

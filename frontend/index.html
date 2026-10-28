@@ -218,8 +218,8 @@
               <span>Curierat facturat client</span>
               <span class="calc-input-wrap"><input type="number" data-calc-param="curierat_client" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
             </label>
-            <label class="field" title="Taxa reținută de Trendyol pe colet (facturi SHIPPING INVOICE-RO), cu TVA. Pe Trendyol clientul nu plătește transport">
-              <span>Transport Trendyol / colet</span>
+            <label class="field" title="Tariful pe greutate reținut de Trendyol pe colet, cu TVA, peste 125 lei sau peste 10 kg. Pe Trendyol clientul nu plătește transport">
+              <span>Transport Trendyol peste 125 lei / 10 kg</span>
               <span class="calc-input-wrap"><input type="number" data-calc-param="transport_trendyol" min="0" step="0.01" /><span class="calc-unit">lei</span></span>
             </label>
           </div>
@@ -227,7 +227,7 @@
             <li>Greutatea folosită e valoarea mai mare dintre greutatea fizică și cea volumetrică (L × l × H / 5000, în cm).</li>
             <li>Comisionul eMAG maxim este 27%; peste 30% calculul nu mai are sens.</li>
             <li>Pentru livrare în Easybox pune 0 la ambele costuri de curierat.</li>
-            <li>Pe Trendyol clientul nu plătește transport: în locul celor două costuri de curierat se scade „Transport Trendyol / colet”.</li>
+            <li>Pe Trendyol clientul nu plătește transport: în locul celor două costuri de curierat se scade taxa Trendyol Pays după prețul de vânzare (sub 40 lei: 3 lei, 40–49,99: 4, 50–74,99: 5, 75–124,99: 8, plus TVA, până la 10 kg); peste 125 lei sau 10 kg, „Transport Trendyol peste 125 lei / 10 kg”.</li>
             <li>„Preț cumpărare” se calculează automat (cost final pe ruta aleasă) și e folosit și în Sincronizare / Comenzi.</li>
           </ul>
         </div>
@@ -383,7 +383,7 @@
         </div>
       </div>
     </div>
-    <script src="/api/calculator.js?v=20261027-1"></script>
+    <script src="/api/calculator.js?v=20261028-1"></script>
     <script src="pricing.js?v=20261005-1"></script>
     <script src="table-columns.js?v=20260922-3"></script>
     <script src="app.js?v=20261027-4"></script>
