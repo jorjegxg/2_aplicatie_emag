@@ -1,0 +1,19 @@
+# Vocea lui Claude pe PC-ul Windows (Docker Desktop). Hook-ul Stop de pe servere face POST /vorbeste,
+# iar pc/difuzor.ps1 ia WAV-ul de pe 127.0.0.1:8100/urmator și îl redă pe boxe.
+# Tokenul stă în .env lângă acest fișier: VORBESTE_TOKEN=...
+services:
+  voce:
+    build: .
+    image: claude-voce
+    container_name: voce
+    restart: unless-stopped
+    environment:
+      VOCE_STT: "0"
+      VORBESTE_TOKEN: ${VORBESTE_TOKEN:?lipsește VORBESTE_TOKEN în .env}
+    ports:
+      - "8100:8000"
+    volumes:
+      - voce_models:/models
+
+volumes:
+  voce_models:

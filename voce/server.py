@@ -5,6 +5,8 @@ Serviciul `voce`: text-to-speech în română și transcriere (speech-to-text), 
   GET  /voci            vocile disponibile
   POST /tts             {text, voce, viteza} -> audio/mpeg
   POST /stt             fișier audio (webm/ogg/m4a/wav) -> {text, limba, durata}
+  POST /vorbeste        {text, voce, viteza} + X-Token -> 202; sintetizează pentru difuzorul de pe PC
+  GET  /urmator?dupa=N  long-poll pentru difuzor: ultimul WAV mai nou decât N (X-Id), altfel 204
 
 Motoare:
   piper       vocile Liana / Sanda (eduardem, CC BY-NC) și Mihai (rhasspy) — rapide, locale
@@ -21,7 +23,7 @@ import threading
 import time
 import wave
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel
@@ -29,6 +31,8 @@ from pydantic import BaseModel
 MODELS = os.environ.get("VOCE_MODELS_DIR", "/models")
 STT_MODEL = os.environ.get("VOCE_STT_MODEL", "large-v3-turbo")
 STT_THREADS = int(os.environ.get("VOCE_STT_THREADS", "6"))
+STT_ON = os.environ.get("VOCE_STT", "1") != "0"
+VORBESTE_TOKEN = os.environ.get("VORBESTE_TOKEN", "")
 MAX_TEXT = 6000
 
 # id -> (repo, fișier onnx)
@@ -61,6 +65,9 @@ _supertonic_lock = threading.Lock()
 _whisper = None
 _whisper_lock = threading.Lock()
 _ro_text = None
+# Difuzorul: păstrează doar ultimul mesaj; unul nou îl înlocuiește pe cel vechi.
+_ultim = {"id": 0, "wav": None}
+_ultim_cond = threading.Condition()
 
 
 def log(msg):
@@ -175,6 +182,18 @@ def to_mp3(data, fmt):
     return out.stdout
 
 
+def to_wav(data, fmt):
+    if fmt == "wav":
+        return data
+    out = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", fmt, "-i", "pipe:0", "-f", "wav", "pipe:1"],
+        input=data,
+        capture_output=True,
+        check=True,
+    )
+    return out.stdout
+
+
 def whisper():
     global _whisper
     with _whisper_lock:
@@ -210,6 +229,19 @@ def voci():
     return {"voci": VOICES, "implicita": DEFAULT_VOICE}
 
 
+def sintetizeaza(text, voce, viteza):
+    """-> (audio, format, voce folosită)"""
+    voce = voce if voce in VOICE_IDS else DEFAULT_VOICE
+    motor, name = voce.split(":", 1)
+    if motor == "piper":
+        data, fmt = synth_piper(name, text, viteza)
+    elif motor == "supertonic":
+        data, fmt = synth_supertonic(name, text, viteza)
+    else:
+        data, fmt = synth_edge(name, text, viteza)
+    return data, fmt, voce
+
+
 @app.post("/tts")
 def tts(body: TtsIn):
     text = (body.text or "").strip()
@@ -217,22 +249,58 @@ def tts(body: TtsIn):
         raise HTTPException(400, "text gol")
     if len(text) > MAX_TEXT:
         text = text[:MAX_TEXT]
-    voce = body.voce if body.voce in VOICE_IDS else DEFAULT_VOICE
-    motor, name = voce.split(":", 1)
     t0 = time.time()
     try:
-        if motor == "piper":
-            data, fmt = synth_piper(name, text, body.viteza)
-        elif motor == "supertonic":
-            data, fmt = synth_supertonic(name, text, body.viteza)
-        else:
-            data, fmt = synth_edge(name, text, body.viteza)
+        data, fmt, voce = sintetizeaza(text, body.voce, body.viteza)
         mp3 = to_mp3(data, fmt)
     except Exception as e:
-        log(f"tts {voce}: {e}")
-        raise HTTPException(502, f"{voce}: {e}")
+        log(f"tts {body.voce}: {e}")
+        raise HTTPException(502, f"{body.voce}: {e}")
     log(f"tts {voce}: {len(text)} caractere în {time.time() - t0:.1f}s")
     return Response(mp3, media_type="audio/mpeg", headers={"X-Voce": voce})
+
+
+def _pregateste(nr, text, voce, viteza):
+    t0 = time.time()
+    try:
+        data, fmt, voce = sintetizeaza(text, voce, viteza)
+        wav = to_wav(data, fmt)
+    except Exception as e:
+        log(f"vorbeste {voce}: {e}")
+        return
+    with _ultim_cond:
+        if nr != _ultim["id"]:
+            return  # între timp a venit alt mesaj
+        _ultim["wav"] = wav
+        _ultim_cond.notify_all()
+    log(f"vorbeste #{nr}: {len(text)} caractere în {time.time() - t0:.1f}s")
+
+
+@app.post("/vorbeste", status_code=202)
+def vorbeste(body: TtsIn, x_token: str = Header("")):
+    if VORBESTE_TOKEN and x_token != VORBESTE_TOKEN:
+        raise HTTPException(401, "token greșit")
+    text = (body.text or "").strip()[:MAX_TEXT]
+    if not text:
+        raise HTTPException(400, "text gol")
+    with _ultim_cond:
+        _ultim["id"] += 1
+        _ultim["wav"] = None
+        nr = _ultim["id"]
+    threading.Thread(target=_pregateste, args=(nr, text, body.voce, body.viteza), daemon=True).start()
+    return {"id": nr}
+
+
+@app.get("/urmator")
+def urmator(dupa: int = 0, timeout: float = 25):
+    """Difuzorul întreabă de pe PC; răspunde când există un WAV mai nou decât `dupa`."""
+    with _ultim_cond:
+        if dupa > _ultim["id"]:
+            dupa = 0  # serviciul a repornit
+        _ultim_cond.wait_for(lambda: _ultim["id"] > dupa and _ultim["wav"] is not None, timeout=min(timeout, 60))
+        if _ultim["id"] > dupa and _ultim["wav"] is not None:
+            return Response(_ultim["wav"], media_type="audio/wav", headers={"X-Id": str(_ultim["id"])})
+    return Response(status_code=204)
 
 
 @app.post("/stt")
@@ -263,7 +331,8 @@ def preload():
     try:
         ro_text()
         piper_voice(DEFAULT_VOICE.split(":", 1)[1])
-        whisper()
+        if STT_ON:
+            whisper()
     except Exception as e:
         log(f"preîncărcare: {e}")
 
