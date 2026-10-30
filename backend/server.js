@@ -31,7 +31,10 @@ const {
   absoluteUrl,
   verifyImageSignature,
   getObjectStream,
+  getObjectBuffer,
+  effectiveImages,
 } = require("./product-images");
+const { zipStore } = require("./zip-store");
 const { getChannel, listChannels } = require("./channels");
 const {
   log,
@@ -54,6 +57,7 @@ const baseCommission = require("./base-commission");
 const { PLATFORMS: IMAGE_PLATFORMS } = require("./product-images");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
+const emagValidari = require("./emag-validari");
 const {
   isAuthEnabled,
   requireAppAuth,
@@ -866,6 +870,42 @@ app.post(
   }
 );
 
+const IMAGE_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+
+/** Descarca pozele unei platforme (setul efectiv: ale ei sau EN) ca ZIP. */
+app.get("/api/catalog/product/:productId/images/zip", async (req, res) => {
+  try {
+    const platform = normalizePlatform(req.query.platform);
+    const { rows } = await query(
+      `SELECT cod_produs FROM catalog_products WHERE id = $1`,
+      [Number(req.params.productId) || 0]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Produs inexistent" });
+    const { images } = await effectiveImages(req.params.productId, platform);
+    if (!images.length) return res.status(404).json({ error: "Produsul nu are poze" });
+
+    const entries = await Promise.all(
+      images.map(async (img, i) => {
+        const ext =
+          IMAGE_EXT[img.mime_type] || (img.stored_name.split(".").pop() || "jpg").toLowerCase();
+        return {
+          name: `${String(i + 1).padStart(2, "0")}.${ext}`,
+          data: await getObjectBuffer(img.stored_name),
+        };
+      })
+    );
+    const base = String(rows[0].cod_produs || `produs-${req.params.productId}`)
+      .replace(/[^A-Za-z0-9._-]+/g, "_");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${base}_${platform}.zip"`);
+    return res.send(zipStore(entries));
+  } catch (err) {
+    console.error("[product:images:zip]", err.message);
+    logCaught("product-images", err);
+    return res.status(Number(err.status) || 500).json({ error: err.message || "Eroare la descarcare poze" });
+  }
+});
+
 app.delete("/api/catalog/product/:productId/images/:imageId", async (req, res) => {
   try {
     await deleteImage(req.params.productId, req.params.imageId);
@@ -897,6 +937,27 @@ app.patch("/api/catalog/product/:productId/images/order", async (req, res) => {
     logCaught("product-images", err);
     const status = Number(err.status) || 400;
     return res.status(status).json({ error: err.message || "Eroare la reordonare poze" });
+  }
+});
+
+/* ---------------- Validări eMAG (RO → HU → BG), doar citire ---------------- */
+
+app.get("/api/validari", async (_req, res) => {
+  try {
+    return res.json(await emagValidari.getOverview());
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/** „Verifică acum” din pagina Validări: aceeași verificare ca serviciul `validari`. */
+app.post("/api/validari/refresh", async (_req, res) => {
+  try {
+    const result = await emagValidari.processOnce();
+    if (result.skipped) return res.status(409).json({ error: "O verificare rulează deja, încearcă peste un minut." });
+    return res.json({ ...result, ...(await emagValidari.getOverview()) });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
   }
 });
 
@@ -1001,6 +1062,26 @@ app.post("/api/base/product/:productId/push", async (req, res) => {
     return res.json({ ok: true, ...result });
   } catch (err) {
     if (!err?.expected) logCaught("base-push", err);
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+/** Prețurile din aplicație care diferă de cele din Base (doar citire). */
+app.get("/api/base/prices/changed", async (_req, res) => {
+  try {
+    return res.json({ ok: true, changed: await basePush.changedPrices() });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-prices", err);
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+/** Trimite în Base toate prețurile schimbate; fără BASE_SEND=1 doar le listează (dry_run). */
+app.post("/api/base/prices/push", async (_req, res) => {
+  try {
+    return res.json({ ok: true, ...(await basePush.pushChangedPrices()) });
+  } catch (err) {
+    if (!err?.expected) logCaught("base-prices", err);
     return res.status(err.status || 500).json({ error: err.message });
   }
 });

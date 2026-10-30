@@ -1,0 +1,26 @@
+# Serviciul paginii Claude Code (systemd --user). Instalare:
+#   mkdir -p ~/.config/systemd/user
+#   ln -sf /home/gxg/2_aplicatie_emag/cod/emag-cod.service ~/.config/systemd/user/emag-cod.service
+#   systemctl --user daemon-reload && systemctl --user enable --now emag-cod
+#   loginctl enable-linger gxg      # pornește și fără să fii logat pe PC
+# Log: journalctl --user -u emag-cod -f
+[Unit]
+Description=emag-cod: pagina Claude Code din aplicatia eMAG (sesiuni Claude Code cu voce)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/gxg/2_aplicatie_emag/cod
+ExecStart=/usr/bin/node /home/gxg/2_aplicatie_emag/cod/server.js
+Environment=NODE_ENV=production
+Environment=COD_PORT=3200
+Environment=VOCE_URL=http://127.0.0.1:8100
+Environment=NODE_PATH=/home/gxg/2_aplicatie_emag/cod/node_modules
+Environment=PATH=/home/gxg/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

@@ -294,6 +294,10 @@
       '<div class="base-tab-body">' +
       fallbackNote + baseNote +
       '<div class="base-gallery">' + gallery + "</div>" +
+      (imgs.list.length
+        ? '<div class="base-actions"><a class="btn" href="/api/catalog/product/' + current.product.id +
+          "/images/zip?platform=" + lang + '" download>↓ Descarcă pozele ' + lang.toUpperCase() + " (ZIP)</a></div>"
+        : "") +
       "</div>"
     );
   }

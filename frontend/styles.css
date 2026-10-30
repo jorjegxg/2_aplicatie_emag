@@ -4898,6 +4898,7 @@ td.col-profit-edit .profit-edit-suffix {
 .base-profit td.is-neg { color: var(--danger); font-weight: 600; }
 .base-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .base-actions .status.is-error { color: var(--danger); }
+.base-actions a.btn { text-decoration: none; }
 .base-toolbar { margin: 0 0 12px; }
 
 .base-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
@@ -5010,3 +5011,97 @@ td.col-profit-edit .profit-edit-suffix {
 .btn-copy.is-copied::after {
   content: " ✓";
 }
+
+/* ---------- Boți (boti.html), întâi pentru telefon ---------- */
+.boti-page { max-width: 900px; margin: 0 auto; }
+.boti-toolbar { flex-wrap: wrap; gap: 0.5rem; }
+.boti-warn { background: var(--banner-bg); color: var(--banner-ink); border: 1px solid var(--banner-border); border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.88rem; }
+.boti-list { display: grid; gap: 0; }
+.boti-card-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.boti-card-head .stats-h2 { margin-bottom: 0.2rem; }
+.boti-badge { display: inline-block; background: var(--accent); color: var(--on-accent); border-radius: 999px; font-size: 0.72rem; padding: 0.1rem 0.5rem; vertical-align: middle; }
+.boti-switch { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: 0.85rem; white-space: nowrap; cursor: pointer; }
+.boti-switch input { width: 1.3rem; height: 1.3rem; accent-color: var(--ok); }
+.boti-state { margin: 0.3rem 0; font-size: 0.88rem; }
+.boti-last { margin: 0.3rem 0 0.6rem; font-size: 0.92rem; }
+.boti-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.boti-actions .btn { min-height: 2.6rem; }
+.boti-istoric ul { list-style: none; padding: 0; margin: 0.4rem 0; font-size: 0.85rem; }
+.boti-istoric li { padding: 0.35rem 0; border-top: 1px solid var(--border); }
+.boti-link { background: none; border: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-align: left; }
+.boti-link:disabled { color: var(--muted); cursor: default; }
+.boti-setari summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 0.4rem 0; }
+.boti-form { display: grid; gap: 0.6rem; margin-top: 0.4rem; }
+.boti-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; }
+.boti-field { display: grid; gap: 0.25rem; font-size: 0.82rem; color: var(--muted); }
+.boti-field input, .boti-field select { font: inherit; font-size: 0.95rem; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; min-height: 2.5rem; width: 100%; box-sizing: border-box; }
+.boti-days { border: 1px solid var(--border); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; padding: 0.4rem 0.6rem; }
+.boti-days legend { font-size: 0.82rem; color: var(--muted); }
+.boti-day { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.9rem; }
+.boti-day input { width: 1.1rem; height: 1.1rem; }
+.boti-proba, .boti-raport audio, .boti-msg audio { width: 100%; margin-top: 0.4rem; }
+.boti-raport-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.boti-rezumat { font-size: 1rem; font-weight: 600; margin: 0.8rem 0 0.4rem; }
+.boti-text { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
+.boti-h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+.boti-constatari { display: grid; gap: 0.5rem; }
+.boti-constatare { border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.88rem; }
+.boti-constatare p { margin: 0.3rem 0 0; }
+.boti-chat { display: grid; gap: 0.5rem; margin-bottom: 0.6rem; }
+.boti-msg { border-radius: 10px; padding: 0.5rem 0.7rem; max-width: 92%; font-size: 0.92rem; }
+.boti-msg p { margin: 0; white-space: pre-wrap; }
+.boti-msg-eu { background: var(--accent); color: var(--on-accent); justify-self: end; }
+.boti-msg-bot { background: var(--surface-alt); justify-self: start; }
+.boti-talk { position: sticky; bottom: 0; background: var(--surface); padding: 0.6rem 0 calc(0.4rem + env(safe-area-inset-bottom)); display: grid; gap: 0.5rem; }
+.boti-mic { display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; min-height: 4rem; border: none; border-radius: 14px; background: var(--ok); color: #fff; font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.boti-mic svg { width: 1.6rem; height: 1.6rem; }
+.boti-mic.is-recording { background: var(--danger); animation: boti-pulse 1s ease-in-out infinite; }
+@keyframes boti-pulse { 50% { opacity: 0.75; } }
+.boti-msg-form { display: flex; gap: 0.5rem; }
+.boti-msg-form input { flex: 1; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; min-height: 2.5rem; }
+
+/* Pagina Claude Code (cod.html): refolosește stilurile boților + ce e specific conversației cu unelte. */
+.cod-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.6rem; }
+.cod-head .stats-h2 { margin: 0; overflow-wrap: anywhere; }
+.cod-controls { display: flex; gap: 0.5rem; flex: 1 1 18rem; }
+.cod-controls .boti-field { flex: 1; min-width: 0; }
+.cod-controls select { width: 100%; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem; min-height: 2.4rem; }
+.cod-chat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.45rem; margin: 0.6rem 0; }
+/* Fără min-width: 0 un rezumat lung de unealtă (nowrap) lățea coloana peste card și bulele ieșeau din chenar. */
+.cod-chat > * { min-width: 0; box-sizing: border-box; }
+.cod-msg { max-width: 100%; }
+.cod-md { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.cod-md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; background: var(--surface); border-radius: 4px; padding: 0 0.25em; }
+.cod-pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.55rem; margin: 0.35rem 0 0; max-height: 22rem; overflow: auto; }
+.cod-live { opacity: 0.85; }
+.cod-voce { display: flex; gap: 0.4rem; align-items: flex-start; text-align: left; background: none; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); font: inherit; font-size: 0.85rem; padding: 0.35rem 0.5rem; margin-top: 0.45rem; cursor: pointer; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.cod-undo { display: block; margin-top: 0.3rem; background: none; border: none; color: inherit; opacity: 0.75; font: inherit; font-size: 0.75rem; cursor: pointer; padding: 0; }
+.cod-tool { font-size: 0.82rem; color: var(--muted); border-left: 3px solid var(--border); padding: 0.1rem 0 0.1rem 0.5rem; }
+.cod-tool summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cod-tool-name { font-weight: 700; color: var(--ink); }
+.cod-tool-sum { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.cod-tool.is-error { border-left-color: var(--danger); }
+.cod-tool-sub { margin-left: 1rem; }
+.cod-info { font-size: 0.8rem; color: var(--muted); margin: 0; text-align: center; }
+.cod-info.is-error { color: var(--danger); }
+.cod-cereri { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+.cod-cerere { border: 2px solid var(--accent); border-radius: 10px; padding: 0.6rem 0.7rem; background: var(--surface); }
+.cod-cerere-sum { margin: 0.3rem 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; overflow-wrap: anywhere; }
+.cod-cerere .boti-actions .btn { flex: 1 1 auto; }
+.cod-plan { max-height: 26rem; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; margin-top: 0.4rem; font-size: 0.88rem; }
+.cod-nu { display: flex; gap: 0.5rem; }
+.cod-nu input, .cod-alt { flex: 1; font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem; min-height: 2.4rem; box-sizing: border-box; }
+.cod-q { border: 1px solid var(--border); border-radius: 8px; margin: 0.5rem 0; padding: 0.4rem 0.6rem; display: grid; gap: 0.35rem; }
+.cod-q legend { font-weight: 600; font-size: 0.9rem; }
+.cod-opt { display: flex; gap: 0.45rem; align-items: flex-start; font-size: 0.88rem; cursor: pointer; }
+.cod-opt input { margin-top: 0.2rem; width: 1.1rem; height: 1.1rem; }
+.cod-talk-row { display: flex; gap: 0.5rem; }
+.cod-talk-row .boti-mic { flex: 1; }
+.cod-stop { min-width: 6rem; }
+.cod-page .boti-msg-form textarea { flex: 1; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; min-height: 2.5rem; resize: none; box-sizing: border-box; }
+.cod-sesiuni { list-style: none; padding: 0; margin: 0; max-height: 60vh; overflow: auto; }
+.cod-sesiuni li { border-top: 1px solid var(--border); }
+.cod-ses { display: grid; gap: 0.1rem; width: 100%; padding: 0.45rem 0; }
+.cod-ses.is-current .cod-ses-t { font-weight: 700; }
+.cod-ses-t { color: var(--ink); overflow-wrap: anywhere; }
+#cod-audio { width: 100%; margin-top: 0.4rem; }

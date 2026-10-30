@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Produse</title>
-    <link rel="stylesheet" href="styles.css?v=20261027-4" />
+    <link rel="stylesheet" href="styles.css?v=20261029-3" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -48,6 +48,9 @@
         <nav class="site-nav" aria-label="Navigare">
           <a href="/" aria-current="page">Produse</a>
           <a href="/base.html">Pregătire Base</a>
+          <a href="/validari.html">Validări</a>
+          <a href="/boti.html">Boți</a>
+          <a href="/cod.html">Claude Code</a>
           <a href="/statistici.html">Statistici</a>
           <a href="/apeluri.html">Apeluri review</a>
           <a href="/logs.html">Logs</a>
@@ -132,6 +135,9 @@
               <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0-5 5m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
             </svg>
             Pregătire Base
+          </button>
+          <button type="button" id="btn-push-prices" class="btn btn-secondary" title="Trimite în Base toate prețurile care diferă de cele din Base (îți arată lista înainte)">
+            Prețuri → Base
           </button>
           <button type="button" id="btn-fetch-commission" class="btn btn-secondary" title="Citește din Base comisionul real eMAG și Trendyol, din ultimele comenzi (doar citire)">
             Comisioane din Base
@@ -386,6 +392,6 @@
     <script src="/api/calculator.js?v=20261028-1"></script>
     <script src="pricing.js?v=20261005-1"></script>
     <script src="table-columns.js?v=20260922-3"></script>
-    <script src="app.js?v=20261027-4"></script>
+    <script src="app.js?v=20261029-3"></script>
   </body>
 </html>
