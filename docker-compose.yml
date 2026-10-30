@@ -86,6 +86,64 @@ services:
       retries: 5
       start_period: 30s
 
+  # Urmareste validarile eMAG si anunta cand poti pune produsul pe platforma
+  # urmatoare: RO -> HU -> BG. Pagina Validari + Telegram (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).
+  # Cu VALIDARI_SEND=1 retrimite singur din Base pe tara refuzata cat era alta in validare.
+  # Log: docker logs emag-validari
+  validari:
+    build: ./backend
+    container_name: emag-validari
+    restart: unless-stopped
+    command: ["node", "validari-worker.js"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
+      VALIDARI_INTERVAL_SEC: ${VALIDARI_INTERVAL_SEC:-300}
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Boții care citesc din Base / eMAG / Trendyol și îți vorbesc (pagina Boți). Doar citesc, nu trimit nimic.
+  # Creierul: Claude prin abonament (CLAUDE_CODE_OAUTH_TOKEN din `claude setup-token`) sau ANTHROPIC_API_KEY;
+  # tokenul se poate schimba și din pagina Boți. Log: docker logs emag-boti
+  boti:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.boti
+    container_name: emag-boti
+    restart: unless-stopped
+    command: ["node", "boti-server.js"]
+    env_file:
+      - .env
+    environment:
+      PORT: 3100
+      DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
+      S3_ENDPOINT: ${S3_ENDPOINT_DOCKER:-http://minio:9000}
+      VOCE_URL: http://voce:8000
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Vocea boților: text-to-speech în română (Piper / Supertonic / Edge) și transcriere (faster-whisper), pe CPU.
+  # Modelele se descarcă o singură dată în volumul emag_voce_models.
+  voce:
+    build: ./voce
+    container_name: emag-voce
+    restart: unless-stopped
+    environment:
+      VOCE_STT_MODEL: ${VOCE_STT_MODEL:-large-v3-turbo}
+      VOCE_STT_THREADS: ${VOCE_STT_THREADS:-6}
+    # Pe 127.0.0.1:8100 pentru hook-ul de voce al Claude Code de pe PC (~/.claude/hooks/vorbeste.js).
+    ports:
+      - "127.0.0.1:8100:8000"
+    volumes:
+      - emag_voce_models:/models
+
   front:
     build: ./frontend
     container_name: emag-front
@@ -98,3 +156,4 @@ services:
 volumes:
   emag_pgdata:
   emag_minio_data:
+  emag_voce_models:

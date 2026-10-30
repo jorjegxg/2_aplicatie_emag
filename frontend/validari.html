@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>eMAG — Validări</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <script src="theme.js"></script>
+    <script src="auth.js"></script>
+    <script src="logger.js"></script>
+  </head>
+  <body>
+    <div class="page stats-page validari-page">
+      <div class="top-actions">
+        <a href="/settings.html" class="top-action-btn" title="Setări" aria-label="Setări">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+        </a>
+        <a href="/logs.html" class="top-action-btn" title="Logs" aria-label="Logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6M8 13h8M8 17h5" />
+          </svg>
+        </a>
+        <button
+        type="button"
+        id="btn-theme"
+        class="theme-toggle"
+        aria-pressed="false"
+        title="Comută tema"
+      >
+        <svg class="theme-toggle-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+        <svg class="theme-toggle-icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+        <span class="theme-toggle-label">Light</span>
+        </button>
+      </div>
+      <header class="header">
+        <nav class="site-nav" aria-label="Navigare">
+          <a href="/">Produse</a>
+          <a href="/base.html">Pregătire Base</a>
+          <a href="/validari.html" aria-current="page">Validări</a>
+          <a href="/boti.html">Boți</a>
+          <a href="/statistici.html">Statistici</a>
+          <a href="/apeluri.html">Apeluri review</a>
+          <a href="/logs.html">Logs</a>
+        </nav>
+        <h1>Validări eMAG</h1>
+        <p class="subtitle">Când iese un produs din validare pe RO, îl poți pune pe HU, apoi pe BG. Serviciul <code>validari</code> verifică la 5 minute, doar citire.</p>
+      </header>
+
+      <div class="stats-toolbar">
+        <div class="stats-presets" role="group" aria-label="Filtru">
+          <button type="button" class="stats-chip" data-filter="actiune">De făcut</button>
+          <button type="button" class="stats-chip" data-filter="validare">În validare</button>
+          <button type="button" class="stats-chip" data-filter="toate">Toate</button>
+        </div>
+        <button type="button" id="val-refresh" class="btn">Verifică acum</button>
+        <span id="val-status" class="status" aria-live="polite"></span>
+      </div>
+
+      <p id="val-run" class="stats-card-note"></p>
+
+      <section class="stats-card" aria-labelledby="h-val">
+        <h2 id="h-val" class="stats-h2">Produse <span id="val-count" class="stats-h2-note"></span></h2>
+        <div id="val-table" class="stats-table-scroll"></div>
+      </section>
+
+      <section class="stats-card" aria-labelledby="h-ev">
+        <h2 id="h-ev" class="stats-h2">Schimbări de status</h2>
+        <p class="stats-card-note">Ultimele 100. 📨 = trimis pe Telegram.</p>
+        <div id="val-events" class="stats-table-scroll"></div>
+      </section>
+    </div>
+    <script src="validari.js"></script>
+  </body>
+</html>

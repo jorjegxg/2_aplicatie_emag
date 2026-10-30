@@ -1,0 +1,18 @@
+# Serviciul `boti`: același cod ca backend-ul + Agent SDK (Claude Code inclus) + Chromium pentru botul SEO.
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev \
+ && npm install --no-save @anthropic-ai/claude-agent-sdk@0.3.312 zod@4 playwright@1.64.1 \
+ && npx playwright install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/* /root/.npm
+
+COPY . .
+
+ENV NODE_ENV=production
+ENV PORT=3100
+EXPOSE 3100
+
+CMD ["node", "boti-server.js"]

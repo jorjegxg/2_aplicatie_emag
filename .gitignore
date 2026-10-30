@@ -12,3 +12,5 @@ backend/data/auth-preferred.json
 backend/uploads/
 backups/
 backend/data/repara-poze/
+# Boți: MP3-uri, sesiuni Claude, director de lucru
+backend/data/boti/

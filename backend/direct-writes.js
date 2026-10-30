@@ -12,13 +12,17 @@ function blockedError(target) {
   return err;
 }
 
-/** eMAG foloseste POST si pentru citiri: decide dupa ultimul segment din cale. */
-function assertEmagReadOnly(url, method) {
+/**
+ * eMAG foloseste POST si pentru citiri: decide dupa ultimul segment din cale.
+ * Exceptie: `allowOfferSave` (doar serviciul validari, cu VALIDARI_SEND=1) poate face product_offer/save.
+ */
+function assertEmagReadOnly(url, method, { allowOfferSave = false } = {}) {
   const { hostname, pathname } = new URL(url);
   if (!hostname.startsWith("marketplace-api.emag.")) return;
   if (String(method).toUpperCase() === "GET") return;
   const last = pathname.split("/").filter(Boolean).pop() || "";
   if (last === "read" || last === "count") return;
+  if (allowOfferSave && /\/product_offer\/save$/.test(pathname)) return;
   throw blockedError(`eMAG ${pathname}`);
 }
 

@@ -36,9 +36,9 @@ const AUTH_CACHE_PATH = path.join(__dirname, "data", "auth-preferred.json");
 // eMAG marketplace cert currently expired (CERT_HAS_EXPIRED) — scoped bypass only for this host
 const EMAG_HTTPS_AGENT = new https.Agent({ rejectUnauthorized: false });
 
-function emagFetch(url, { method = "GET", headers = {}, body } = {}) {
+function emagFetch(url, { method = "GET", headers = {}, body, allowOfferSave = false } = {}) {
   try {
-    assertEmagReadOnly(url, method);
+    assertEmagReadOnly(url, method, { allowOfferSave });
   } catch (err) {
     return Promise.reject(err);
   }

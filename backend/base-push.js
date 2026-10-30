@@ -289,6 +289,39 @@ async function pushPriceStock(items) {
   return { dry_run: false, sent: linked.length, skipped };
 }
 
+/**
+ * Produsele legate în Base al căror preț din aplicație diferă de cel din Base.
+ * → [{ product_id, cod_produs, base_product_id, base_price, price }]
+ */
+async function changedPrices() {
+  const { rows } = await query(
+    `SELECT c.id, c.cod_produs, c.sale_price, b.base_product_id
+     FROM catalog_products c
+     JOIN base_products b ON b.product_id = c.id
+     WHERE b.base_product_id IS NOT NULL AND c.sale_price IS NOT NULL
+     ORDER BY c.id`
+  );
+  if (!rows.length) return [];
+  const basePrices = await base.getAllPrices();
+  return rows
+    .map((r) => ({
+      product_id: Number(r.id),
+      cod_produs: r.cod_produs,
+      base_product_id: Number(r.base_product_id),
+      base_price: basePrices.get(Number(r.base_product_id)) ?? null,
+      price: Number(r.sale_price),
+    }))
+    .filter((r) => basePrices.has(r.base_product_id) && (r.base_price == null || Math.abs(r.base_price - r.price) >= 0.005));
+}
+
+/** Trimite în Base toate prețurile schimbate. Fără BASE_SEND=1 doar le listează (`dry_run`). */
+async function pushChangedPrices() {
+  const changed = await changedPrices();
+  if (!base.sendEnabled()) return { dry_run: true, changed };
+  if (changed.length) await base.updatePrices(changed);
+  return { dry_run: false, changed };
+}
+
 module.exports = {
   LANGS,
   getTexts,
@@ -297,4 +330,6 @@ module.exports = {
   buildPayload,
   pushProductToBase,
   pushPriceStock,
+  changedPrices,
+  pushChangedPrices,
 };

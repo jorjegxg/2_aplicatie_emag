@@ -163,6 +163,21 @@ async function updatePrices(items) {
   return call("updateInventoryProductsPrices", { inventory_id: inventoryId, products });
 }
 
+/** Prețurile din grupa BASE_PRICE_GROUP_ID pentru tot catalogul → Map(base_product_id → preț). */
+async function getAllPrices() {
+  const { inventoryId, priceGroupId } = config();
+  const prices = new Map();
+  for (let page = 1; ; page++) {
+    const data = await call("getInventoryProductsPrices", { inventory_id: inventoryId, page });
+    const entries = Object.entries(data.products || {});
+    for (const [id, p] of entries) {
+      const v = Number(p?.prices?.[priceGroupId]);
+      prices.set(Number(id), Number.isFinite(v) ? v : null);
+    }
+    if (entries.length < 1000) return prices;
+  }
+}
+
 /** items: [{ base_product_id, stock }] — depozitul BASE_WAREHOUSE. */
 async function updateStock(items) {
   const { inventoryId, warehouse } = config();
@@ -217,6 +232,7 @@ module.exports = {
   addInventoryProduct,
   ensureManufacturer,
   updatePrices,
+  getAllPrices,
   updateStock,
   getStatus,
   getJournalList,

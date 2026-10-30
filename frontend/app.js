@@ -30,6 +30,7 @@ const btnTableFullscreen = document.getElementById("btn-table-fullscreen");
 const btnCompactProducts = document.getElementById("btn-compact-products");
 const btnPushAll = document.getElementById("btn-sync");
 const btnFetchCommission = document.getElementById("btn-fetch-commission");
+const btnPushPrices = document.getElementById("btn-push-prices");
 const colMenu = document.getElementById("col-menu");
 const statusEl = document.getElementById("status");
 const tbody = document.getElementById("products-body");
@@ -2389,6 +2390,52 @@ async function pushAllChannels() {
 }
 
 btnPushAll?.addEventListener("click", pushAllChannels);
+
+/* ---------- preturile schimbate → Base ---------- */
+
+/** Trimite in Base toate preturile din aplicatie care difera de cele din Base (dupa salvare). */
+async function pushChangedPrices() {
+  if (hasUnsavedChanges()) {
+    if (!confirm("Ai modificări nesalvate. Le salvez acum și trimit prețurile în Base?")) return;
+    if (!(await saveAll())) return;
+  }
+  btnPushPrices.disabled = true;
+  setStatus("Compar prețurile cu Base…", "loading");
+  try {
+    const res = await fetch("/api/base/prices/changed");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const changed = data.changed || [];
+    if (!changed.length) {
+      setStatus("Toate prețurile din Base sunt deja la zi.", "ok");
+      return;
+    }
+    const lines = changed
+      .slice(0, 25)
+      .map((c) => `${c.cod_produs || c.product_id}: ${c.base_price ?? "—"} → ${c.price}`);
+    if (changed.length > 25) lines.push(`… și încă ${changed.length - 25}`);
+    if (!confirm(`Trimit ${changed.length} ${changed.length === 1 ? "preț" : "prețuri"} în Base?\n\n${lines.join("\n")}`)) {
+      setStatus("");
+      return;
+    }
+    setStatus("Trimit prețurile în Base…", "loading");
+    const pushRes = await fetch("/api/base/prices/push", { method: "POST" });
+    const pushed = await pushRes.json().catch(() => ({}));
+    if (!pushRes.ok) throw new Error(pushed.error || `HTTP ${pushRes.status}`);
+    if (pushed.dry_run) {
+      setStatus("Nu s-a trimis nimic (BASE_SEND=0).", "error");
+      return;
+    }
+    const n = (pushed.changed || []).length;
+    setStatus(`${n} ${n === 1 ? "preț trimis" : "prețuri trimise"} în Base.`, "ok");
+  } catch (err) {
+    setStatus(`Nu s-au putut trimite prețurile: ${err.message}`, "error");
+  } finally {
+    btnPushPrices.disabled = false;
+  }
+}
+
+btnPushPrices?.addEventListener("click", pushChangedPrices);
 
 /* ---------- comisionul real eMAG / Trendyol (citit din comenzile din Base) ---------- */
 
