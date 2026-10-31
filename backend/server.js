@@ -57,6 +57,8 @@ const baseCommission = require("./base-commission");
 const { PLATFORMS: IMAGE_PLATFORMS } = require("./product-images");
 const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
+const { getForecast } = require("./forecast");
+const { importAllHistory } = require("./orders-history");
 const emagValidari = require("./emag-validari");
 const {
   isAuthEnabled,
@@ -1155,6 +1157,26 @@ app.get("/api/stats", async (req, res) => {
   } catch (err) {
     console.error("[stats]", err.message);
     return res.status(500).json({ error: err.message || "Eroare la statistici" });
+  }
+});
+
+// Prognoza: în cât timp se vinde stocul, după ritmul vânzărilor eMAG + Trendyol.
+app.get("/api/forecast", async (_req, res) => {
+  try {
+    return res.json(await getForecast());
+  } catch (err) {
+    console.error("[forecast]", err.message);
+    return res.status(500).json({ error: err.message || "Eroare la prognoză" });
+  }
+});
+
+// Aduce tot istoricul comenzilor direct din eMAG RO/HU/BG și Trendyol (doar citire).
+app.post("/api/orders/import-history", async (_req, res) => {
+  try {
+    return res.json(await importAllHistory());
+  } catch (err) {
+    console.error("[orders-history]", err.message);
+    return res.status(502).json({ error: err.message || "Importul comenzilor a eșuat" });
   }
 });
 

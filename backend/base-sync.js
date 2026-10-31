@@ -4,8 +4,9 @@
  *
  * - Comenzile eMAG (sursele `emagro` / `emaghu` / `emagbg`) intră în emag_orders +
  *   order_line_history, pentru Statistici, Apeluri review și istoricul produsului.
- *   Stocul local NU se atinge (orders-db.js scrie doar comanda). Trendyol nu intră,
- *   ca și înainte: statisticile sunt doar pe eMAG.
+ *   Stocul local NU se atinge (orders-db.js scrie doar comanda).
+ * - Comenzile Trendyol intră separat, în trendyol_order_lines (doar pentru Prognoză;
+ *   Statisticile rămân pe eMAG).
  * - Returnările din Base marchează comanda cu status 5 (returnată).
  * - Stocul din depozitul Base (BASE_WAREHOUSE) se copiază în catalog_products.general_stock,
  *   după SKU (cod_produs).
@@ -13,6 +14,7 @@
 const { query } = require("./pg");
 const base = require("./base-client");
 const { saveOrder } = require("./orders-db");
+const { saveTrendyolFromBase } = require("./orders-history");
 const { log } = require("./logs-db");
 
 const LOOKBACK_HOURS = Number(process.env.BASE_ORDER_LOOKBACK_HOURS ?? 72);
@@ -105,6 +107,11 @@ async function toEmagOrder(order, status) {
 }
 
 async function importOrder(order) {
+  if (String(order.order_source || "").toLowerCase() === "trendyol") {
+    const tyStatus = (await statusMap()).get(Number(order.order_status_id)) ?? 1;
+    await saveTrendyolFromBase(order, tyStatus);
+    return false;
+  }
   const platform = platformOf(order);
   if (!platform) return false;
   const status = (await statusMap()).get(Number(order.order_status_id)) ?? 1;

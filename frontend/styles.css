@@ -5060,3 +5060,552 @@ td.col-profit-edit .profit-edit-suffix {
 .boti-msg-form { display: flex; gap: 0.5rem; }
 .boti-msg-form input { flex: 1; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; min-height: 2.5rem; }
 
+
+/* ---------------- Prognoză ---------------- */
+:root {
+  --fc-fast: #2a78d6;
+  --fc-slow: #eda100;
+  --fc-none: #e87ba4;
+}
+
+[data-theme="dark"] {
+  --fc-fast: #3987e5;
+  --fc-slow: #c98500;
+  --fc-none: #d55181;
+}
+
+.fc-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.fc-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.fc-kpis .kpi-hero {
+  grid-column: 1 / -1;
+}
+
+.fc-mix {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.fc-mix-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.fc-mix-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.fc-mix-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.fc-mix-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  flex: 1;
+}
+
+.fc-bar {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+}
+
+.fc-mix-callout {
+  margin: auto 0 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.fc-mix-callout b {
+  color: var(--ink);
+}
+
+.fc-seg {
+  min-width: 4px;
+  border-radius: 2px;
+}
+
+.fc-seg:first-child {
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.fc-seg:last-child {
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.fc-seg-fast { background: var(--fc-fast); }
+.fc-seg-slow { background: var(--fc-slow); }
+.fc-seg-none { background: var(--fc-none); }
+
+.fc-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.fc-legend li {
+  display: grid;
+  grid-template-columns: 10px auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fc-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.fc-legend-label {
+  font-weight: 600;
+}
+
+.fc-legend-val {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-legend-val b {
+  color: var(--ink);
+}
+
+.fc-card {
+  padding-top: 0.75rem;
+}
+
+.fc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  background: var(--surface-alt);
+  padding: 0.2rem;
+  border-radius: 8px;
+}
+
+.fc-tab {
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.fc-tab:hover {
+  color: var(--ink);
+}
+
+.fc-tab.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px var(--shadow-2);
+}
+
+.fc-tab-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 1.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--ink);
+  text-align: center;
+}
+
+.fc-tab.is-active .fc-tab-count {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.fc-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fc-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fc-search svg {
+  position: absolute;
+  left: 0.6rem;
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.fc-search input,
+.fc-sort select {
+  font: inherit;
+  font-size: 0.88rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.fc-search input {
+  width: 15rem;
+  padding: 0 0.6rem 0 2rem;
+}
+
+.fc-sort select {
+  padding: 0 0.5rem;
+}
+
+.fc-search input:focus,
+.fc-sort select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+#fc-import {
+  height: 2.25rem;
+  padding: 0 0.85rem;
+}
+
+#fc-import.is-busy .btn-icon {
+  animation: fc-spin 0.9s linear infinite;
+}
+
+@keyframes fc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.fc-tab-note {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.fc-tab-note:empty {
+  display: none;
+}
+
+.fc-status:empty {
+  display: none;
+}
+
+.fc-status {
+  display: block;
+  margin: 0.35rem 0;
+}
+
+.fc-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.fc-table th {
+  white-space: nowrap;
+  user-select: none;
+}
+
+.fc-table th.is-sorted {
+  color: var(--accent);
+}
+
+.fc-arrow {
+  display: inline-block;
+  width: 0.9em;
+  margin-left: 0.15rem;
+  font-size: 0.7em;
+}
+
+.fc-table th.is-num .fc-arrow {
+  margin: 0 0.15rem 0 0;
+  text-align: right;
+}
+
+.fc-table td {
+  vertical-align: middle;
+}
+
+.fc-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.fc-product {
+  min-width: 16rem;
+  max-width: 26rem;
+}
+
+.fc-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-code,
+.fc-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.fc-code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.01em;
+}
+
+.fc-chips {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+}
+
+.fc-chip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fc-days-cell {
+  min-width: 13rem;
+}
+
+.fc-days-text {
+  white-space: nowrap;
+}
+
+.fc-track {
+  margin-top: 0.3rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--viz-track);
+  overflow: hidden;
+}
+
+.fc-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--viz-pos);
+}
+
+/* Peste un an: bara plină, cu capătul hașurat. */
+.fc-fill.is-over {
+  border-radius: 999px 0 0 999px;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 3px, var(--viz-track) 3px 5px) right / 24px 100% no-repeat,
+    var(--viz-pos);
+}
+
+.fc-conf {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.fc-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.fc-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--viz-track);
+  box-shadow: inset 0 0 0 1px var(--viz-zero);
+}
+
+.fc-dots i.is-on {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.fc-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.fc-method {
+  margin-top: 0.75rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.fc-method summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+  width: fit-content;
+}
+
+.fc-method p {
+  margin: 0.4rem 0 0;
+  max-width: 70rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .fc-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Telefon: fiecare produs devine o carte. */
+@media (max-width: 700px) {
+  .fc-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fc-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .fc-tab {
+    justify-content: center;
+  }
+
+  .fc-tools {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .fc-search {
+    grid-column: 1 / -1;
+  }
+
+  .fc-search input {
+    width: 100%;
+  }
+
+  .fc-sort select {
+    width: 100%;
+  }
+
+  .fc-kpis .kpi-hero .kpi-value {
+    font-size: 2.1rem;
+  }
+
+  .fc-table thead {
+    display: none;
+  }
+
+  .fc-table,
+  .fc-table tbody {
+    display: block;
+  }
+
+  .fc-table tr.fc-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem 0.75rem;
+    padding: 0.8rem 0.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .fc-table tr.fc-row td {
+    display: block;
+    padding: 0;
+    border: none;
+    text-align: left;
+    min-width: 0;
+    background: none;
+  }
+
+  .fc-table tr.fc-row td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    margin-bottom: 0.1rem;
+  }
+
+  .fc-table tr.fc-row td.fc-product,
+  .fc-table tr.fc-row td.fc-days-cell {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+
+  .fc-table tr.fc-row td.fc-product::before {
+    display: none;
+  }
+
+  .fc-name {
+    white-space: normal;
+  }
+
+  .fc-chips {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .fc-legend li {
+    grid-template-columns: 10px 1fr;
+  }
+
+  .fc-legend-val {
+    grid-column: 2;
+    text-align: left;
+  }
+}
