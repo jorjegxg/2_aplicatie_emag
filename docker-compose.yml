@@ -123,6 +123,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-emag}:${POSTGRES_PASSWORD:-emag}@db:5432/${POSTGRES_DB:-emag}
       S3_ENDPOINT: ${S3_ENDPOINT_DOCKER:-http://minio:9000}
       VOCE_URL: http://voce:8000
+      # Chrome-ul boților de pe PC (scripts/bot-chrome/: systemd + releu pe docker0).
+      BOT_CHROME_CDP: ${BOT_CHROME_CDP:-http://172.17.0.1:9224}
     volumes:
       - ./backend/data:/app/data
     depends_on:

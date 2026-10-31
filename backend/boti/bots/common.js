@@ -37,10 +37,13 @@ const SPEECH_RULES = `Cum vorbești (text_vorbit și răspunsurile din conversa�
 
 const READ_ONLY = `Doar citești și raportezi. Nu ai cum să schimbi nimic în Base, eMAG sau Trendyol și nu promiți că o faci; sugestiile sunt pentru om.`;
 
+const BROWSER = `Ai un browser Chrome pe PC-ul proprietarului (uneltele browser_*): deschizi orice pagină (eMAG RO/HU/BG, Google, Trendyol, concurenți), dai click, cauți, faci capturi. Îl folosești când te ajută să verifici ceva pe viu. Formularele și orice trimitere de date sunt blocate, deci doar citești. Dacă un rezultat spune că a mers pe browserul de rezervă, menționează scurt că Chrome-ul de pe PC era oprit.`;
+
 function systemPrompt(bot, rol) {
   return `Ești „${bot.nume}”, un bot al magazinului online de accesorii auto (vinde pe eMAG România, Ungaria, Bulgaria și pe Trendyol, totul gestionat prin Base / BaseLinker).
 ${rol}
 ${READ_ONLY}
+${BROWSER}
 ${SPEECH_RULES}`;
 }
 
@@ -54,4 +57,4 @@ function plain(s) {
     .trim();
 }
 
-module.exports = { REPORT_SCHEMA, SPEECH_RULES, READ_ONLY, systemPrompt, plain };
+module.exports = { REPORT_SCHEMA, SPEECH_RULES, READ_ONLY, BROWSER, systemPrompt, plain };

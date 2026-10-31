@@ -18,6 +18,9 @@ const multInputs = {
   mult_min: document.getElementById("mult-min"),
   mult_max: document.getElementById("mult-max"),
 };
+const formCosturi = document.getElementById("form-costuri");
+const btnSaveCosturi = document.getElementById("btn-save-costuri");
+const costAmbalaj = document.getElementById("cost-ambalaj");
 
 function setStatus(message, kind = "") {
   statusEl.textContent = message || "";
@@ -140,6 +143,40 @@ async function loadMults() {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   fillMults(data);
+  fillCosturi(data);
+}
+
+function fillCosturi(settings) {
+  const v = settings?.calculator_params?.consumabile;
+  costAmbalaj.value = v != null ? String(v) : "";
+}
+
+async function saveCosturi(e) {
+  e.preventDefault();
+  if (btnSaveCosturi.disabled) return;
+  const consumabile = Number(costAmbalaj.value);
+  if (costAmbalaj.value === "" || !Number.isFinite(consumabile) || consumabile < 0) {
+    setStatus("Ambalajul trebuie să fie un număr, 0 sau mai mare.", "error");
+    return;
+  }
+  btnSaveCosturi.disabled = true;
+  setStatus("Se salvează ambalajul…", "loading");
+  try {
+    // Doar ambalajul; serverul pastreaza restul parametrilor calculatorului.
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ calculator_params: { consumabile } }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    fillCosturi(data);
+    setStatus("Ambalaj salvat.", "ok");
+  } catch (err) {
+    setStatus(err.message || "Eroare la salvare", "error");
+  } finally {
+    btnSaveCosturi.disabled = false;
+  }
 }
 
 async function saveMults(e) {
@@ -166,13 +203,14 @@ async function saveMults(e) {
 }
 
 formMult.addEventListener("submit", saveMults);
+formCosturi.addEventListener("submit", saveCosturi);
 formEmag.addEventListener("submit", saveEmag);
 formTrendyol.addEventListener("submit", saveTrendyol);
 
 loadMults().catch((err) => setStatus(err.message || "Eroare la citire", "error"));
 loadCredentials().then(() => {
   const hash = (location.hash || "").replace(/^#/, "");
-  if (hash === "preturi" || hash === "emag" || hash === "trendyol") {
+  if (["preturi", "costuri", "emag", "trendyol"].includes(hash)) {
     const el = document.getElementById(hash);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });

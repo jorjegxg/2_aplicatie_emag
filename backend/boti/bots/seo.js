@@ -1,7 +1,8 @@
 /**
  * „Căutătorul”: cum caută lumea produsele tale pe eMAG (sugestii, număr de rezultate, categorii, concurenți)
  * și ce cuvinte lipsesc din titlurile / descrierile tale. Rulează des, pe câte `max_produse` la rând.
- * Dacă eMAG refuză browserul automat, lucrează fără date live (titlurile tale, categoria Trendyol,
+ * Pe lângă căutările fixe, Claude folosește singur Chrome-ul boților (Google, concurenți, Trendyol).
+ * Dacă eMAG refuză browserul, lucrează fără date live (titlurile tale, categoria Trendyol,
  * căutările salvate din rulările trecute) și spune asta în raport.
  */
 const { query } = require("../../pg");
@@ -95,6 +96,7 @@ Ce vreau de la tine, pentru fiecare produs:
 1. Ce cuvinte caută oamenii (și ce sinonime) care lipsesc din titlul sau descrierea mea; ce e în plus sau în ordine proastă. Primele ~50 de caractere ale titlului contează cel mai mult pe mobil.
 2. În ce categorie pune eMAG căutarea (dacă știi) și dacă produsul pare în categoria potrivită.
 3. O propunere de titlu RO (fără să inventezi caracteristici care nu apar în texte).
+Ai browserul liber: pentru produsele unde datele de mai sus nu ajung, uită-te singur. De exemplu sugestiile Google când tastezi și „Oamenii caută și” (google.ro / .hu / .bg), pagina primului concurent de pe eMAG (titlu, caracteristici, ce scrie în descriere), cum se numește produsul pe Trendyol, căutări cu sinonime pe eMAG. Nu deschide mai mult de vreo 15 pagini în total.
 În constatari: câte o constatare pe produs (problema = ce lipsește, sugestie = titlul propus + cuvintele de adăugat în descriere), gravitate după cât pierde produsul.
 text_vorbit: 1–2 minute, cu cele mai valoroase 2–3 idei, fără să citești titlurile întregi.`;
 
@@ -103,7 +105,7 @@ text_vorbit: 1–2 minute, cu cele mai valoroase 2–3 idei, fără să citești
     prompt,
     schema: REPORT_SCHEMA,
     tools: true,
-    maxTurns: 15,
+    maxTurns: 40,
   });
 }
 

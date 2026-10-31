@@ -84,7 +84,7 @@ function noAccountError() {
 /**
  * O cerere către Claude.
  *   system, prompt      textele
- *   server              serverul MCP cu uneltele de citire (vezi tools.js), opțional
+ *   server              serverul MCP cu uneltele de citire (vezi tools.js), opțional; cleanup() la final
  *   schema              JSON schema → răspunsul vine în `structured`
  *   resume              session_id de reluat (conversații)
  *   signal              AbortSignal (oprirea botului)
@@ -124,9 +124,13 @@ async function ask({ system, prompt, model = "sonnet", server = null, schema = n
 
   let result = null;
   let sessionId = resume;
-  for await (const msg of query({ prompt, options })) {
-    if (msg.session_id) sessionId = msg.session_id;
-    if (msg.type === "result") result = msg;
+  try {
+    for await (const msg of query({ prompt, options })) {
+      if (msg.session_id) sessionId = msg.session_id;
+      if (msg.type === "result") result = msg;
+    }
+  } finally {
+    await server?.cleanup?.().catch(() => {});
   }
   if (!result) throw new Error("Claude nu a răspuns");
   if (result.subtype !== "success") {

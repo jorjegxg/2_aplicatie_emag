@@ -40,6 +40,19 @@
     transport_cumparare: "tren", // care cost final devine "Pret cumparare": "tren" (P) sau "aer" (O)
   };
 
+  /** Parametrii din care iese costul final (G + I..P), deci pret_cumparare. Restul tin doar de profit. */
+  const CHEI_PRET_CUMPARARE = [
+    "curs_rmb",
+    "curs_usd",
+    "transport_aer_usd_kg",
+    "transport_tren_usd_kg",
+    "transport_fabrica_agent",
+    "comision_agent",
+    "tva",
+    "taxe_vamale",
+    "transport_cumparare",
+  ];
+
   const NUMERIC_KEYS = Object.keys(DEFAULT_PARAMS).filter(
     (k) => typeof DEFAULT_PARAMS[k] === "number"
   );
@@ -313,6 +326,7 @@
   return {
     REGIMURI,
     DEFAULT_PARAMS,
+    CHEI_PRET_CUMPARARE,
     normalizeParams,
     paramsForChannel,
     transportTrendyol,

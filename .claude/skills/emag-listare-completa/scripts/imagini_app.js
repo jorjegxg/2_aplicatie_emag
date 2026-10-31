@@ -35,8 +35,9 @@ const LANGS = ["ro", "hu", "bg", "en"];
         const n = String(p).padStart(2, "0");
         const old = cur[p - 1];
         if (!old || !old.original_name.endsWith(`_${L}_${n}.jpg`)) throw new Error(`poziția ${p} pe ${L} nu e ${code}_${L}_${n}.jpg (e ${old && old.original_name})`);
+        const nou = file(L, n); // citit înainte de ștergere: fără fișier, poza veche rămâne
         await pi.deleteImage(id, old.id);
-        const added = await pi.addImages(id, [file(L, n)], L);
+        const added = await pi.addImages(id, [nou], L);
         order[p - 1] = added[0].id;
       }
       await pi.reorder(id, order, L);

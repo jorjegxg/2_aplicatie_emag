@@ -1,0 +1,10 @@
+[Unit]
+Description=Releu 172.17.0.1:9224 → Chrome-ul boților (pentru containerul emag-boti)
+
+[Service]
+ExecStart=/usr/bin/node %h/2_aplicatie_emag/scripts/bot-chrome/relay.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

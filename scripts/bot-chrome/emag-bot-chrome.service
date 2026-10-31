@@ -1,0 +1,10 @@
+[Unit]
+Description=Chrome-ul boților eMAG (profil separat, debug pe 127.0.0.1:9223)
+
+[Service]
+ExecStart=%h/2_aplicatie_emag/scripts/bot-chrome/bot-chrome.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

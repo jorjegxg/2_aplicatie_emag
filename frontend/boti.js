@@ -457,6 +457,22 @@ elContForm.addEventListener("submit", async (ev) => {
   }
 });
 
+// ---------- browserul boților ----------
+
+async function loadBrowser() {
+  const el = document.getElementById("boti-browser");
+  try {
+    const b = await api("/setari/browser");
+    el.textContent = !b.configurat
+      ? "Browser: doar cel de rezervă (Chrome-ul de pe PC nu e configurat)"
+      : b.conectat
+        ? `Browser: Chrome pe PC ✓ (${b.versiune || "Chrome"}, ${b.taburi} taburi)`
+        : "Browser: Chrome-ul de pe PC e oprit, boții folosesc browserul de rezervă";
+  } catch (e) {
+    el.textContent = `Browser: ${e.message}`;
+  }
+}
+
 // ---------- notificări ----------
 
 function b64ToUint8(b64) {
@@ -528,6 +544,7 @@ function listen() {
     const [v, cont] = await Promise.all([api("/voci").catch(() => ({ voci: [] })), api("/setari/creier")]);
     voci = v.voci || [];
     renderCont(cont);
+    loadBrowser();
     await loadBots();
     setStatus("");
   } catch (e) {

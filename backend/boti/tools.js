@@ -1,5 +1,6 @@
 /**
- * Uneltele boților (server MCP în proces). Toate doar citesc: catalog, Base, eMAG, Trendyol, poze, căutări.
+ * Uneltele boților (server MCP în proces). Toate doar citesc: catalog, Base, eMAG, Trendyol, poze, căutări
+ * și Chrome-ul boților de pe PC (browser_*, unde orice trimitere de date e blocată în browser.js).
  * Nu există nicio unealtă care să scrie în Base / eMAG / Trendyol.
  */
 const { query } = require("../pg");
@@ -35,12 +36,20 @@ function compact(p, { descriere = 600 } = {}) {
 }
 
 /**
- * → { config, names } pentru brain.ask({ server }). Câte o instanță nouă pe cerere: serverul SDK se
+ * → { config, names, cleanup } pentru brain.ask({ server }); cleanup închide tabul cererii. Câte o instanță nouă pe cerere: serverul SDK se
  * leagă de o singură sesiune, iar boții și conversațiile pot rula în paralel.
  */
 async function server() {
   const { tool, createSdkMcpServer } = await import("@anthropic-ai/claude-agent-sdk");
   const { z } = await import("zod");
+  const tab = new browser.Tab();
+  const page = (fn) => async (args) => {
+    try {
+      return json(await fn(args));
+    } catch (e) {
+      return fail(`Browserul: ${e.message.split("\n")[0]}`);
+    }
+  };
   const tools = [
     tool(
       "cauta_produs",
@@ -144,10 +153,48 @@ async function server() {
         }
       },
     ),
+    tool(
+      "browser_deschide",
+      "Deschide orice adresă în Chrome-ul boților (pe PC-ul proprietarului, cu logările lui): eMAG, Google, Trendyol, site-uri de concurenți. Întoarce titlul, textul paginii și linkurile. Doar citești: formularele și orice trimitere de date sunt blocate.",
+      { url: z.string().describe("de ex. https://www.google.ro/search?q=husa+volan sau https://www.emag.ro/search/husa%20volan") },
+      page(({ url }) => tab.open(url)),
+    ),
+    tool(
+      "browser_click",
+      "Click pe un link sau buton din pagina deschisă, după textul lui (sau un selector CSS). Întoarce pagina nouă.",
+      { tinta: z.string().describe("textul linkului / butonului, de ex. „Următoarea pagină”") },
+      page(({ tinta }) => tab.click(tinta)),
+    ),
+    tool(
+      "browser_cauta_in_pagina",
+      "Scrie în bara de căutare a site-ului deschis și apasă Enter (de ex. pe Google sau Trendyol). Întoarce rezultatele.",
+      { text: z.string() },
+      page(({ text }) => tab.searchHere(text)),
+    ),
+    tool(
+      "browser_inapoi",
+      "Înapoi la pagina anterioară.",
+      {},
+      page(() => tab.back()),
+    ),
+    tool(
+      "browser_captura",
+      "Captură a ce se vede acum în tab, ca să judeci aspectul (poze, poziția produsului în listă). Folosește-o cu măsură.",
+      {},
+      async () => {
+        try {
+          const buf = await tab.screenshot();
+          return { content: [{ type: "image", data: buf.toString("base64"), mimeType: "image/jpeg" }] };
+        } catch (e) {
+          return fail(`Browserul: ${e.message.split("\n")[0]}`);
+        }
+      },
+    ),
   ];
   return {
     config: createSdkMcpServer({ name: "date", version: "1.0.0", tools }),
     names: tools.map((t) => t.name),
+    cleanup: () => tab.close(),
   };
 }
 

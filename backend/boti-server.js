@@ -181,6 +181,12 @@ r.put("/setari/creier", wrap(async (req, res) => {
   res.json(await brain.status());
 }));
 
+// ---------- browserul boților ----------
+
+r.get("/setari/browser", wrap(async (req, res) => {
+  res.json(await browser.status());
+}));
+
 // ---------- notificări ----------
 
 r.get("/push/cheie", (req, res) => res.json({ cheie: push.publicKey() }));

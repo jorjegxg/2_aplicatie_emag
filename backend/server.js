@@ -59,6 +59,7 @@ const { attachCustomerReviews } = require("./emag-reviews");
 const { getStats } = require("./stats");
 const { getForecast } = require("./forecast");
 const { importAllHistory } = require("./orders-history");
+const { CHEI_PRET_CUMPARARE } = require("./calculator");
 const emagValidari = require("./emag-validari");
 const {
   isAuthEnabled,
@@ -640,19 +641,26 @@ app.post("/api/settings", async (req, res) => {
     // Fiecare pagina trimite doar ce editeaza (multiplicatorii vin din Setari, restul din Produse).
     const body = req.body || {};
     const pick = (key) => (Object.prototype.hasOwnProperty.call(body, key) ? toNum(body[key]) : before?.[key] ?? null);
+    // Parametrii calculatorului se imbina peste cei salvati: Setari trimite doar ambalajul,
+    // Produse trimite tot panoul.
+    const calcBody =
+      body.calculator_params && typeof body.calculator_params === "object" ? body.calculator_params : null;
     const saved = await saveSettings({
       procentaj_alte_costuri: pick("procentaj_alte_costuri"),
       mult_prp: pick("mult_prp"),
       mult_min: pick("mult_min"),
       mult_max: pick("mult_max"),
-      calculator_params:
-        req.body?.calculator_params && typeof req.body.calculator_params === "object"
-          ? req.body.calculator_params
-          : undefined,
+      calculator_params: calcBody ? { ...(before?.calculator_params || {}), ...calcBody } : undefined,
     });
-    // Parametrii calculatorului schimba costul final → pret_cumparare pe tot catalogul.
+    // pret_cumparare se recalculeaza pe tot catalogul doar cand se schimba un parametru de cost
+    // (curs, transport, taxe); ambalajul, curierul sau impozitul tin doar de profit.
     let recalculated = null;
-    if (saved.calculator_params && req.body?.calculator_params) {
+    const costChanged =
+      calcBody &&
+      CHEI_PRET_CUMPARARE.some(
+        (k) => String(before?.calculator_params?.[k]) !== String(saved.calculator_params?.[k])
+      );
+    if (costChanged) {
       recalculated = await recalcPretCumparare(null);
     }
     noteChanges(res, {
