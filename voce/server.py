@@ -6,7 +6,9 @@ Serviciul `voce`: text-to-speech în română și transcriere (speech-to-text), 
   POST /tts             {text, voce, viteza} -> audio/mpeg
   POST /stt             fișier audio (webm/ogg/m4a/wav) -> {text, limba, durata}
   POST /vorbeste        {text, voce, viteza} + X-Token -> 202; sintetizează pentru difuzorul de pe PC
-  GET  /urmator?dupa=N  long-poll pentru difuzor: ultimul WAV mai nou decât N (X-Id), altfel 204
+  GET  /urmator?dupa=N  long-poll pentru difuzor: ultimul WAV mai nou decât N (X-Id, X-Sursa), altfel 204
+  GET  /surse           + X-Token: cine a vorbit (terminale, boți), pentru widgetul de pe PC
+  POST /surse/{id}      {oprit?, ascuns?} + X-Token: oprește / pornește / ascunde o sursă
 
 Motoare:
   piper       vocile Liana / Sanda (eduardem, CC BY-NC) și Mihai (rhasspy) — rapide, locale
@@ -16,6 +18,7 @@ STT: faster-whisper (VOCE_STT_MODEL, implicit large-v3-turbo, int8).
 """
 import asyncio
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -66,8 +69,13 @@ _whisper = None
 _whisper_lock = threading.Lock()
 _ro_text = None
 # Difuzorul: păstrează doar ultimul mesaj; unul nou îl înlocuiește pe cel vechi.
-_ultim = {"id": 0, "wav": None}
+_ultim = {"id": 0, "wav": None, "sursa": ""}
 _ultim_cond = threading.Condition()
+# Cine vorbește (un terminal Claude = o sesiune, un bot...): widgetul de pe PC le arată și le poate opri.
+SURSE_FILE = os.path.join(MODELS, "surse.json")
+SURSE_ORE = 12  # o sursă care n-a mai vorbit de atâtea ore dispare din widget (dacă nu e oprită)
+_surse = {}
+_surse_lock = threading.Lock()
 
 
 def log(msg):
@@ -207,10 +215,22 @@ def whisper():
 
 # ---------- API ----------
 
+class SursaIn(BaseModel):
+    id: str = ""
+    nume: str = ""
+    detalii: str = ""
+
+
 class TtsIn(BaseModel):
     text: str
     voce: str = DEFAULT_VOICE
     viteza: float = 1.0
+    sursa: SursaIn | None = None
+
+
+class SursaSet(BaseModel):
+    oprit: bool | None = None
+    ascuns: bool | None = None
 
 
 @app.get("/health")
@@ -260,6 +280,57 @@ def tts(body: TtsIn):
     return Response(mp3, media_type="audio/mpeg", headers={"X-Voce": voce})
 
 
+def _verifica_token(x_token):
+    if VORBESTE_TOKEN and x_token != VORBESTE_TOKEN:
+        raise HTTPException(401, "token greșit")
+
+
+def _incarca_surse():
+    global _surse
+    try:
+        with open(SURSE_FILE, encoding="utf-8") as f:
+            _surse = json.load(f)
+    except Exception:
+        _surse = {}
+
+
+def _salveaza_surse():
+    try:
+        tmp = SURSE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_surse, f, ensure_ascii=False)
+        os.replace(tmp, SURSE_FILE)
+    except Exception as e:
+        log(f"surse: {e}")
+
+
+def _inregistreaza(sursa, text):
+    """-> (id sursă, oprită?). Fără sursă: „Altele”."""
+    sid = ((sursa.id if sursa else "") or "altele").strip()[:100]
+    acum = time.time()
+    with _surse_lock:
+        s = _surse.get(sid)
+        if s is None:
+            s = _surse[sid] = {"id": sid, "nume": "", "detalii": "", "oprit": False, "ascuns": False,
+                               "creat": acum, "ultima": 0, "mesaje": 0, "text": ""}
+        if sursa and sursa.nume.strip():
+            s["nume"] = sursa.nume.strip()[:120]
+        if sursa and sursa.detalii.strip():
+            s["detalii"] = sursa.detalii.strip()[:120]
+        if not s["nume"]:
+            s["nume"] = "Altele" if sid == "altele" else sid[:8]
+        s["ascuns"] = False  # a vorbit din nou: reapare
+        s["ultima"] = acum
+        s["text"] = text[:160]
+        if not s["oprit"]:
+            s["mesaje"] += 1
+        # curăță sursele vechi de o săptămână
+        for k in [k for k, v in _surse.items() if acum - v["ultima"] > 7 * 86400]:
+            del _surse[k]
+        _salveaza_surse()
+        return sid, s["oprit"]
+
+
 def _pregateste(nr, text, voce, viteza):
     t0 = time.time()
     try:
@@ -278,14 +349,17 @@ def _pregateste(nr, text, voce, viteza):
 
 @app.post("/vorbeste", status_code=202)
 def vorbeste(body: TtsIn, x_token: str = Header("")):
-    if VORBESTE_TOKEN and x_token != VORBESTE_TOKEN:
-        raise HTTPException(401, "token greșit")
+    _verifica_token(x_token)
     text = (body.text or "").strip()[:MAX_TEXT]
     if not text:
         raise HTTPException(400, "text gol")
+    sid, oprit = _inregistreaza(body.sursa, text)
+    if oprit:
+        return {"id": None, "oprit": True}
     with _ultim_cond:
         _ultim["id"] += 1
         _ultim["wav"] = None
+        _ultim["sursa"] = sid
         nr = _ultim["id"]
     threading.Thread(target=_pregateste, args=(nr, text, body.voce, body.viteza), daemon=True).start()
     return {"id": nr}
@@ -299,8 +373,44 @@ def urmator(dupa: int = 0, timeout: float = 25):
             dupa = 0  # serviciul a repornit
         _ultim_cond.wait_for(lambda: _ultim["id"] > dupa and _ultim["wav"] is not None, timeout=min(timeout, 60))
         if _ultim["id"] > dupa and _ultim["wav"] is not None:
-            return Response(_ultim["wav"], media_type="audio/wav", headers={"X-Id": str(_ultim["id"])})
+            return Response(_ultim["wav"], media_type="audio/wav",
+                            headers={"X-Id": str(_ultim["id"]), "X-Sursa": _ultim["sursa"]})
     return Response(status_code=204)
+
+
+@app.get("/surse")
+def surse(x_token: str = Header("")):
+    """Sursele de arătat în widget, în ordinea în care au apărut (cea nouă jos)."""
+    _verifica_token(x_token)
+    acum = time.time()
+    with _surse_lock:
+        lista = [dict(v) for v in _surse.values()
+                 if not v["ascuns"] and (v["oprit"] or acum - v["ultima"] < SURSE_ORE * 3600)]
+    lista.sort(key=lambda v: v["creat"])
+    for v in lista:
+        v["acum_sec"] = int(acum - v["ultima"])
+    return {"surse": lista}
+
+
+@app.post("/surse/{sid}")
+def seteaza_sursa(sid: str, body: SursaSet, x_token: str = Header("")):
+    _verifica_token(x_token)
+    with _surse_lock:
+        s = _surse.get(sid)
+        if s is None:
+            raise HTTPException(404, "sursă necunoscută")
+        if body.oprit is not None:
+            s["oprit"] = body.oprit
+        if body.ascuns is not None:
+            s["ascuns"] = body.ascuns
+        _salveaza_surse()
+        rez = dict(s)
+    if body.oprit:
+        with _ultim_cond:  # mesajul ei încă în pregătire nu mai pleacă
+            if _ultim["sursa"] == sid and _ultim["wav"] is None:
+                _ultim["id"] += 1
+                _ultim["sursa"] = ""
+    return rez
 
 
 @app.post("/stt")
@@ -339,4 +449,5 @@ def preload():
 
 @app.on_event("startup")
 def startup():
+    _incarca_surse()
     threading.Thread(target=preload, daemon=True).start()
